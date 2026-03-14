@@ -45,7 +45,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ─── Merchant Dashboard guard ──────────────────────────────────────────────
-  if (pathname.startsWith("/dashboard")) {
+  if (pathname.startsWith("/dashboard") && !pathname.startsWith("/dashboard/login")) {
     if (!user) {
       const loginUrl = new URL("/dashboard/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);

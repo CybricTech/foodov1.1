@@ -211,7 +211,7 @@ function ItemFormModal({
     if (!file) return;
     if (file.size > MENU_IMAGE_MAX_SIZE_BYTES) {
       setError(
-        `Image must be under ${MENU_IMAGE_MAX_SIZE_BYTES / 1024}KB. Please compress it first.`
+        `Image must be under ${MENU_IMAGE_MAX_SIZE_BYTES / (1024 * 1024)}MB.`
       );
       return;
     }
@@ -346,7 +346,7 @@ function ItemFormModal({
           {/* Image upload */}
           <div>
             <label className="block text-sm font-medium text-black-500 mb-1">
-              Image (max 80KB)
+              Image (max 5MB)
             </label>
             <div
               className="border-2 border-dashed border-black-200 rounded-xl p-4 text-center cursor-pointer hover:border-viridian-500 transition-colors"

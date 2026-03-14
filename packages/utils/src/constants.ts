@@ -124,8 +124,8 @@ export const MAX_ACTIVE_DELIVERIES = 3;
 // ─── Rider assignment accept timeout (60 seconds) ────────────────────────────
 export const RIDER_ACCEPT_TIMEOUT_SECONDS = 60;
 
-// ─── Menu image max size (80KB) ───────────────────────────────────────────────
-export const MENU_IMAGE_MAX_SIZE_BYTES = 80 * 1024;
+// ─── Menu image max size (5MB) ────────────────────────────────────────────────
+export const MENU_IMAGE_MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
 // ─── GPS broadcast interval (10 seconds) ─────────────────────────────────────
 export const GPS_BROADCAST_INTERVAL_MS = 10_000;
