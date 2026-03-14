@@ -1,0 +1,186 @@
+import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
+import { createServiceClient } from "@/lib/supabase/server";
+
+export async function POST(request: NextRequest) {
+  const rawBody = await request.text();
+
+  // 1. Verify HMAC-SHA512 signature
+  const signature = request.headers.get("x-paystack-signature");
+  const secret = process.env.PAYSTACK_SECRET_KEY!;
+  const hash = crypto
+    .createHmac("sha512", secret)
+    .update(rawBody)
+    .digest("hex");
+
+  if (hash !== signature) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  let event: { event: string; data: Record<string, unknown> };
+  try {
+    event = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // 2. Only handle charge.success
+  if (event.event !== "charge.success") {
+    return NextResponse.json({ received: true });
+  }
+
+  const charge = event.data;
+  const paystackRef = charge.reference as string;
+
+  const supabase = createServiceClient();
+
+  // 3. Idempotency check
+  const { data: existingPayment } = await supabase
+    .from("payments")
+    .select("id, paystack_status, restaurant_id, metadata")
+    .eq("paystack_ref", paystackRef)
+    .single();
+
+  if (!existingPayment) {
+    // Unknown reference — return 200 to prevent Paystack retries
+    return NextResponse.json({ received: true });
+  }
+
+  if (existingPayment.paystack_status === "success") {
+    return NextResponse.json({ received: true });
+  }
+
+  const meta = existingPayment.metadata as Record<string, unknown>;
+  const restaurantId = existingPayment.restaurant_id;
+
+  // 4. Update payment record
+  await supabase
+    .from("payments")
+    .update({
+      paystack_status: "success",
+      paid_at: new Date().toISOString(),
+      metadata: {
+        ...(meta ?? {}),
+        paystack_channel: charge.channel,
+        paystack_fees: charge.fees,
+      } as import("@foodo/database").Json,
+    })
+    .eq("id", existingPayment.id);
+
+  // 5. Create the order
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .insert({
+      restaurant_id: restaurantId,
+      payment_id: existingPayment.id,
+      customer_phone: meta.customer_phone as string,
+      customer_name: meta.customer_name as string,
+      customer_email: (meta.customer_email as string) || null,
+      fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
+      delivery_address: (meta.delivery_address as string) || null,
+      special_instructions: (meta.special_instructions as string) || null,
+      status: "confirmed" as const,
+      payment_status: "paid" as const,
+      subtotal_kobo: meta.subtotal_kobo as number,
+      delivery_fee_kobo: meta.delivery_fee_kobo as number,
+      total_kobo:
+        (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number),
+      subtotal: meta.subtotal_kobo as number,
+      total_amount:
+        (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number),
+      order_number: `ORD-${Date.now()}`,
+    } as any)
+    .select("id, order_number")
+    .single();
+
+  if (orderError || !order) {
+    console.error("Order creation failed:", orderError);
+    return NextResponse.json({ error: "Order creation failed" }, { status: 500 });
+  }
+
+  // 6. Create order items (snapshot)
+  const items = (meta.items as Array<{
+    menuItemId: string;
+    name: string;
+    priceKobo: number;
+    quantity: number;
+    selectedOptions: Array<{
+      optionId: string;
+      optionName: string;
+      choices: Array<{ choiceId: string; choiceName: string; priceModifierKobo: number }>;
+    }>;
+  }>) ?? [];
+
+  if (items.length > 0) {
+    await supabase.from("order_items").insert(
+      items.map((item) => ({
+        order_id: order.id,
+        restaurant_id: restaurantId,
+        menu_item_id: item.menuItemId,
+        item_name: item.name,
+        item_price: item.priceKobo,
+        item_price_kobo: item.priceKobo,
+        quantity: item.quantity,
+        selected_options: item.selectedOptions as import("@foodo/database").Json,
+        line_total: item.priceKobo * item.quantity,
+        line_total_kobo: item.priceKobo * item.quantity,
+      }))
+    );
+  }
+
+  // 7. Upsert CRM customer record
+  const totalKobo =
+    (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number);
+
+  await supabase.rpc("upsert_customer", {
+    p_restaurant_id: restaurantId,
+    p_phone: meta.customer_phone as string,
+    p_full_name: meta.customer_name as string,
+    p_email: (meta.customer_email as string) || null,
+    p_order_total_kobo: totalKobo,
+  });
+
+  // 8. Update payment with order_id
+  await supabase
+    .from("payments")
+    .update({ order_id: order.id })
+    .eq("id", existingPayment.id);
+
+  // 9. Trigger SMS notifications via Edge Function (fire-and-forget)
+  const edgeFnUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-sms`;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  // Customer confirmation SMS
+  fetch(edgeFnUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      restaurantId,
+      phone: meta.customer_phone,
+      eventType: "order_confirmed",
+      orderId: order.id,
+      orderNumber: order.order_number,
+    }),
+  }).catch(console.error);
+
+  // Merchant new order SMS
+  fetch(edgeFnUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      restaurantId,
+      eventType: "new_order_merchant",
+      orderId: order.id,
+      orderNumber: order.order_number,
+    }),
+  }).catch(console.error);
+
+  return NextResponse.json({ received: true });
+}

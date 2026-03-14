@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Global CSS variables.
+  --brand-color is overridden per-restaurant in [restaurant_slug]/layout.tsx
+  by injecting the restaurant's primary_color as an inline style.
+*/
+:root {
+  --brand-color: #2D6A4F;   /* Viridian green — default / Foodo brand */
+
+  /* Semantic colors */
+  --color-success: #2D6A4F;
+  --color-danger: #E63946;
+  --color-warning: #F4A261;
+  --color-info: #457B9D;
+
+  /* Spacing scale */
+  --page-padding: 1rem;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --page-padding: 1.5rem;
+  }
+}
+
+/* Geist font loaded via <link rel="preload"> in layout.tsx */
+body {
+  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-display: swap;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent layout shift on images */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Accessible focus styles */
+:focus-visible {
+  outline: 2px solid var(--brand-color);
+  outline-offset: 2px;
+}
+
+/* Scrollbar hide utility for category tab bar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Bottom sheet + backdrop animations */
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-slide-up {
+  animation: slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease;
+}

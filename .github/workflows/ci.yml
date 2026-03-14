@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx turbo run type-check
+
+      - name: Lint
+        run: npx turbo run lint
+
+      - name: Build
+        run: npx turbo run build --filter=!@foodo/rider
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY }}
+          NEXT_PUBLIC_APP_URL: https://foodo.ng
+          # Dummy values for build-time env — real secrets only used at runtime
+          SUPABASE_SERVICE_ROLE_KEY: dummy
+          PAYSTACK_SECRET_KEY: dummy
+          TERMII_API_KEY: dummy
+          RESEND_API_KEY: dummy
+
+      - name: Bundle size check (storefront must be < 2MB)
+        run: |
+          BUILD_SIZE=$(du -sb apps/web/.next/static | awk '{print $1}')
+          echo "Static bundle size: ${BUILD_SIZE} bytes"
+          if [ "$BUILD_SIZE" -gt 2097152 ]; then
+            echo "ERROR: Bundle exceeds 2MB limit (${BUILD_SIZE} bytes)"
+            exit 1
+          fi

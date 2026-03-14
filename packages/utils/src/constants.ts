@@ -1,0 +1,131 @@
+// ─── Order Status ───────────────────────────────────────────────────────────
+export const ORDER_STATUSES = [
+  "pending",
+  "confirmed",
+  "preparing",
+  "ready_for_pickup",
+  "assigned_to_rider",
+  "in_transit",
+  "delivered",
+  "cancelled",
+] as const;
+
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+
+// ─── Payment Status ──────────────────────────────────────────────────────────
+export const PAYMENT_STATUSES = [
+  "pending",
+  "paid",
+  "failed",
+  "refunded",
+] as const;
+
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+
+// ─── User Roles ──────────────────────────────────────────────────────────────
+export const USER_ROLES = [
+  "customer",
+  "merchant_owner",
+  "merchant_staff",
+  "platform_rider",
+  "super_admin",
+] as const;
+
+export type UserRole = (typeof USER_ROLES)[number];
+
+// ─── Fulfillment Types ───────────────────────────────────────────────────────
+export const FULFILLMENT_TYPES = ["delivery", "pickup"] as const;
+export type FulfillmentType = (typeof FULFILLMENT_TYPES)[number];
+
+// ─── Dispatch Types ──────────────────────────────────────────────────────────
+export const DISPATCH_TYPES = [
+  "platform_rider",
+  "own_rider",
+  "third_party",
+] as const;
+
+export type DispatchType = (typeof DISPATCH_TYPES)[number];
+
+// ─── Delivery Assignment Status ───────────────────────────────────────────────
+export const DELIVERY_STATUSES = [
+  "assigned",
+  "en_route_pickup",
+  "picked_up",
+  "en_route_dropoff",
+  "delivered",
+  "failed",
+] as const;
+
+export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
+
+// ─── Logistics Default ───────────────────────────────────────────────────────
+export const LOGISTICS_DEFAULTS = [
+  "platform_rider",
+  "own_rider",
+  "third_party",
+] as const;
+
+export type LogisticsDefault = (typeof LOGISTICS_DEFAULTS)[number];
+
+// ─── Vehicle Types ───────────────────────────────────────────────────────────
+export const VEHICLE_TYPES = ["bicycle", "motorcycle", "car"] as const;
+export type VehicleType = (typeof VEHICLE_TYPES)[number];
+
+// ─── SMS Event Types ─────────────────────────────────────────────────────────
+export const SMS_EVENT_TYPES = [
+  "order_confirmation",
+  "order_status_update",
+  "marketing",
+] as const;
+
+export type SmsEventType = (typeof SMS_EVENT_TYPES)[number];
+
+// ─── SMS Providers ───────────────────────────────────────────────────────────
+export const SMS_PROVIDERS = ["termii", "twilio"] as const;
+export type SmsProvider = (typeof SMS_PROVIDERS)[number];
+
+// ─── SMS Log Status ──────────────────────────────────────────────────────────
+export const SMS_LOG_STATUSES = [
+  "queued",
+  "sent",
+  "delivered",
+  "failed",
+] as const;
+
+export type SmsLogStatus = (typeof SMS_LOG_STATUSES)[number];
+
+// ─── Human-readable order status labels ──────────────────────────────────────
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  pending: "Pending",
+  confirmed: "Confirmed",
+  preparing: "Preparing",
+  ready_for_pickup: "Ready for Pickup",
+  assigned_to_rider: "Rider Assigned",
+  in_transit: "On the Way",
+  delivered: "Delivered",
+  cancelled: "Cancelled",
+};
+
+// ─── Storefront order progress steps (for stepper UI) ────────────────────────
+export const ORDER_PROGRESS_STEPS: OrderStatus[] = [
+  "confirmed",
+  "preparing",
+  "ready_for_pickup",
+  "in_transit",
+  "delivered",
+];
+
+// ─── Share link token expiry (6 hours in ms) ─────────────────────────────────
+export const SHARE_LINK_EXPIRY_MS = 6 * 60 * 60 * 1000;
+
+// ─── Platform rider max concurrent deliveries ─────────────────────────────────
+export const MAX_ACTIVE_DELIVERIES = 3;
+
+// ─── Rider assignment accept timeout (60 seconds) ────────────────────────────
+export const RIDER_ACCEPT_TIMEOUT_SECONDS = 60;
+
+// ─── Menu image max size (80KB) ───────────────────────────────────────────────
+export const MENU_IMAGE_MAX_SIZE_BYTES = 80 * 1024;
+
+// ─── GPS broadcast interval (10 seconds) ─────────────────────────────────────
+export const GPS_BROADCAST_INTERVAL_MS = 10_000;
