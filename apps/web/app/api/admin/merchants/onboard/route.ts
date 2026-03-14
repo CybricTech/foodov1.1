@@ -56,15 +56,25 @@ export async function POST(request: NextRequest) {
   // Create restaurant
   const { data: restaurant, error: restError } = await serviceClient
     .from("restaurants")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .insert({
       name,
       slug,
       city: city ?? null,
-      logistics_default: "own_rider" as const,
+      description: null,
+      logo_url: null,
+      banner_url: null,
+      primary_color: null,
+      phone: null,
+      address: null,
+      state: null,
+      logistics_default: "own_rider",
+      delivery_radius_km: null,
+      min_order_amount: null,
+      estimated_delivery_minutes: null,
+      delivery_fee: 0,
       is_active: true,
       accepts_orders: true,
-    } as any)
+    })
     .select("*")
     .single();
 
@@ -98,15 +108,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Create user_profiles record
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await serviceClient.from("user_profiles").insert({
     id: authUser.user.id,
-    role: "merchant_owner" as const,
+    role: "merchant_owner",
     restaurant_id: restaurant.id,
     email,
     is_active: true,
-  } as any);
+    full_name: null,
+    phone: null,
+    avatar_url: null,
+    vehicle_type: null,
+  });
 
   // Log audit
   await serviceClient.from("audit_logs").insert({
