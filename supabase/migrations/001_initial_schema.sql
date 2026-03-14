@@ -10,7 +10,8 @@
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "pg_cron";
+-- pg_cron is enabled via Supabase Dashboard > Database > Extensions (not via SQL on hosted)
+-- CREATE EXTENSION IF NOT EXISTS "pg_cron";
 
 -- ============================================================
 -- 1. RESTAURANTS
@@ -38,23 +39,11 @@ CREATE TABLE IF NOT EXISTS restaurants (
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- restaurants is public-readable for storefront page loads
+-- RLS enabled now, but policies that reference user_profiles are created after that table exists
 ALTER TABLE restaurants ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "restaurants_public_read"
   ON restaurants FOR SELECT
   USING (is_active = true);
-
-CREATE POLICY "restaurants_merchant_update"
-  ON restaurants FOR UPDATE
-  USING (
-    id = (SELECT restaurant_id FROM user_profiles WHERE id = auth.uid())
-  );
-
-CREATE POLICY "restaurants_admin_all"
-  ON restaurants FOR ALL
-  USING (
-    EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'super_admin')
-  );
 
 -- ============================================================
 -- 2. USER PROFILES
@@ -95,6 +84,19 @@ CREATE POLICY "user_profiles_merchant_read"
 -- Super admin full access (service role — this policy is a safety net)
 CREATE POLICY "user_profiles_admin"
   ON user_profiles FOR ALL
+  USING (
+    EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'super_admin')
+  );
+
+-- Deferred restaurant RLS policies (now that user_profiles exists)
+CREATE POLICY "restaurants_merchant_update"
+  ON restaurants FOR UPDATE
+  USING (
+    id = (SELECT restaurant_id FROM user_profiles WHERE id = auth.uid())
+  );
+
+CREATE POLICY "restaurants_admin_all"
+  ON restaurants FOR ALL
   USING (
     EXISTS (SELECT 1 FROM user_profiles WHERE id = auth.uid() AND role = 'super_admin')
   );
