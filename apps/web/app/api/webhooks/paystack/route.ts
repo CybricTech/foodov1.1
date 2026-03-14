@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     p_restaurant_id: restaurantId,
     p_phone: meta.customer_phone as string,
     p_full_name: meta.customer_name as string,
-    p_email: (meta.customer_email as string) || null,
+    p_email: (meta.customer_email as string) || undefined,
     p_order_total_kobo: totalKobo,
   });
 

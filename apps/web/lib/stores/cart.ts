@@ -146,7 +146,7 @@ export function buildOptionsKey(
   selectedOptions: SelectedOptionSnapshot[]
 ): string {
   const ids = selectedOptions.flatMap((opt) =>
-    opt.choices.map((c) => `${opt.optionId}:${c.choiceId}`)
+    opt.choices.map((c: { choiceId: string }) => `${opt.optionId}:${c.choiceId}`)
   );
   return ids.sort().join("|") || "no-options";
 }
