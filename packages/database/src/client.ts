@@ -54,9 +54,16 @@ export function createBrowserClient(): TypedSupabaseClient {
 export function createMobileClient(
   storage: SupportedStorage
 ): TypedSupabaseClient {
+  // Support both Next.js (NEXT_PUBLIC_*) and Expo (EXPO_PUBLIC_*) env var conventions
+  const url =
+    process.env.EXPO_PUBLIC_SUPABASE_URL ??
+    requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const anonKey =
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+    requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   return createClient<Database>(
-    requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    url,
+    anonKey,
     {
       auth: {
         storage,

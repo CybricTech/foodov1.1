@@ -42,3 +42,11 @@ web-build/
 
 # Generated types (re-generated from Supabase CLI)
 packages/database/src/types.ts
+
+# Plans and temp SQL files
+plans/
+supabase/combined_schema.sql
+supabase/drop_policies.sql
+
+# Rider env
+apps/rider/.env
