@@ -131,6 +131,16 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               placeholder="0"
             />
           </Field>
+          <Field label="Delivery fee (₦)">
+            <input
+              type="number"
+              min="0"
+              value={deliveryFeeNgn}
+              onChange={(e) => setDeliveryFeeNgn(e.target.value)}
+              className={inputCls}
+              placeholder="0"
+            />
+          </Field>
           <Field label="Default logistics mode">
             <select
               value={logisticsDefault}

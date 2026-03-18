@@ -43,3 +43,11 @@ web-build/
 # Generated types — committed to repo so CI doesn't need Supabase credentials
 # Re-generate with: SUPABASE_ACCESS_TOKEN=<token> npx supabase gen types typescript --project-id <ref> > packages/database/src/types.ts
 # packages/database/src/types.ts
+
+# Plans and temp SQL files
+plans/
+supabase/combined_schema.sql
+supabase/drop_policies.sql
+
+# Rider env
+apps/rider/.env

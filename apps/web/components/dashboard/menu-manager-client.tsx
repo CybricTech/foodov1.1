@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+
 import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
 import { MENU_IMAGE_MAX_SIZE_BYTES } from "@foodo/utils";
@@ -20,7 +20,7 @@ export function MenuManagerClient({
   initialItems,
 }: MenuManagerClientProps) {
   const supabase = createBrowserClient();
-  const [categories, setCategories] = useState(initialCategories);
+  const [categories] = useState(initialCategories);
   const [items, setItems] = useState(initialItems);
   const [editingItem, setEditingItem] = useState<MenuItemWithOptions | null>(null);
   const [showAddItem, setShowAddItem] = useState(false);
@@ -211,7 +211,7 @@ function ItemFormModal({
     if (!file) return;
     if (file.size > MENU_IMAGE_MAX_SIZE_BYTES) {
       setError(
-        `Image must be under ${MENU_IMAGE_MAX_SIZE_BYTES / 1024}KB. Please compress it first.`
+        `Image must be under ${MENU_IMAGE_MAX_SIZE_BYTES / (1024 * 1024)}MB.`
       );
       return;
     }
@@ -265,8 +265,7 @@ function ItemFormModal({
       } else {
         const { data, error: insertError } = await supabase
           .from("menu_items")
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .insert({ ...payload, display_order: 0, price: payload.price_kobo } as any)
+          .insert({ ...payload, display_order: 0, price: payload.price_kobo })
           .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
           .single();
         if (insertError) throw insertError;
@@ -346,7 +345,7 @@ function ItemFormModal({
           {/* Image upload */}
           <div>
             <label className="block text-sm font-medium text-black-500 mb-1">
-              Image (max 80KB)
+              Image (max 5MB)
             </label>
             <div
               className="border-2 border-dashed border-black-200 rounded-xl p-4 text-center cursor-pointer hover:border-viridian-500 transition-colors"

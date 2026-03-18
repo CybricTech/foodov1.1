@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/settings", label: "Settings", icon: "⚙️", exact: false },
 ];
 
-export function DashboardNav({ restaurantId, userName, role }: DashboardNavProps) {
+export function DashboardNav({ restaurantId: _restaurantId, userName, role: _role }: DashboardNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createBrowserClient();

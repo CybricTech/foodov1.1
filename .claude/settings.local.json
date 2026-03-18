@@ -1,7 +1,39 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx turbo:*)"
+      "Bash(npx turbo:*)",
+      "Bash(npx supabase:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/the-copper-pot)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/dashboard)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/dashboard/login)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/admin)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/admin/login)",
+      "Bash(curl -sL -o /dev/null -w \"%{http_code} -> %{url_effective}\\\\n\" http://localhost:3000/dashboard/login)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -sL -o /dev/null -w \"%{http_code}\" http://localhost:3000/dashboard/login)",
+      "Bash(curl -sL -o /dev/null -w \"%{http_code}\" http://localhost:3000/admin/login)",
+      "Bash(curl -sv http://localhost:3000/dashboard/login)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(mkdir -p \"\\(protected\\)\")",
+      "Bash(mv page.tsx analytics customers menu settings \"\\(protected\\)/\")",
+      "Bash(cp layout.tsx \"\\(protected\\)/layout.tsx\")",
+      "Bash(rm layout.tsx)",
+      "Bash(ls \"\\(protected\\)/\")",
+      "Bash(mv page.tsx analytics disputes logs merchants riders \"\\(protected\\)/\")",
+      "Bash(ls \"/Users/salihuaminu/Foodov1.1/apps/web/app/admin/\\(protected\\)/\")",
+      "Bash(node /tmp/create-bucket.mjs)",
+      "Bash(npm list:*)",
+      "Bash(find /Users/salihuaminu/Foodov1.1/supabase/functions -type f -name *.ts)",
+      "Bash(curl -s http://localhost:3000/admin/login)",
+      "Bash(curl -s \"http://localhost:3000/_next/static/css/app/layout.css?v=1773475429856\")",
+      "Bash(curl -s \"http://localhost:3000/_next/static/chunks/app/admin/login/page.js\")",
+      "Bash(curl -s \"http://localhost:3000/_next/static/chunks/app/layout.js\")",
+      "Bash(curl -s \"http://localhost:3000/_next/static/css/app/layout.css?v=1773475582094\")",
+      "Bash(ls /Users/salihuaminu/Foodov1.1/apps/web/postcss*)",
+      "Bash(ls /Users/salihuaminu/Foodov1.1/postcss*)",
+      "Bash(curl -s \"https://hcyxbmfbyvgybriloffo.supabase.co/auth/v1/admin/users\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\")",
+      "Bash(python3 -c \"import sys,json; users=json.load\\(sys.stdin\\).get\\(''''users'''',[]\\); [print\\(u[''''email''''], u[''''id'''']\\) for u in users]\")",
+      "Bash(python3 -c \"import sys,json; r=json.load\\(sys.stdin\\); print\\(''''OK'''' if r.get\\(''''id''''\\) else r\\)\")"
     ]
   }
 }
