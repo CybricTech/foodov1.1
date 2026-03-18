@@ -9,3 +9,4 @@ export * from "./queries/restaurants";
 export * from "./queries/menu";
 export * from "./queries/orders";
 export * from "./queries/customers";
+export * from "./queries/reviews";

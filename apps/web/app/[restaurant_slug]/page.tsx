@@ -1,13 +1,16 @@
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import {
   getRestaurantBySlug,
-  getMenuCategories,
   getMenuItems,
+  getRestaurantReviews,
+  getRestaurantRatingSummary,
 } from "@foodo/database";
-import { CategoryTabs } from "@/components/storefront/category-tabs";
-import { MenuSections } from "@/components/storefront/menu-sections";
+import { LandingFeatured } from "@/components/storefront/landing-featured";
+import { ReviewsSection } from "@/components/storefront/reviews-section";
+import { LocationSection } from "@/components/storefront/location-section";
 
 export const revalidate = 60;
 
@@ -31,70 +34,62 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
   const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
   if (!restaurant) notFound();
 
-  const [categories, items] = await Promise.all([
-    getMenuCategories(supabase, restaurant.id),
+  const [items, reviews, ratingSummary] = await Promise.all([
     getMenuItems(supabase, restaurant.id),
+    getRestaurantReviews(supabase, restaurant.id),
+    getRestaurantRatingSummary(supabase, restaurant.id),
   ]);
+  const featured = items.filter((i) => i.is_featured);
 
   return (
-    <div className="pb-24">
-      {/* Banner + header */}
-      <div className="relative">
+    <div className="min-h-screen">
+      {/* ── Hero ── */}
+      <section className="relative w-full h-[65vh] min-h-[420px] max-h-[640px]">
         {restaurant.banner_url ? (
-          <div className="relative w-full h-48">
-            <Image
-              src={restaurant.banner_url}
-              alt={`${restaurant.name} banner`}
-              fill
-              className="object-cover"
-              sizes="100vw"
-              priority
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black-900/60 to-transparent" />
-          </div>
+          <Image
+            src={restaurant.banner_url}
+            alt={`${restaurant.name}`}
+            fill
+            className="object-cover"
+            sizes="100vw"
+            quality={90}
+            priority
+          />
         ) : (
-          <div className="w-full h-32 bg-primary/20" />
+          <div className="absolute inset-0 bg-gradient-to-br from-primary to-primary/70" />
         )}
 
-        {/* Restaurant info card */}
-        <div className="px-4 -mt-8 relative">
-          <div className="bg-white rounded-2xl shadow-md p-4 flex gap-4 items-start">
-            {restaurant.logo_url && (
-              <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-black-100">
-                <Image
-                  src={restaurant.logo_url}
-                  alt={restaurant.name}
-                  fill
-                  className="object-cover"
-                  sizes="64px"
-                />
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <h1 className="text-lg font-bold text-black-900 leading-tight">
-                {restaurant.name}
-              </h1>
-              {restaurant.description && (
-                <p className="text-sm text-black-400 mt-0.5 line-clamp-2">
-                  {restaurant.description}
-                </p>
-              )}
-              <div className="flex items-center gap-3 mt-2 flex-wrap">
-                {restaurant.estimated_delivery_minutes && (
-                  <span className="text-xs text-black-500 flex items-center gap-1">
-                    ⏱ {restaurant.estimated_delivery_minutes} min
-                  </span>
-                )}
-                {restaurant.min_order_amount && (
-                  <span className="text-xs text-black-500">
-                    Min ₦{(restaurant.min_order_amount / 100).toFixed(0)}
-                  </span>
-                )}
-              </div>
-            </div>
+        {/* Dark gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+
+        {/* Hero text */}
+        <div className="absolute bottom-0 left-0 right-0 px-6 pb-8">
+          {restaurant.description && (
+            <p className="text-white/75 text-sm font-semibold mb-2 tracking-wide">
+              {restaurant.description}
+            </p>
+          )}
+          <h1 className="text-white text-[2rem] font-extrabold leading-tight tracking-tight">
+            {restaurant.name}
+          </h1>
+
+          {/* CTA buttons */}
+          <div className="mt-5 flex gap-3">
+            <Link
+              href={`/${params.restaurant_slug}/menu`}
+              className="bg-primary text-white px-6 py-3 rounded-2xl font-semibold text-sm hover:opacity-90 transition-opacity"
+            >
+              Order now
+            </Link>
+            <Link
+              href={`/${params.restaurant_slug}/menu`}
+              className="bg-white/15 backdrop-blur-sm text-white px-6 py-3 rounded-2xl font-semibold text-sm border border-white/30 hover:bg-white/25 transition-colors"
+            >
+              View menu
+            </Link>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Closed banner */}
       {!restaurant.accepts_orders && (
@@ -103,21 +98,27 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
         </div>
       )}
 
-      {/* Category sticky tabs */}
-      {categories.length > 0 && (
-        <div className="mt-4">
-          <CategoryTabs categories={categories} />
-        </div>
-      )}
-
-      {/* Menu sections (interactive client component) */}
-      <div className="mt-4 px-4">
-        <MenuSections
-          categories={categories}
-          items={items}
+      {/* ── Featured / Best Sellers ── */}
+      {featured.length > 0 && (
+        <LandingFeatured
+          items={featured}
+          restaurantSlug={params.restaurant_slug}
           restaurantAcceptsOrders={restaurant.accepts_orders}
         />
-      </div>
+      )}
+
+      {/* ── Reviews ── */}
+      <ReviewsSection
+        reviews={reviews}
+        average={ratingSummary.average}
+        count={ratingSummary.count}
+      />
+
+      {/* ── Location & Contact ── */}
+      <LocationSection
+        restaurant={restaurant}
+        restaurantSlug={params.restaurant_slug}
+      />
     </div>
   );
 }

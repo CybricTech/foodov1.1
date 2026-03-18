@@ -18,10 +18,10 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
   const addItem = useCartStore((s) => s.addItem);
 
   const [quantity, setQuantity] = useState(1);
-  const [selectedOptions, setSelectedOptions] = useState<
-    Record<string, string[]>
-  >({});
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [specialRequest, setSpecialRequest] = useState("");
+  const [added, setAdded] = useState(false);
 
   // Reset state when item changes
   useEffect(() => {
@@ -35,6 +35,8 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
       });
       setSelectedOptions(defaults);
       setErrors({});
+      setSpecialRequest("");
+      setAdded(false);
     }
   }, [item?.id]);
 
@@ -57,7 +59,6 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
             : [...current, choiceId],
         };
       }
-      // Single select (radio)
       return {
         ...prev,
         [optionId]: current.includes(choiceId) ? [] : [choiceId],
@@ -115,18 +116,24 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
 
     const snapshot = buildSnapshot();
     const unitPrice = computeUnitPrice();
-    const optionsKey = buildOptionsKey(snapshot);
+    const req = specialRequest.trim();
+    // Include request in key so items with different requests are separate cart lines
+    const optionsKey = buildOptionsKey(snapshot) + (req ? `|req:${req}` : "");
 
     addItem(restaurant.id, restaurant.slug, {
       menuItemId: item.id,
       name: item.name,
+      imageUrl: item.image_url ?? undefined,
       price: unitPrice,
       quantity,
       selectedOptions: snapshot,
+      specialRequest: req || undefined,
       optionsKey,
     });
 
-    onClose();
+    // Show "Added ✓" briefly — prevents ghost-tap on CartBar on mobile
+    setAdded(true);
+    setTimeout(onClose, 700);
   }
 
   const unitPrice = computeUnitPrice();
@@ -194,9 +201,7 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
               )}
               <div className="space-y-2">
                 {opt.choices.map((choice) => {
-                  const isSelected = (selectedOptions[opt.id] ?? []).includes(
-                    choice.id
-                  );
+                  const isSelected = (selectedOptions[opt.id] ?? []).includes(choice.id);
                   const isMulti = (opt.max_selections ?? 1) > 1;
                   return (
                     <label
@@ -218,9 +223,7 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
                               : "border-black-300"
                           )}
                         />
-                        <span className="text-sm text-black-900">
-                          {choice.name}
-                        </span>
+                        <span className="text-sm text-black-900">{choice.name}</span>
                       </div>
                       {choice.price_modifier_kobo !== 0 && (
                         <span className="text-xs text-black-400 ml-2">
@@ -239,6 +242,25 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
               </div>
             </div>
           ))}
+
+          {/* Special requests */}
+          <div className="mt-5 pt-5 border-t border-black-100">
+            <h3 className="font-semibold text-black-900 text-sm mb-0.5">
+              Special requests
+            </h3>
+            <p className="text-xs text-black-400 mb-3">
+              We&apos;ll try our best to accommodate requests, but can&apos;t
+              make changes that affect pricing.
+            </p>
+            <textarea
+              value={specialRequest}
+              onChange={(e) => setSpecialRequest(e.target.value)}
+              placeholder="Add special request"
+              rows={3}
+              maxLength={300}
+              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 placeholder:text-black-400 focus:outline-none focus:border-primary resize-none"
+            />
+          </div>
         </div>
 
         {/* Footer: Quantity + Add to Cart */}
@@ -266,9 +288,10 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
             {/* Add to cart */}
             <button
               onClick={handleAddToCart}
-              className="flex-1 bg-primary hover:bg-primary/90 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-between px-4"
+              disabled={added}
+              className="flex-1 bg-primary hover:bg-primary/90 disabled:opacity-90 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-between px-4"
             >
-              <span>Add to cart</span>
+              <span>{added ? "Added ✓" : "Add to cart"}</span>
               <span>{formatKobo(totalPrice)}</span>
             </button>
           </div>

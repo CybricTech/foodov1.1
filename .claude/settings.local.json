@@ -33,7 +33,9 @@
       "Bash(ls /Users/salihuaminu/Foodov1.1/postcss*)",
       "Bash(curl -s \"https://hcyxbmfbyvgybriloffo.supabase.co/auth/v1/admin/users\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\")",
       "Bash(python3 -c \"import sys,json; users=json.load\\(sys.stdin\\).get\\(''''users'''',[]\\); [print\\(u[''''email''''], u[''''id'''']\\) for u in users]\")",
-      "Bash(python3 -c \"import sys,json; r=json.load\\(sys.stdin\\); print\\(''''OK'''' if r.get\\(''''id''''\\) else r\\)\")"
+      "Bash(python3 -c \"import sys,json; r=json.load\\(sys.stdin\\); print\\(''''OK'''' if r.get\\(''''id''''\\) else r\\)\")",
+      "Bash(find /Users/salihuaminu/Foodov1.1/apps/web/app/[restaurant_slug]/ -type f -name \"*.tsx\" -o -name \"*.ts\" -o -name \"*.json\")",
+      "Bash(xargs cat:*)"
     ]
   }
 }

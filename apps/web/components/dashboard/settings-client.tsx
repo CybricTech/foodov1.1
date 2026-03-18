@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@foodo/ui";
 import type { Restaurant } from "@foodo/database";
@@ -34,6 +34,72 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+
+  // Banner upload state
+  const [bannerUrl, setBannerUrl] = useState(restaurant.banner_url ?? "");
+  const [bannerUploading, setBannerUploading] = useState(false);
+  const [bannerError, setBannerError] = useState("");
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleBannerUpload(file: File) {
+    const MAX_MB = 5;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      setBannerError(`File too large — max ${MAX_MB} MB`);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setBannerError("Please select an image file");
+      return;
+    }
+
+    setBannerUploading(true);
+    setBannerError("");
+
+    const ext = file.name.split(".").pop() ?? "jpg";
+    // Use a unique filename every time so the CDN never serves a stale cached file
+    const path = `${restaurant.id}/banner-${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("menu-images")
+      .upload(path, file, { contentType: file.type });
+
+    if (uploadError) {
+      setBannerError(uploadError.message);
+      setBannerUploading(false);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("menu-images")
+      .getPublicUrl(path);
+
+    const { error: dbError } = await supabase
+      .from("restaurants")
+      .update({ banner_url: urlData.publicUrl })
+      .eq("id", restaurant.id);
+
+    if (dbError) {
+      setBannerError(dbError.message);
+    } else {
+      setBannerUrl(urlData.publicUrl);
+    }
+
+    setBannerUploading(false);
+  }
+
+  async function handleBannerRemove() {
+    setBannerError("");
+    const { error: dbError } = await supabase
+      .from("restaurants")
+      .update({ banner_url: null })
+      .eq("id", restaurant.id);
+
+    if (dbError) {
+      setBannerError(dbError.message);
+    } else {
+      setBannerUrl("");
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -116,6 +182,79 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               />
               <span className="text-sm text-black-500">{primaryColor}</span>
             </div>
+          </Field>
+
+          {/* Hero banner upload */}
+          <Field label="Hero photo">
+            <input
+              ref={bannerInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleBannerUpload(file);
+                // reset so re-selecting same file triggers onChange
+                e.target.value = "";
+              }}
+            />
+
+            {bannerUrl ? (
+              <div className="space-y-3">
+                {/* Preview — aspect ratio matches the storefront hero (3:1) */}
+                <div className="relative w-full aspect-[3/1] rounded-xl overflow-hidden border border-black-100 bg-black-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={bannerUrl}
+                    alt="Hero banner preview"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <p className="text-xs text-black-400">
+                  Preview — this is how it appears as the storefront hero
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => bannerInputRef.current?.click()}
+                    disabled={bannerUploading}
+                    className="flex-1 py-2 rounded-xl border border-black-200 text-sm font-medium text-black-900 hover:bg-black-50 disabled:opacity-50 transition-colors"
+                  >
+                    {bannerUploading ? "Uploading…" : "Replace photo"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBannerRemove}
+                    disabled={bannerUploading}
+                    className="py-2 px-4 rounded-xl border border-cinnabar-500/30 text-sm font-medium text-cinnabar-500 hover:bg-cinnabar-100 disabled:opacity-50 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => bannerInputRef.current?.click()}
+                disabled={bannerUploading}
+                className={cn(
+                  "w-full h-28 rounded-xl border-2 border-dashed border-black-200",
+                  "flex flex-col items-center justify-center gap-1.5",
+                  "text-black-400 hover:border-viridian-500 hover:text-viridian-500",
+                  "disabled:opacity-50 transition-colors"
+                )}
+              >
+                <span className="text-2xl">🖼</span>
+                <span className="text-sm font-medium">
+                  {bannerUploading ? "Uploading…" : "Upload hero photo"}
+                </span>
+                <span className="text-xs">JPG, PNG or WebP · max 5 MB</span>
+              </button>
+            )}
+
+            {bannerError && (
+              <p className="text-xs text-cinnabar-500 mt-1">{bannerError}</p>
+            )}
           </Field>
         </Section>
 

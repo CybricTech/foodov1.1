@@ -7,11 +7,14 @@ import type { SelectedOptionSnapshot } from "@foodo/database";
 export interface CartItem {
   menuItemId: string;
   name: string;
+  imageUrl?: string;
   /** Unit price in kobo */
   price: number;
   quantity: number;
   selectedOptions: SelectedOptionSnapshot[];
-  /** Stable key derived from sorted selected option choice IDs */
+  /** Customer's free-text special request for this line item */
+  specialRequest?: string;
+  /** Stable key derived from sorted selected option choice IDs + special request */
   optionsKey: string;
   /** price * quantity in kobo */
   lineTotal: number;
@@ -21,6 +24,8 @@ interface CartStore {
   restaurantId: string | null;
   restaurantSlug: string | null;
   items: CartItem[];
+  fulfillmentType: "delivery" | "pickup";
+  setFulfillmentType: (type: "delivery" | "pickup") => void;
   addItem: (
     restaurantId: string,
     restaurantSlug: string,
@@ -43,6 +48,11 @@ export const useCartStore = create<CartStore>()(
       restaurantId: null,
       restaurantSlug: null,
       items: [],
+      fulfillmentType: "delivery",
+
+      setFulfillmentType(type) {
+        set({ fulfillmentType: type });
+      },
 
       addItem(restaurantId, restaurantSlug, item) {
         set((state) => {
@@ -51,12 +61,7 @@ export const useCartStore = create<CartStore>()(
             return {
               restaurantId,
               restaurantSlug,
-              items: [
-                {
-                  ...item,
-                  lineTotal: item.price * item.quantity,
-                },
-              ],
+              items: [{ ...item, lineTotal: item.price * item.quantity }],
             };
           }
 
@@ -97,8 +102,7 @@ export const useCartStore = create<CartStore>()(
       removeItem(menuItemId, optionsKey) {
         set((state) => ({
           items: state.items.filter(
-            (i) =>
-              !(i.menuItemId === menuItemId && i.optionsKey === optionsKey)
+            (i) => !(i.menuItemId === menuItemId && i.optionsKey === optionsKey)
           ),
         }));
       },
@@ -118,7 +122,7 @@ export const useCartStore = create<CartStore>()(
       },
 
       clear() {
-        set({ restaurantId: null, restaurantSlug: null, items: [] });
+        set({ restaurantId: null, restaurantSlug: null, items: [], fulfillmentType: "delivery" });
       },
 
       totalItems() {

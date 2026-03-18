@@ -34,9 +34,10 @@ export default function CheckoutPage() {
   const [email, setEmail] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // Fulfillment fields
+  // Fulfillment fields — pre-filled from cart sheet selection
+  const cartFulfillmentType = useCartStore((s) => s.fulfillmentType);
   const [fulfillmentType, setFulfillmentType] = useState<"delivery" | "pickup">(
-    "delivery"
+    cartFulfillmentType
   );
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [specialInstructions, setSpecialInstructions] = useState("");
