@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
       total_amount:
         (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number),
       order_number: `ORD-${Date.now()}`,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     .select("id, order_number")
     .single();

@@ -100,7 +100,7 @@ export function CustomersClient({
             <p className="text-sm">No customers yet</p>
           </div>
         )}
-        {filtered.map((c, i) => (
+        {filtered.map((c) => (
           <div
             key={c.id}
             className="flex items-center gap-4 px-4 py-3 border-b border-black-50 last:border-0"
