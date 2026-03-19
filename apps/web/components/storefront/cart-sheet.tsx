@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { cn } from "@foodo/ui";
 import { formatKobo } from "@foodo/utils";
 import { useCartStore } from "@/lib/stores/cart";
 
@@ -16,8 +15,6 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore((s) => s.subtotalKobo)();
   const slug = useCartStore((s) => s.restaurantSlug);
-  const fulfillmentType = useCartStore((s) => s.fulfillmentType);
-  const setFulfillmentType = useCartStore((s) => s.setFulfillmentType);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
 
   // Trap scroll when open
@@ -61,26 +58,6 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
           >
             ✕
           </button>
-        </div>
-
-        {/* Pickup / Delivery toggle */}
-        <div className="px-5 pb-4 flex-shrink-0">
-          <div className="flex bg-black-100 rounded-2xl p-1 gap-1">
-            {(["pickup", "delivery"] as const).map((type) => (
-              <button
-                key={type}
-                onClick={() => setFulfillmentType(type)}
-                className={cn(
-                  "flex-1 py-2 rounded-xl text-sm font-semibold capitalize transition-colors",
-                  fulfillmentType === type
-                    ? "bg-white text-black-900 shadow-card"
-                    : "text-black-400 hover:text-black-600"
-                )}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Cart items */}
