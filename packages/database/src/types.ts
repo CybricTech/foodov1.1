@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       audit_logs: {
@@ -464,6 +489,7 @@ export type Database = {
           delivery_fee_kobo: number
           delivery_lat: number | null
           delivery_lng: number | null
+          delivery_status: string | null
           discount_amount: number
           estimated_delivery_at: string | null
           fulfillment_type: string
@@ -496,6 +522,7 @@ export type Database = {
           delivery_fee_kobo?: number
           delivery_lat?: number | null
           delivery_lng?: number | null
+          delivery_status?: string | null
           discount_amount?: number
           estimated_delivery_at?: string | null
           fulfillment_type: string
@@ -528,6 +555,7 @@ export type Database = {
           delivery_fee_kobo?: number
           delivery_lat?: number | null
           delivery_lng?: number | null
+          delivery_status?: string | null
           discount_amount?: number
           estimated_delivery_at?: string | null
           fulfillment_type?: string
@@ -788,6 +816,67 @@ export type Database = {
         }
         Relationships: []
       }
+      reviews: {
+        Row: {
+          comment: string | null
+          created_at: string
+          customer_id: string | null
+          id: string
+          is_approved: boolean
+          order_id: string | null
+          rating: number
+          restaurant_id: string
+          reviewer_name: string
+          reviewer_phone: string | null
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          is_approved?: boolean
+          order_id?: string | null
+          rating: number
+          restaurant_id: string
+          reviewer_name: string
+          reviewer_phone?: string | null
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          is_approved?: boolean
+          order_id?: string | null
+          rating?: number
+          restaurant_id?: string
+          reviewer_name?: string
+          reviewer_phone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sms_logs: {
         Row: {
           created_at: string
@@ -906,6 +995,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_my_restaurant_id: { Args: never; Returns: string }
+      get_my_role: { Args: never; Returns: string }
       upsert_customer: {
         Args: {
           p_email?: string
@@ -1044,14 +1135,15 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
 } as const
 
-// ============================================================
-// Convenience type aliases used by query helpers
-// ============================================================
+// ── Convenience type aliases ──────────────────────────────────
 type PublicTables = Database["public"]["Tables"];
 
 export type Restaurant = PublicTables["restaurants"]["Row"];
@@ -1067,30 +1159,21 @@ export type Payment = PublicTables["payments"]["Row"];
 export type SmsLog = PublicTables["sms_logs"]["Row"];
 export type UserProfile = PublicTables["user_profiles"]["Row"];
 export type PlatformRider = PublicTables["platform_riders"]["Row"];
+export type Review = PublicTables["reviews"]["Row"];
+export type ReviewInsert = PublicTables["reviews"]["Insert"];
 
-// Composite types for queries with joins
 export type MenuItemWithOptions = MenuItem & {
-  options: (MenuItemOption & {
-    choices: MenuItemOptionChoice[];
-  })[];
+  options: (MenuItemOption & { choices: MenuItemOptionChoice[] })[];
 };
-
 export type OrderWithItems = Order & {
   items: OrderItem[];
   delivery_assignment: DeliveryAssignment | null;
 };
-
 export type CustomerWithOrders = Customer & {
   orders: Pick<Order, "id" | "order_number" | "total_amount" | "status" | "created_at">[];
 };
-
-// Snapshot of a selected option at time of adding to cart / placing order
 export interface SelectedOptionSnapshot {
   optionId: string;
   optionName: string;
-  choices: {
-    choiceId: string;
-    choiceName: string;
-    priceModifierKobo: number;
-  }[];
+  choices: { choiceId: string; choiceName: string; priceModifierKobo: number }[];
 }
