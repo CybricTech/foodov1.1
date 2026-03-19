@@ -301,7 +301,7 @@ export default function CheckoutPage() {
                     {item.selectedOptions.length > 0 && (
                       <p className="text-xs text-black-400 mt-0.5">
                         {item.selectedOptions
-                          .flatMap((o) => o.choices.map((c) => c.choiceName))
+                          .flatMap((o: { choices: { choiceName: string }[] }) => o.choices.map((c: { choiceName: string }) => c.choiceName))
                           .join(", ")}
                       </p>
                     )}

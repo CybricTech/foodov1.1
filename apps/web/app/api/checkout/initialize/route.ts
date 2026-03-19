@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createServerClient } from "@/lib/supabase/server";
-import { ngnToKobo } from "@foodo/utils";
+import { createServiceClient } from "@/lib/supabase/server";
+// ngnToKobo available from @foodo/utils if needed
 
 const InitializeSchema = z.object({
   restaurantId: z.string().uuid(),
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   }
 
   const data = parsed.data;
-  const supabase = await createServerClient();
+  const supabase = createServiceClient();
 
   // Verify restaurant exists and accepts orders
   const { data: restaurant, error: restError } = await supabase
@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
         subtotal_kobo: subtotalKobo,
         delivery_fee_kobo: deliveryFeeKobo,
       } as import("@foodo/database").Json,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     .select("id")
     .single();

@@ -40,8 +40,9 @@ yarn-error.log*
 dist/
 web-build/
 
-# Generated types (re-generated from Supabase CLI)
-packages/database/src/types.ts
+# Generated types — committed to repo so CI doesn't need Supabase credentials
+# Re-generate with: SUPABASE_ACCESS_TOKEN=<token> npx supabase gen types typescript --project-id <ref> > packages/database/src/types.ts
+# packages/database/src/types.ts
 
 # Plans and temp SQL files
 plans/

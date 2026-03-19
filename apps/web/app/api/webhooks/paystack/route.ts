@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
       total_amount:
         (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number),
       order_number: `ORD-${Date.now()}`,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     .select("id, order_number")
     .single();
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
     p_restaurant_id: restaurantId,
     p_phone: meta.customer_phone as string,
     p_full_name: meta.customer_name as string,
-    p_email: (meta.customer_email as string) || null,
+    p_email: (meta.customer_email as string) || undefined,
     p_order_total_kobo: totalKobo,
   });
 
