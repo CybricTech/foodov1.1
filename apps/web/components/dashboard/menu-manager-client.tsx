@@ -284,6 +284,23 @@ function AddCategoryModal({
   );
 }
 
+interface DraftChoice {
+  name: string;
+  priceModifierNgn: string;
+}
+
+interface DraftOption {
+  name: string;
+  isRequired: boolean;
+  maxSelections: number;
+  choices: DraftChoice[];
+}
+
+interface DraftSize {
+  name: string;
+  priceNgn: string;
+}
+
 interface ItemFormModalProps {
   restaurantId: string;
   categories: MenuCategory[];
@@ -306,27 +323,94 @@ function ItemFormModal({
 
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
-  const [priceNgn, setPriceNgn] = useState(
-    item ? (item.price_kobo / 100).toString() : ""
-  );
   const [categoryId, setCategoryId] = useState(
     item?.category_id ?? defaultCategoryId ?? ""
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>(
-    item?.image_url ?? ""
-  );
+  const [imagePreview, setImagePreview] = useState<string>(item?.image_url ?? "");
   const [isFeatured, setIsFeatured] = useState(item?.is_featured ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Detect existing size group: a required, single-select option on an item with price_kobo=0
+  const existingSizeGroup = item?.price_kobo === 0
+    ? item.options.find((o) => o.is_required && o.max_selections === 1)
+    : undefined;
+
+  const [hasSizes, setHasSizes] = useState(!!existingSizeGroup);
+  const [sizesLabel, setSizesLabel] = useState(existingSizeGroup?.name ?? "Choose size");
+  const [draftSizes, setDraftSizes] = useState<DraftSize[]>(
+    existingSizeGroup?.choices.map((c) => ({
+      name: c.name,
+      priceNgn: c.price_modifier_kobo ? (c.price_modifier_kobo / 100).toString() : "",
+    })) ?? [{ name: "", priceNgn: "" }, { name: "", priceNgn: "" }]
+  );
+
+  // Base price — only used when hasSizes is false
+  const [priceNgn, setPriceNgn] = useState(
+    item && item.price_kobo > 0 ? (item.price_kobo / 100).toString() : ""
+  );
+
+  const [draftOptions, setDraftOptions] = useState<DraftOption[]>(
+    (item?.options ?? [])
+      .filter((o) => o.id !== existingSizeGroup?.id)
+      .map((o) => ({
+        name: o.name,
+        isRequired: o.is_required,
+        maxSelections: o.max_selections,
+        choices: o.choices.map((c) => ({
+          name: c.name,
+          priceModifierNgn: c.price_modifier_kobo ? (c.price_modifier_kobo / 100).toString() : "",
+        })),
+      }))
+  );
+
+  function addOption() {
+    setDraftOptions((prev) => [
+      ...prev,
+      { name: "", isRequired: false, maxSelections: 1, choices: [{ name: "", priceModifierNgn: "" }] },
+    ]);
+  }
+
+  function removeOption(oi: number) {
+    setDraftOptions((prev) => prev.filter((_, i) => i !== oi));
+  }
+
+  function updateOption(oi: number, patch: Partial<DraftOption>) {
+    setDraftOptions((prev) => prev.map((o, i) => (i === oi ? { ...o, ...patch } : o)));
+  }
+
+  function addChoice(oi: number) {
+    setDraftOptions((prev) =>
+      prev.map((o, i) =>
+        i === oi ? { ...o, choices: [...o.choices, { name: "", priceModifierNgn: "" }] } : o
+      )
+    );
+  }
+
+  function removeChoice(oi: number, ci: number) {
+    setDraftOptions((prev) =>
+      prev.map((o, i) =>
+        i === oi ? { ...o, choices: o.choices.filter((_, j) => j !== ci) } : o
+      )
+    );
+  }
+
+  function updateChoice(oi: number, ci: number, patch: Partial<DraftChoice>) {
+    setDraftOptions((prev) =>
+      prev.map((o, i) =>
+        i === oi
+          ? { ...o, choices: o.choices.map((c, j) => (j === ci ? { ...c, ...patch } : c)) }
+          : o
+      )
+    );
+  }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > MENU_IMAGE_MAX_SIZE_BYTES) {
-      setError(
-        `Image must be under ${MENU_IMAGE_MAX_SIZE_BYTES / (1024 * 1024)}MB.`
-      );
+      setError(`Image must be under ${MENU_IMAGE_MAX_SIZE_BYTES / (1024 * 1024)}MB.`);
       return;
     }
     setError("");
@@ -336,7 +420,12 @@ function ItemFormModal({
 
   async function handleSave() {
     if (!name.trim()) { setError("Name is required"); return; }
-    if (!priceNgn || isNaN(parseFloat(priceNgn))) { setError("Valid price required"); return; }
+    if (hasSizes) {
+      const validSizes = draftSizes.filter((s) => s.name.trim() && s.priceNgn);
+      if (validSizes.length < 2) { setError("Add at least 2 sizes"); return; }
+    } else {
+      if (!priceNgn || isNaN(parseFloat(priceNgn))) { setError("Valid price required"); return; }
+    }
     setSaving(true);
     setError("");
 
@@ -349,44 +438,115 @@ function ItemFormModal({
           .from("menu-images")
           .upload(path, imageFile, { upsert: true });
         if (uploadError) throw uploadError;
-        const { data: { publicUrl } } = supabase.storage
-          .from("menu-images")
-          .getPublicUrl(path);
+        const { data: { publicUrl } } = supabase.storage.from("menu-images").getPublicUrl(path);
         imageUrl = publicUrl;
       }
 
+      const priceKobo = hasSizes ? 0 : Math.round(parseFloat(priceNgn) * 100);
       const payload = {
         restaurant_id: restaurantId,
         name: name.trim(),
         description: description.trim() || null,
-        price_kobo: Math.round(parseFloat(priceNgn) * 100),
+        price_kobo: priceKobo,
         category_id: categoryId || null,
         image_url: imageUrl,
         is_featured: isFeatured,
       };
 
-      let result: MenuItemWithOptions;
+      let itemId: string;
 
       if (item) {
         const { data, error: updateError } = await supabase
           .from("menu_items")
           .update(payload)
           .eq("id", item.id)
-          .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
+          .select("id")
           .single();
         if (updateError) throw updateError;
-        result = data as unknown as MenuItemWithOptions;
+        itemId = data.id;
+        // Delete all existing options (cascade removes choices)
+        await supabase.from("menu_item_options").delete().eq("menu_item_id", itemId);
       } else {
         const { data, error: insertError } = await supabase
           .from("menu_items")
-          .insert({ ...payload, display_order: 0, price: payload.price_kobo })
-          .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
+          .insert({ ...payload, display_order: 0, price: priceKobo })
+          .select("id")
           .single();
         if (insertError) throw insertError;
-        result = data as unknown as MenuItemWithOptions;
+        itemId = data.id;
       }
 
-      onSave(result);
+      // Save size group first (if enabled)
+      if (hasSizes) {
+        const validSizes = draftSizes.filter((s) => s.name.trim() && s.priceNgn);
+        const { data: sizeOptRow, error: sizeOptError } = await supabase
+          .from("menu_item_options")
+          .insert({
+            restaurant_id: restaurantId,
+            menu_item_id: itemId,
+            name: sizesLabel.trim() || "Choose size",
+            is_required: true,
+            min_selections: 1,
+            max_selections: 1,
+          })
+          .select("id")
+          .single();
+        if (sizeOptError) throw sizeOptError;
+        const { error: sizeChoiceError } = await supabase
+          .from("menu_item_option_choices")
+          .insert(
+            validSizes.map((s) => ({
+              restaurant_id: restaurantId,
+              option_id: sizeOptRow.id,
+              name: s.name.trim(),
+              price_modifier_kobo: Math.round(parseFloat(s.priceNgn) * 100),
+              is_available: true,
+            }))
+          );
+        if (sizeChoiceError) throw sizeChoiceError;
+      }
+
+      // Save add-on option groups + choices
+      for (const opt of draftOptions) {
+        if (!opt.name.trim()) continue;
+        const { data: optRow, error: optError } = await supabase
+          .from("menu_item_options")
+          .insert({
+            restaurant_id: restaurantId,
+            menu_item_id: itemId,
+            name: opt.name.trim(),
+            is_required: opt.isRequired,
+            min_selections: opt.isRequired ? 1 : 0,
+            max_selections: opt.maxSelections,
+          })
+          .select("id")
+          .single();
+        if (optError) throw optError;
+
+        const validChoices = opt.choices.filter((c) => c.name.trim());
+        if (validChoices.length > 0) {
+          const { error: choiceError } = await supabase.from("menu_item_option_choices").insert(
+            validChoices.map((c) => ({
+              restaurant_id: restaurantId,
+              option_id: optRow.id,
+              name: c.name.trim(),
+              price_modifier_kobo: Math.round(parseFloat(c.priceModifierNgn || "0") * 100),
+              is_available: true,
+            }))
+          );
+          if (choiceError) throw choiceError;
+        }
+      }
+
+      // Refetch full item with options
+      const { data: fullItem, error: fetchError } = await supabase
+        .from("menu_items")
+        .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
+        .eq("id", itemId)
+        .single();
+      if (fetchError) throw fetchError;
+
+      onSave(fullItem as unknown as MenuItemWithOptions);
     } catch (e: unknown) {
       setError((e as Error).message ?? "Save failed");
     } finally {
@@ -428,61 +588,132 @@ function ItemFormModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-black-500 mb-1">Price (₦)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={priceNgn}
-                onChange={(e) => setPriceNgn(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
-                placeholder="1500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-black-500 mb-1">Category</label>
-              <select
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500 bg-white"
-              >
-                <option value="">No category</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+          {/* Sizes toggle */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hasSizes}
+              onChange={(e) => setHasSizes(e.target.checked)}
+              className="w-4 h-4 accent-viridian-500"
+            />
+            <span className="text-sm text-black-900 font-medium">This item has multiple sizes / portions</span>
+          </label>
+
+          {hasSizes ? (
+            /* Sizes section */
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-black-500 mb-1">Size label</label>
+                  <input
+                    value={sizesLabel}
+                    onChange={(e) => setSizesLabel(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                    placeholder="e.g. Choose size"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-black-500 mb-1">Category</label>
+                  <select
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500 bg-white"
+                  >
+                    <option value="">No category</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {draftSizes.map((size, si) => (
+                  <div key={si} className="flex items-center gap-2">
+                    <input
+                      value={size.name}
+                      onChange={(e) => setDraftSizes((prev) => prev.map((s, i) => i === si ? { ...s, name: e.target.value } : s))}
+                      placeholder="e.g. 6 pieces"
+                      className="flex-1 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                    />
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className="text-xs text-black-400">₦</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={size.priceNgn}
+                        onChange={(e) => setDraftSizes((prev) => prev.map((s, i) => i === si ? { ...s, priceNgn: e.target.value } : s))}
+                        placeholder="2000"
+                        className="w-24 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                      />
+                    </div>
+                    {draftSizes.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => setDraftSizes((prev) => prev.filter((_, i) => i !== si))}
+                        className="text-black-300 hover:text-cinnabar-500 text-sm"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 ))}
-              </select>
+                <button
+                  type="button"
+                  onClick={() => setDraftSizes((prev) => [...prev, { name: "", priceNgn: "" }])}
+                  className="text-xs text-black-400 hover:text-viridian-500 font-medium"
+                >
+                  + Add size
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Normal price + category */
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-black-500 mb-1">Price (₦)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={priceNgn}
+                  onChange={(e) => setPriceNgn(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                  placeholder="1500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-black-500 mb-1">Category</label>
+                <select
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500 bg-white"
+                >
+                  <option value="">No category</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
 
           {/* Image upload */}
           <div>
-            <label className="block text-sm font-medium text-black-500 mb-1">
-              Image (max 5MB)
-            </label>
+            <label className="block text-sm font-medium text-black-500 mb-1">Image (max 5MB)</label>
             <div
               className="border-2 border-dashed border-black-200 rounded-xl p-4 text-center cursor-pointer hover:border-viridian-500 transition-colors"
               onClick={() => fileRef.current?.click()}
             >
               {imagePreview ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  className="w-full h-32 object-cover rounded-lg"
-                />
+                <img src={imagePreview} alt="Preview" className="w-full h-32 object-cover rounded-lg" />
               ) : (
                 <p className="text-sm text-black-400">Click to upload image</p>
               )}
             </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
@@ -495,9 +726,111 @@ function ItemFormModal({
             <span className="text-sm text-black-900">Featured item</span>
           </label>
 
-          {error && (
-            <p className="text-sm text-cinnabar-500">{error}</p>
-          )}
+          {/* Options & Add-ons */}
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-black-700">Options & Add-ons</p>
+              <button
+                type="button"
+                onClick={addOption}
+                className="text-xs text-viridian-500 font-semibold hover:text-viridian-600"
+              >
+                + Add option group
+              </button>
+            </div>
+
+            {draftOptions.length === 0 && (
+              <p className="text-xs text-black-400">
+                Add option groups so customers can customise their order (e.g. "Choose Protein", "Add Extras").
+              </p>
+            )}
+
+            {draftOptions.map((opt, oi) => (
+              <div key={oi} className="border border-black-200 rounded-xl p-3 space-y-2.5">
+                {/* Group header */}
+                <div className="flex items-center gap-2">
+                  <input
+                    value={opt.name}
+                    onChange={(e) => updateOption(oi, { name: e.target.value })}
+                    placeholder="Group name (e.g. Choose Protein)"
+                    className="flex-1 px-3 py-1.5 rounded-lg border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeOption(oi)}
+                    className="text-black-300 hover:text-cinnabar-500 text-sm flex-shrink-0"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Group settings */}
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={opt.isRequired}
+                      onChange={(e) => updateOption(oi, { isRequired: e.target.checked })}
+                      className="w-3.5 h-3.5 accent-viridian-500"
+                    />
+                    <span className="text-xs text-black-500">Required</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-black-400">Max selections:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={opt.maxSelections}
+                      onChange={(e) => updateOption(oi, { maxSelections: parseInt(e.target.value) || 1 })}
+                      className="w-12 px-2 py-1 rounded-lg border border-black-200 text-xs text-center focus:outline-none focus:border-viridian-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Choices */}
+                <div className="space-y-1.5">
+                  {opt.choices.map((choice, ci) => (
+                    <div key={ci} className="flex items-center gap-2">
+                      <input
+                        value={choice.name}
+                        onChange={(e) => updateChoice(oi, ci, { name: e.target.value })}
+                        placeholder="Choice name (e.g. Chicken)"
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                      />
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className="text-xs text-black-400">+₦</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={choice.priceModifierNgn}
+                          onChange={(e) => updateChoice(oi, ci, { priceModifierNgn: e.target.value })}
+                          placeholder="0"
+                          className="w-16 px-2 py-1.5 rounded-lg border border-black-200 text-sm text-right focus:outline-none focus:border-viridian-500"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeChoice(oi, ci)}
+                        className="text-black-300 hover:text-cinnabar-500 text-sm flex-shrink-0"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => addChoice(oi)}
+                    className="text-xs text-black-400 hover:text-viridian-500 font-medium"
+                  >
+                    + Add choice
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {error && <p className="text-sm text-cinnabar-500">{error}</p>}
         </div>
 
         <div className="px-4 py-4 border-t border-black-100">

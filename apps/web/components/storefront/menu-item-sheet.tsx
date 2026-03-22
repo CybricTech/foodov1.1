@@ -139,6 +139,17 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
   const unitPrice = computeUnitPrice();
   const totalPrice = unitPrice * quantity;
 
+  // Items with price_kobo=0 use a required single-select option group as size/portion selector
+  const isSizedItem = item.price_kobo === 0 &&
+    item.options?.some((o) => o.is_required && o.max_selections === 1);
+  const minSizePrice = isSizedItem
+    ? Math.min(...(item.options?.flatMap((o) =>
+        o.is_required && o.max_selections === 1
+          ? o.choices.map((c) => c.price_modifier_kobo ?? 0)
+          : []
+      ) ?? [0]))
+    : 0;
+
   return (
     <>
       {/* Backdrop */}
@@ -175,73 +186,76 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
             <p className="mt-1 text-sm text-black-400">{item.description}</p>
           )}
           <p className="mt-2 text-lg font-bold text-primary">
-            {formatKobo(item.price_kobo)}
+            {isSizedItem
+              ? `from ${formatKobo(minSizePrice)}`
+              : formatKobo(item.price_kobo)}
           </p>
 
           {/* Options */}
-          {item.options?.map((opt) => (
-            <div key={opt.id} className="mt-5">
-              <div className="flex items-baseline justify-between mb-2">
-                <h3 className="font-semibold text-black-900 text-sm">
-                  {opt.name}
-                </h3>
-                <span
-                  className={cn(
-                    "text-xs px-2 py-0.5 rounded-full font-medium",
-                    opt.min_selections > 0
-                      ? "bg-cinnabar-100 text-cinnabar-500"
-                      : "bg-black-100 text-black-400"
-                  )}
-                >
-                  {opt.min_selections > 0 ? "Required" : "Optional"}
-                </span>
-              </div>
-              {errors[opt.id] && (
-                <p className="text-xs text-cinnabar-500 mb-1">{errors[opt.id]}</p>
-              )}
-              <div className="space-y-2">
-                {opt.choices.map((choice) => {
-                  const isSelected = (selectedOptions[opt.id] ?? []).includes(choice.id);
-                  const isMulti = (opt.max_selections ?? 1) > 1;
-                  return (
-                    <label
-                      key={choice.id}
-                      className={cn(
-                        "flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors",
-                        isSelected
-                          ? "border-primary bg-primary/5"
-                          : "border-black-100 hover:border-black-200"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={cn(
-                            "w-4 h-4 border-2 transition-colors flex-shrink-0",
-                            isMulti ? "rounded" : "rounded-full",
-                            isSelected
-                              ? "border-primary bg-primary"
-                              : "border-black-300"
-                          )}
+          {item.options?.map((opt) => {
+            const isSizeGroup = isSizedItem && opt.is_required && opt.max_selections === 1;
+            return (
+              <div key={opt.id} className="mt-5">
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className="font-semibold text-black-900 text-sm">{opt.name}</h3>
+                  <span
+                    className={cn(
+                      "text-xs px-2 py-0.5 rounded-full font-medium",
+                      opt.min_selections > 0
+                        ? "bg-cinnabar-100 text-cinnabar-500"
+                        : "bg-black-100 text-black-400"
+                    )}
+                  >
+                    {opt.min_selections > 0 ? "Required" : "Optional"}
+                  </span>
+                </div>
+                {errors[opt.id] && (
+                  <p className="text-xs text-cinnabar-500 mb-1">{errors[opt.id]}</p>
+                )}
+                <div className="space-y-2">
+                  {opt.choices.map((choice) => {
+                    const isSelected = (selectedOptions[opt.id] ?? []).includes(choice.id);
+                    const isMulti = (opt.max_selections ?? 1) > 1;
+                    return (
+                      <label
+                        key={choice.id}
+                        className={cn(
+                          "flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors",
+                          isSelected
+                            ? "border-primary bg-primary/5"
+                            : "border-black-100 hover:border-black-200"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={cn(
+                              "w-4 h-4 border-2 transition-colors flex-shrink-0",
+                              isMulti ? "rounded" : "rounded-full",
+                              isSelected ? "border-primary bg-primary" : "border-black-300"
+                            )}
+                          />
+                          <span className="text-sm text-black-900">{choice.name}</span>
+                        </div>
+                        {(choice.price_modifier_kobo ?? 0) !== 0 && (
+                          <span className="text-xs text-black-400 ml-2">
+                            {isSizeGroup
+                              ? formatKobo(choice.price_modifier_kobo ?? 0)
+                              : `+${formatKobo(choice.price_modifier_kobo ?? 0)}`}
+                          </span>
+                        )}
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={isSelected}
+                          onChange={() => toggleChoice(opt.id, choice.id, isMulti)}
                         />
-                        <span className="text-sm text-black-900">{choice.name}</span>
-                      </div>
-                      {choice.price_modifier_kobo !== 0 && (
-                        <span className="text-xs text-black-400 ml-2">
-                          +{formatKobo(choice.price_modifier_kobo ?? 0)}
-                        </span>
-                      )}
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={isSelected}
-                        onChange={() => toggleChoice(opt.id, choice.id, isMulti)}
-                      />
-                    </label>
-                  );
-                })}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Special requests */}
           <div className="mt-5 pt-5 border-t border-black-100">

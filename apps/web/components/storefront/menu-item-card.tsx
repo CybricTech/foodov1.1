@@ -31,7 +31,13 @@ export function MenuItemCard({ item, onSelect }: MenuItemCardProps) {
           </p>
         )}
         <p className="mt-2 text-sm font-bold text-primary">
-          {formatKobo(item.price_kobo)}
+          {item.price_kobo === 0
+            ? (() => {
+                const sizeGroup = item.options?.find((o) => o.is_required && o.max_selections === 1);
+                const first = sizeGroup?.choices[0];
+                return first ? `from ${formatKobo(first.price_modifier_kobo ?? 0)}` : formatKobo(0);
+              })()
+            : formatKobo(item.price_kobo)}
         </p>
         {!item.is_available && (
           <span className="inline-block mt-1 text-xs text-cinnabar-500 font-medium">

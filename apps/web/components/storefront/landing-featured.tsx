@@ -83,7 +83,13 @@ export function LandingFeatured({
                 {item.name}
               </p>
               <p className="text-sm font-bold text-primary mt-1">
-                {formatKobo(item.price_kobo)}
+                {item.price_kobo === 0
+                  ? (() => {
+                      const sizeGroup = item.options?.find((o) => o.is_required && o.max_selections === 1);
+                      const first = sizeGroup?.choices[0];
+                      return first ? `from ${formatKobo(first.price_modifier_kobo ?? 0)}` : formatKobo(0);
+                    })()
+                  : formatKobo(item.price_kobo)}
               </p>
             </button>
           ))}
