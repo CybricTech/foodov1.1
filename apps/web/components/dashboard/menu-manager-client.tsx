@@ -741,7 +741,7 @@ function ItemFormModal({
 
             {draftOptions.length === 0 && (
               <p className="text-xs text-black-400">
-                Add option groups so customers can customise their order (e.g. "Choose Protein", "Add Extras").
+                Add option groups so customers can customise their order (e.g. &ldquo;Choose Protein&rdquo;, &ldquo;Add Extras&rdquo;).
               </p>
             )}
 
