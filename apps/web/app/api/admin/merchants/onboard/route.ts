@@ -10,6 +10,7 @@ const OnboardSchema = z.object({
     .max(60)
     .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers and hyphens"),
   email: z.string().email(),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   city: z.string().max(100).optional(),
 });
 
@@ -51,9 +52,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { name, slug, email, city } = parsed.data;
-
-  // Create restaurant
+  const { name, slug, email, password, city } = parsed.data;
   const { data: restaurant, error: restError } = await serviceClient
     .from("restaurants")
     .insert({
@@ -88,14 +87,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: restError.message }, { status: 500 });
   }
 
-  // Generate a temporary password
-  const tempPassword = `Foodo${Math.floor(100000 + Math.random() * 900000)}!`;
-
   // Create Supabase Auth user
   const { data: authUser, error: authError } =
     await serviceClient.auth.admin.createUser({
       email,
-      password: tempPassword,
+      password,
       email_confirm: true,
     });
 
@@ -147,7 +143,7 @@ export async function POST(request: NextRequest) {
         props: {
           restaurantName: name,
           email,
-          temporaryPassword: tempPassword,
+          temporaryPassword: password,
           storefrontUrl,
           dashboardUrl,
         },
@@ -155,5 +151,5 @@ export async function POST(request: NextRequest) {
     }
   ).catch(console.error);
 
-  return NextResponse.json({ restaurant });
+  return NextResponse.json({ restaurant, password });
 }

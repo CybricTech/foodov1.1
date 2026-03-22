@@ -20,10 +20,11 @@ export function MenuManagerClient({
   initialItems,
 }: MenuManagerClientProps) {
   const supabase = createBrowserClient();
-  const [categories] = useState(initialCategories);
+  const [categories, setCategories] = useState(initialCategories);
   const [items, setItems] = useState(initialItems);
   const [editingItem, setEditingItem] = useState<MenuItemWithOptions | null>(null);
   const [showAddItem, setShowAddItem] = useState(false);
+  const [showAddCategory, setShowAddCategory] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(
     initialCategories[0]?.id ?? null
   );
@@ -46,6 +47,20 @@ export function MenuManagerClient({
     setItems((prev) => prev.filter((i) => i.id !== itemId));
   }
 
+  async function deleteCategory(catId: string) {
+    const hasItems = items.some((i) => i.category_id === catId);
+    if (hasItems) {
+      alert("Move or delete all items in this category first.");
+      return;
+    }
+    if (!confirm("Delete this category?")) return;
+    await supabase.from("menu_categories").delete().eq("id", catId);
+    setCategories((prev) => prev.filter((c) => c.id !== catId));
+    if (activeCategory === catId) {
+      setActiveCategory(categories.find((c) => c.id !== catId)?.id ?? null);
+    }
+  }
+
   const categoryItems = items.filter(
     (i) => i.category_id === activeCategory
   );
@@ -66,19 +81,41 @@ export function MenuManagerClient({
         {/* Category list */}
         <div className="w-40 flex-shrink-0 border-r border-black-100 bg-white md:rounded-l-2xl md:border md:border-r-0">
           {categories.map((cat) => (
-            <button
+            <div
               key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
               className={cn(
-                "w-full text-left px-3 py-3 text-sm border-b border-black-50 transition-colors",
+                "group flex items-center border-b border-black-50 transition-colors",
                 activeCategory === cat.id
-                  ? "bg-viridian-500/10 text-viridian-500 font-semibold"
-                  : "text-black-500 hover:bg-black-50"
+                  ? "bg-viridian-500/10"
+                  : "hover:bg-black-50"
               )}
             >
-              {cat.name}
-            </button>
+              <button
+                onClick={() => setActiveCategory(cat.id)}
+                className={cn(
+                  "flex-1 text-left px-3 py-3 text-sm transition-colors",
+                  activeCategory === cat.id
+                    ? "text-viridian-500 font-semibold"
+                    : "text-black-500"
+                )}
+              >
+                {cat.name}
+              </button>
+              <button
+                onClick={() => deleteCategory(cat.id)}
+                className="opacity-0 group-hover:opacity-100 pr-2 text-black-300 hover:text-cinnabar-500 transition-opacity text-xs"
+                title="Delete category"
+              >
+                ✕
+              </button>
+            </div>
           ))}
+          <button
+            onClick={() => setShowAddCategory(true)}
+            className="w-full text-left px-3 py-3 text-sm text-black-400 hover:bg-black-50 hover:text-viridian-500 transition-colors border-b border-black-50"
+          >
+            + Add category
+          </button>
         </div>
 
         {/* Items in category */}
@@ -166,6 +203,83 @@ export function MenuManagerClient({
           }}
         />
       )}
+
+      {/* Add category modal */}
+      {showAddCategory && (
+        <AddCategoryModal
+          restaurantId={restaurantId}
+          nextOrder={categories.length}
+          onClose={() => setShowAddCategory(false)}
+          onSave={(newCat) => {
+            setCategories((prev) => [...prev, newCat]);
+            setActiveCategory(newCat.id);
+            setShowAddCategory(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddCategoryModal({
+  restaurantId,
+  nextOrder,
+  onClose,
+  onSave,
+}: {
+  restaurantId: string;
+  nextOrder: number;
+  onClose: () => void;
+  onSave: (category: MenuCategory) => void;
+}) {
+  const supabase = createBrowserClient();
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) { setError("Name is required"); return; }
+    setSaving(true);
+    setError("");
+    const { data, error: insertError } = await supabase
+      .from("menu_categories")
+      .insert({ restaurant_id: restaurantId, name: name.trim(), display_order: nextOrder })
+      .select("*")
+      .single();
+    setSaving(false);
+    if (insertError) { setError(insertError.message); return; }
+    onSave(data as MenuCategory);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black-900/50">
+      <div className="bg-white w-full max-w-sm md:rounded-2xl rounded-t-2xl">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-black-100">
+          <h2 className="font-bold text-black-900">New category</h2>
+          <button onClick={onClose} className="text-black-400 hover:text-black-900">✕</button>
+        </div>
+        <form onSubmit={handleSave} className="px-4 py-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-black-500 mb-1">Category name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+              placeholder="e.g. Starters, Main Course, Drinks"
+            />
+          </div>
+          {error && <p className="text-sm text-cinnabar-500">{error}</p>}
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
+          >
+            {saving ? "Creating…" : "Create category"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

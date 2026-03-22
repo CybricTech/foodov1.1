@@ -78,22 +78,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // ─── Super Admin guard ─────────────────────────────────────────────────────
+  // Only check session here. Role verification (super_admin) is done in the
+  // layout server component using the service client — more reliable and not
+  // subject to RLS or prefetch-request timing issues.
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
     if (!user) {
       const loginUrl = new URL("/admin/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
       return NextResponse.redirect(loginUrl);
-    }
-
-    const { data: profileData } = await supabase
-      .from("user_profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    const profile = profileData as { role: string } | null;
-
-    if (!profile || profile.role !== "super_admin") {
-      return NextResponse.redirect(new URL("/admin/login", request.url));
     }
   }
 

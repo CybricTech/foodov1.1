@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { getRestaurantBySlug } from "@foodo/database";
 import { RestaurantProvider } from "@/components/storefront/restaurant-context";
+import { CartGuard } from "@/components/storefront/cart-guard";
 
 export default async function StorefrontLayout({
   children,
@@ -23,6 +24,7 @@ export default async function StorefrontLayout({
       className="min-h-screen bg-black-50"
     >
       <RestaurantProvider restaurant={restaurant}>
+        <CartGuard />
         {children}
       </RestaurantProvider>
     </div>

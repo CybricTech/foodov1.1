@@ -12,6 +12,9 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
   const [restaurants, setRestaurants] = useState(initialRestaurants);
   const [showOnboard, setShowOnboard] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Restaurant | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   async function toggleActive(id: string, current: boolean) {
     setToggling(id);
@@ -26,6 +29,25 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
       );
     }
     setToggling(null);
+  }
+
+  async function handleDelete() {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    setDeleteError("");
+    const res = await fetch("/api/admin/merchants/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ restaurantId: confirmDelete.id }),
+    });
+    if (res.ok) {
+      setRestaurants((prev) => prev.filter((r) => r.id !== confirmDelete.id));
+      setConfirmDelete(null);
+    } else {
+      const data = await res.json();
+      setDeleteError(data.error ?? "Delete failed");
+    }
+    setDeleting(false);
   }
 
   return (
@@ -72,6 +94,12 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
               >
                 {toggling === r.id ? "…" : r.is_active ? "Pause" : "Activate"}
               </button>
+              <button
+                onClick={() => { setDeleteError(""); setConfirmDelete(r); }}
+                className="text-xs text-cinnabar-400 hover:text-cinnabar-300 px-3 py-1.5 rounded-lg border border-cinnabar-500/30 hover:border-cinnabar-400/60 transition-colors"
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}
@@ -83,6 +111,40 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
           </div>
         )}
       </div>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-950/80 px-4">
+          <div className="bg-black-900 rounded-2xl border border-black-500 w-full max-w-sm">
+            <div className="px-5 py-5 space-y-3">
+              <h2 className="font-bold text-white">Delete merchant?</h2>
+              <p className="text-sm text-black-400">
+                This will permanently delete{" "}
+                <span className="text-white font-medium">{confirmDelete.name}</span>{" "}
+                and all associated data. This cannot be undone.
+              </p>
+              {deleteError && (
+                <p className="text-sm text-cinnabar-500">{deleteError}</p>
+              )}
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setConfirmDelete(null)}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl border border-black-500 text-sm text-black-400 hover:text-white hover:border-black-400 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl bg-cinnabar-500 hover:bg-cinnabar-500/90 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+                >
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showOnboard && (
         <OnboardModal
@@ -107,9 +169,12 @@ function OnboardModal({
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [city, setCity] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState<{ email: string; password: string } | null>(null);
 
   function deriveSlug(n: string) {
     return n
@@ -127,7 +192,7 @@ function OnboardModal({
     const res = await fetch("/api/admin/merchants/onboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, slug, email, city }),
+      body: JSON.stringify({ name, slug, email, password, city }),
     });
 
     const data = await res.json();
@@ -139,6 +204,44 @@ function OnboardModal({
     }
 
     onSuccess(data.restaurant);
+    setSuccess({ email, password: data.password });
+  }
+
+  if (success) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-950/80 px-4">
+        <div className="bg-black-900 rounded-2xl border border-black-500 w-full max-w-md">
+          <div className="flex items-center justify-between px-4 py-4 border-b border-black-500">
+            <h2 className="font-bold text-white">Merchant created</h2>
+          </div>
+          <div className="px-4 py-5 space-y-4">
+            <p className="text-sm text-black-400">
+              Share these credentials with the merchant. They can change their password after logging in.
+            </p>
+            <div className="bg-black-950 rounded-xl border border-black-500 p-4 space-y-3">
+              <div>
+                <p className="text-xs text-black-400 mb-1">Email</p>
+                <p className="text-sm font-mono text-white">{success.email}</p>
+              </div>
+              <div>
+                <p className="text-xs text-black-400 mb-1">Password</p>
+                <p className="text-sm font-mono text-white">{success.password}</p>
+              </div>
+              <div>
+                <p className="text-xs text-black-400 mb-1">Dashboard URL</p>
+                <p className="text-sm font-mono text-viridian-400">/dashboard</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-full bg-viridian-500 hover:bg-viridian-500/90 text-white font-semibold py-3 rounded-xl transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -182,6 +285,26 @@ function OnboardModal({
               className={adminInputCls}
               placeholder="owner@restaurant.com"
             />
+          </AdminField>
+          <AdminField label="Default password">
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+                className={cn(adminInputCls, "pr-16")}
+                placeholder="Min. 8 characters"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-black-400 hover:text-white"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </AdminField>
           <AdminField label="City">
             <input
