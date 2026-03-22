@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@foodo/ui";
+import { ImagePlus } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
 
 export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
@@ -244,7 +245,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                   "disabled:opacity-50 transition-colors"
                 )}
               >
-                <span className="text-2xl">🖼</span>
+                <ImagePlus size={28} />
                 <span className="text-sm font-medium">
                   {bannerUploading ? "Uploading…" : "Upload hero photo"}
                 </span>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
+import { Inbox, Bike, Store, StickyNote } from "lucide-react";
 import type { Database } from "@foodo/database";
 
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
@@ -184,7 +185,7 @@ export function OrderQueueClient({
       <div className="mt-4 px-4 md:px-0 space-y-3">
         {filteredOrders.length === 0 && (
           <div className="text-center py-12 text-black-400">
-            <p className="text-2xl mb-2">📭</p>
+            <div className="flex justify-center mb-2"><Inbox size={28} /></div>
             <p className="text-sm">No {activeTab.replace("_", " ")} orders</p>
           </div>
         )}
@@ -278,15 +279,15 @@ function OrderCard({
           {/* Fulfillment */}
           <div className="text-xs text-black-400">
             {order.fulfillment_type === "delivery" ? (
-              <span>🛵 Delivery · {order.delivery_address}</span>
+              <span className="inline-flex items-center gap-1"><Bike size={14} /> Delivery · {order.delivery_address}</span>
             ) : (
-              <span>🏪 Pickup</span>
+              <span className="inline-flex items-center gap-1"><Store size={14} /> Pickup</span>
             )}
           </div>
 
           {order.special_instructions && (
-            <p className="text-xs text-dixie-500 bg-dixie-100 px-3 py-2 rounded-lg">
-              📝 {order.special_instructions}
+            <p className="text-xs text-dixie-500 bg-dixie-100 px-3 py-2 rounded-lg inline-flex items-center gap-1">
+              <StickyNote size={12} className="flex-shrink-0" /> {order.special_instructions}
             </p>
           )}
 

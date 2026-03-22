@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@foodo/ui";
+import { Bike } from "lucide-react";
 
 interface RiderRow {
   id: string;
@@ -45,7 +46,7 @@ export function RidersClient({ initialRiders }: { initialRiders: RiderRow[] }) {
       <div className="bg-black-900 rounded-2xl border border-black-500 overflow-hidden">
         {riders.length === 0 && (
           <div className="py-12 text-center text-black-400">
-            <p className="text-2xl mb-2">🛵</p>
+            <div className="flex justify-center mb-2"><Bike size={28} /></div>
             <p className="text-sm">No riders yet</p>
           </div>
         )}

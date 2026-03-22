@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatKobo } from "@foodo/utils";
+import { Users } from "lucide-react";
 import type { Database } from "@foodo/database";
 
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
@@ -96,7 +97,7 @@ export function CustomersClient({
       <div className="mt-4 px-4 md:px-0 bg-white md:rounded-2xl md:border border-black-100 overflow-hidden">
         {filtered.length === 0 && (
           <div className="py-12 text-center text-black-400">
-            <p className="text-2xl mb-2">👥</p>
+            <div className="flex justify-center mb-2"><Users size={28} /></div>
             <p className="text-sm">No customers yet</p>
           </div>
         )}

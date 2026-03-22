@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@foodo/ui";
+import { Store } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
 
 interface MerchantsClientProps {
@@ -106,7 +107,7 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
 
         {restaurants.length === 0 && (
           <div className="py-12 text-center text-black-400">
-            <p className="text-2xl mb-2">🏪</p>
+            <div className="flex justify-center mb-2"><Store size={28} /></div>
             <p className="text-sm">No merchants yet</p>
           </div>
         )}
