@@ -4,14 +4,23 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@foodo/ui";
+import {
+  LayoutDashboard,
+  Store,
+  Bike,
+  TrendingUp,
+  Scale,
+  MessageSquare,
+  type LucideIcon,
+} from "lucide-react";
 
-const NAV_ITEMS = [
-  { href: "/admin", label: "Overview", icon: "📊", exact: true },
-  { href: "/admin/merchants", label: "Merchants", icon: "🏪", exact: false },
-  { href: "/admin/riders", label: "Riders", icon: "🛵", exact: false },
-  { href: "/admin/analytics", label: "Analytics", icon: "📈", exact: false },
-  { href: "/admin/disputes", label: "Disputes", icon: "⚖️", exact: false },
-  { href: "/admin/logs/sms", label: "SMS Logs", icon: "📱", exact: false },
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean }[] = [
+  { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/admin/merchants", label: "Merchants", icon: Store, exact: false },
+  { href: "/admin/riders", label: "Riders", icon: Bike, exact: false },
+  { href: "/admin/analytics", label: "Analytics", icon: TrendingUp, exact: false },
+  { href: "/admin/disputes", label: "Disputes", icon: Scale, exact: false },
+  { href: "/admin/logs/sms", label: "SMS Logs", icon: MessageSquare, exact: false },
 ];
 
 export function AdminNav({ userName }: { userName: string }) {
@@ -36,6 +45,7 @@ export function AdminNav({ userName }: { userName: string }) {
           const isActive = item.exact
             ? pathname === item.href
             : pathname.startsWith(item.href);
+          const Icon = item.icon;
           return (
             <Link
               key={item.href}
@@ -47,7 +57,7 @@ export function AdminNav({ userName }: { userName: string }) {
                   : "text-black-400 hover:bg-black-500/30 hover:text-white"
               )}
             >
-              <span>{item.icon}</span>
+              <Icon size={18} />
               {item.label}
             </Link>
           );

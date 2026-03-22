@@ -6,6 +6,7 @@ import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
 import { MENU_IMAGE_MAX_SIZE_BYTES } from "@foodo/utils";
 import { cn } from "@foodo/ui";
+import { UtensilsCrossed } from "lucide-react";
 import type { MenuCategory, MenuItemWithOptions } from "@foodo/database";
 
 interface MenuManagerClientProps {
@@ -122,7 +123,7 @@ export function MenuManagerClient({
         <div className="flex-1 bg-white md:rounded-r-2xl md:border md:border-l-0 border-black-100 overflow-hidden">
           {categoryItems.length === 0 && (
             <div className="py-12 text-center text-black-400">
-              <p className="text-2xl mb-2">🍽️</p>
+              <div className="flex justify-center mb-2"><UtensilsCrossed size={28} /></div>
               <p className="text-sm">No items in this category</p>
             </div>
           )}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatKobo } from "@foodo/utils";
+import { Scale } from "lucide-react";
 
 interface CancelledOrder {
   id: string;
@@ -57,7 +58,7 @@ export function DisputesClient({
       <div className="bg-white/5 rounded-card border border-white/10 overflow-hidden">
         {filtered.length === 0 && (
           <div className="py-12 text-center text-white/30">
-            <p className="text-2xl mb-2">⚖️</p>
+            <div className="flex justify-center mb-2"><Scale size={28} /></div>
             <p className="text-sm">No cancelled orders found</p>
           </div>
         )}

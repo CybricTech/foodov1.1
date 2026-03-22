@@ -5,6 +5,14 @@ import { usePathname } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { cn } from "@foodo/ui";
+import {
+  ClipboardList,
+  UtensilsCrossed,
+  Users,
+  BarChart3,
+  Settings,
+  type LucideIcon,
+} from "lucide-react";
 
 interface DashboardNavProps {
   restaurantId: string;
@@ -12,12 +20,12 @@ interface DashboardNavProps {
   role: "merchant_owner" | "merchant_staff";
 }
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Orders", icon: "🧾", exact: true },
-  { href: "/dashboard/menu", label: "Menu", icon: "🍽️", exact: false },
-  { href: "/dashboard/customers", label: "Customers", icon: "👥", exact: false },
-  { href: "/dashboard/analytics", label: "Analytics", icon: "📊", exact: false },
-  { href: "/dashboard/settings", label: "Settings", icon: "⚙️", exact: false },
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean }[] = [
+  { href: "/dashboard", label: "Orders", icon: ClipboardList, exact: true },
+  { href: "/dashboard/menu", label: "Menu", icon: UtensilsCrossed, exact: false },
+  { href: "/dashboard/customers", label: "Customers", icon: Users, exact: false },
+  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3, exact: false },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings, exact: false },
 ];
 
 export function DashboardNav({ restaurantId: _restaurantId, userName, role: _role }: DashboardNavProps) {
@@ -44,6 +52,7 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
             const isActive = item.exact
               ? pathname === item.href
               : pathname.startsWith(item.href);
+            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
@@ -55,7 +64,7 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
                     : "text-black-500 hover:bg-black-50 hover:text-black-900"
                 )}
               >
-                <span className="text-base">{item.icon}</span>
+                <Icon size={18} />
                 {item.label}
               </Link>
             );
@@ -78,6 +87,7 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
           const isActive = item.exact
             ? pathname === item.href
             : pathname.startsWith(item.href);
+          const Icon = item.icon;
           return (
             <Link
               key={item.href}
@@ -87,7 +97,7 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
                 isActive ? "text-viridian-500" : "text-black-400"
               )}
             >
-              <span className="text-lg">{item.icon}</span>
+              <Icon size={20} />
               <span className="text-[10px] font-medium">{item.label}</span>
             </Link>
           );
