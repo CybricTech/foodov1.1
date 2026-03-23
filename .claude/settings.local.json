@@ -35,7 +35,15 @@
       "Bash(python3 -c \"import sys,json; users=json.load(sys.stdin).get(''''users'''',[]); [print(u[''''email''''], u[''''id'''']) for u in users]\")",
       "Bash(python3 -c \"import sys,json; r=json.load(sys.stdin); print(''''OK'''' if r.get(''''id'''') else r)\")",
       "Bash(find /Users/salihuaminu/Foodov1.1/apps/web/app/[restaurant_slug]/ -type f -name \"*.tsx\" -o -name \"*.ts\" -o -name \"*.json\")",
-      "Bash(xargs cat:*)"
+      "Bash(xargs cat:*)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//Users/salihuaminu/Foodov1.1/**)",
+      "Bash(done)",
+      "Bash(supabase status:*)",
+      "Bash(curl -s -X POST \"https://hcyxbmfbyvgybriloffo.supabase.co/rest/v1/rpc/exec_sql\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Content-Type: application/json\" -d '{\"\"sql\"\":\"\"ALTER TABLE payments ALTER COLUMN order_id DROP NOT NULL;\"\"}')",
+      "Bash(curl -s -X POST \"https://api.paystack.co/transaction/initialize\" -H \"Authorization: Bearer sk_test_25a37c1bd4b3d68d87fe8dfa034ea4fc55b7ed34\" -H \"Content-Type: application/json\" -d '{\"\"\"\"email\"\"\"\":\"\"\"\"test@test.com\"\"\"\",\"\"\"\"amount\"\"\"\":50000,\"\"\"\"currency\"\"\"\":\"\"\"\"NGN\"\"\"\",\"\"\"\"reference\"\"\"\":\"\"\"\"TEST-123\"\"\"\"}')",
+      "Bash(python3 -m json.tool)"
     ]
   }
 }

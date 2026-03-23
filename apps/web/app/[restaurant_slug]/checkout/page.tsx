@@ -36,10 +36,10 @@ export default function CheckoutPage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
 
-  // Redirect if cart is empty
+  // Redirect if cart is empty — but not while payment is processing
   useEffect(() => {
-    if (items.length === 0) router.replace(`/${restaurant.slug}`);
-  }, [items.length, restaurant.slug, router]);
+    if (items.length === 0 && !loading) router.replace(`/${restaurant.slug}`);
+  }, [items.length, restaurant.slug, router, loading]);
 
   if (items.length === 0) return null;
 
@@ -123,11 +123,11 @@ export default function CheckoutPage() {
         currency: "NGN",
         ref: initData.paystackRef,
         access_code: initData.accessCode,
-        onSuccess: () => {
+        callback: () => {
           clearCart();
           router.push(`/${restaurant.slug}/orders/pending?ref=${initData.paystackRef}`);
         },
-        onCancel: () => {
+        onClose: () => {
           setError("Payment was cancelled. You can try again.");
           setLoading(false);
         },

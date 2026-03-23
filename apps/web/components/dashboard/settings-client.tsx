@@ -133,12 +133,13 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   }
 
   return (
-    <div className="md:p-6 pb-32">
-      <div className="bg-white md:rounded-2xl border-b md:border border-black-100 px-4 py-4">
-        <h1 className="font-bold text-black-900 text-lg">Settings</h1>
-      </div>
+    <div className="flex flex-col min-h-screen">
+      <div className="flex-1 md:pt-6 md:px-6 pb-6">
+        <div className="bg-white md:rounded-2xl border-b md:border border-black-100 px-4 py-4">
+          <h1 className="font-bold text-black-900 text-lg">Settings</h1>
+        </div>
 
-      <div className="mt-4 px-4 md:px-0 space-y-6">
+        <div className="mt-4 px-4 md:px-0 space-y-6">
         {/* Restaurant profile */}
         <Section title="Restaurant profile">
           <Field label="Restaurant name">
@@ -296,7 +297,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               <option value="third_party">Third-Party (Kwik etc.)</option>
             </select>
           </Field>
-          <div className="flex items-center justify-between py-3 border-t border-black-100">
+          <div className="flex items-center justify-between py-3 border-t border-black-100 mb-1">
             <div>
               <p className="text-sm font-medium text-black-900">
                 Accept orders
@@ -306,7 +307,11 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               </p>
             </div>
             <button
+              type="button"
               onClick={() => setAcceptsOrders((v) => !v)}
+              aria-label={acceptsOrders ? "Accepting orders — tap to pause" : "Orders paused — tap to accept"}
+              aria-checked={acceptsOrders}
+              role="switch"
               className={cn(
                 "relative w-12 h-6 rounded-full transition-colors flex-shrink-0",
                 acceptsOrders ? "bg-viridian-500" : "bg-black-200"
@@ -326,17 +331,18 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
           <p className="text-sm text-cinnabar-500">{error}</p>
         )}
       </div>
-
-      <div className="fixed bottom-0 left-0 right-0 md:left-60 bg-white border-t border-black-100 px-4 md:px-6 py-4">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full md:max-w-xs bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
-        >
-          {saving ? "Saving…" : saved ? "✓ Saved!" : "Save changes"}
-        </button>
-      </div>
     </div>
+
+    <div className="sticky bottom-16 md:bottom-0 bg-white border-t border-black-100 px-4 md:px-6 py-4 z-10">
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="w-full md:max-w-xs bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
+      >
+        {saving ? "Saving…" : saved ? "✓ Saved!" : "Save changes"}
+      </button>
+    </div>
+  </div>
   );
 }
 

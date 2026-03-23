@@ -54,26 +54,14 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ─── Merchant Dashboard guard ──────────────────────────────────────────────
+  // Only check session here. Role verification (merchant_owner / merchant_staff)
+  // is done in the layout server component — avoids an extra DB round-trip on
+  // every navigation that would otherwise stack on top of the layout's own check.
   if (pathname.startsWith("/dashboard") && !pathname.startsWith("/dashboard/login")) {
     if (!user) {
       const loginUrl = new URL("/dashboard/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
       return NextResponse.redirect(loginUrl);
-    }
-
-    // Verify role (merchant_owner or merchant_staff)
-    const { data: profileData } = await supabase
-      .from("user_profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    const profile = profileData as { role: string } | null;
-
-    if (
-      !profile ||
-      !["merchant_owner", "merchant_staff"].includes(profile.role)
-    ) {
-      return NextResponse.redirect(new URL("/dashboard/login", request.url));
     }
   }
 

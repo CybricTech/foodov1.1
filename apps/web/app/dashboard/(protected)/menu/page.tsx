@@ -1,23 +1,17 @@
+import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { MenuManagerClient } from "@/components/dashboard/menu-manager-client";
 import type { MenuItemWithOptions } from "@foodo/database";
 
 export const dynamic = "force-dynamic";
 
 export default async function MenuPage() {
+  const session = await getDashboardUser();
+  if (!session) redirect("/dashboard/login");
+
   const supabase = await createServerClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: profile } = await supabase
-    .from("user_profiles")
-    .select("restaurant_id")
-    .eq("id", user!.id)
-    .single();
-
-  const restaurantId = profile!.restaurant_id!;
+  const { restaurantId } = session;
 
   const [{ data: categories }, { data: items }] = await Promise.all([
     supabase

@@ -1,4 +1,6 @@
+import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { OrderQueueClient } from "@/components/dashboard/order-queue-client";
 import type { Database } from "@foodo/database";
 
@@ -15,21 +17,12 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
+  const session = await getDashboardUser();
+  if (!session) redirect("/dashboard/login");
+
   const supabase = await createServerClient();
+  const { restaurantId } = session;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: profile } = await supabase
-    .from("user_profiles")
-    .select("restaurant_id")
-    .eq("id", user!.id)
-    .single();
-
-  const restaurantId = profile!.restaurant_id!;
-
-  // Initial fetch of today's orders
   const { data: orders } = await supabase
     .from("orders")
     .select(

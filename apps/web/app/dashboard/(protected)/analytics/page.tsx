@@ -1,22 +1,16 @@
+import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServerClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { formatKobo } from "@foodo/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
+  const session = await getDashboardUser();
+  if (!session) redirect("/dashboard/login");
+
   const supabase = await createServerClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: profile } = await supabase
-    .from("user_profiles")
-    .select("restaurant_id")
-    .eq("id", user!.id)
-    .single();
-
-  const restaurantId = profile!.restaurant_id!;
+  const { restaurantId } = session;
 
   const thirtyDaysAgo = new Date(
     Date.now() - 30 * 24 * 60 * 60 * 1000

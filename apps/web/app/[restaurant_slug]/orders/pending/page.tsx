@@ -1,16 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
+import { CheckCircle } from "lucide-react";
 
-/**
- * Intermediate page shown after Paystack popup success callback.
- * Polls for the order_id by paystack_ref until the webhook processes it,
- * then redirects to the order tracking page.
- */
-export default function PendingOrderPage() {
+function PendingOrderContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { restaurant } = useRestaurant();
@@ -18,13 +14,10 @@ export default function PendingOrderPage() {
   const ref = searchParams.get("ref");
 
   const [attempts, setAttempts] = useState(0);
-  const [failed, setFailed] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
-    if (!ref) {
-      setFailed(true);
-      return;
-    }
+    if (!ref) return;
 
     let timeout: ReturnType<typeof setTimeout>;
 
@@ -41,40 +34,73 @@ export default function PendingOrderPage() {
         return;
       }
 
-      setAttempts((a) => a + 1);
-
-      if (attempts >= 15) {
-        // Give up after ~30 seconds
-        setFailed(true);
-        return;
-      }
-
-      timeout = setTimeout(poll, 2000);
+      setAttempts((a) => {
+        const next = a + 1;
+        if (next >= 15) {
+          setTimedOut(true);
+          return next;
+        }
+        timeout = setTimeout(poll, 2000);
+        return next;
+      });
     }
 
-    poll();
+    timeout = setTimeout(poll, 2000);
     return () => clearTimeout(timeout);
-  }, [ref, attempts]);
-
-  if (failed) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-4 text-center gap-4">
-        <p className="text-2xl">⚠️</p>
-        <p className="text-black-900 font-semibold">
-          Payment received, but order is taking longer than expected.
-        </p>
-        <p className="text-sm text-black-400">
-          You will receive an SMS confirmation shortly.
-        </p>
-      </div>
-    );
-  }
+  }, [ref]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4 text-center gap-4">
-      <div className="w-12 h-12 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      <p className="text-black-900 font-semibold">Confirming your order…</p>
-      <p className="text-sm text-black-400">This usually takes a few seconds.</p>
+    <div className="min-h-screen bg-black-50 flex flex-col items-center justify-center px-4 text-center">
+      <div className="bg-white rounded-2xl border border-black-100 p-8 max-w-sm w-full space-y-5">
+
+        {/* Success icon */}
+        <div className="flex justify-center">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+            <CheckCircle size={36} className="text-primary" />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <h1 className="text-xl font-bold text-black-900">Payment successful!</h1>
+          <p className="text-sm text-black-500">
+            Your order has been received. We&apos;ll notify you as soon as the restaurant accepts it.
+          </p>
+        </div>
+
+        {/* Order status */}
+        <div className="bg-black-50 rounded-xl px-4 py-3 flex items-center gap-3">
+          {timedOut ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-dixie-500 flex-shrink-0" />
+              <p className="text-xs text-black-500 text-left">
+                Taking a little longer than usual — you&apos;ll get an SMS confirmation shortly.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              <p className="text-xs text-black-500 text-left">
+                Confirming your order with the restaurant…
+              </p>
+            </>
+          )}
+        </div>
+
+        <button
+          onClick={() => router.replace(`/${restaurant.slug}`)}
+          className="w-full py-3 rounded-xl border border-black-200 text-sm font-medium text-black-600 hover:bg-black-50 transition-colors"
+        >
+          Back to menu
+        </button>
+      </div>
     </div>
+  );
+}
+
+export default function PendingOrderPage() {
+  return (
+    <Suspense>
+      <PendingOrderContent />
+    </Suspense>
   );
 }
