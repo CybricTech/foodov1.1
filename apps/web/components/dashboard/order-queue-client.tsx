@@ -37,6 +37,7 @@ export function OrderQueueClient({
   const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
   const [activeTab, setActiveTab] = useState<Tab>("new");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
   const supabase = createBrowserClient();
 
@@ -114,19 +115,45 @@ export function OrderQueueClient({
 
   async function updateStatus(orderId: string, newStatus: string) {
     setActionLoading(orderId);
-    await supabase
+    setActionError(null);
+    // Optimistic update
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: newStatus as OrderRow["status"] } : o))
+    );
+    const { error } = await supabase
       .from("orders")
       .update({ status: newStatus as OrderRow["status"] })
       .eq("id", orderId);
+    if (error) {
+      // Revert on failure
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: orders.find((x) => x.id === orderId)?.status ?? o.status } : o
+        )
+      );
+      setActionError("Failed to update order status. Please try again.");
+    }
     setActionLoading(null);
   }
 
   async function cancelOrder(orderId: string, reason: string) {
     setActionLoading(orderId);
-    await supabase
+    setActionError(null);
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" as OrderRow["status"] } : o))
+    );
+    const { error } = await supabase
       .from("orders")
       .update({ status: "cancelled", cancellation_reason: reason })
       .eq("id", orderId);
+    if (error) {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: orders.find((x) => x.id === orderId)?.status ?? o.status } : o
+        )
+      );
+      setActionError("Failed to cancel order. Please try again.");
+    }
     setActionLoading(null);
   }
 
@@ -181,6 +208,15 @@ export function OrderQueueClient({
           </button>
         ))}
       </div>
+
+      {/* Error banner */}
+      {actionError && (
+        <div className="mt-4 px-4 md:px-0">
+          <div className="bg-cinnabar-100 text-cinnabar-500 text-sm px-4 py-3 rounded-xl">
+            {actionError}
+          </div>
+        </div>
+      )}
 
       {/* Order cards */}
       <div className="mt-4 px-4 md:px-0 space-y-3">

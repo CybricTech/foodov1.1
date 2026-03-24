@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { formatKobo } from "@foodo/utils";
-import { ORDER_PROGRESS_STEPS } from "@foodo/utils";
+import { ORDER_PROGRESS_STEPS_DELIVERY, ORDER_PROGRESS_STEPS_PICKUP } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import type { Order } from "@foodo/database";
 
@@ -96,8 +96,13 @@ export default function OrderTrackingPage() {
     );
   }
 
-  const currentStepIndex = ORDER_PROGRESS_STEPS.indexOf(
-    order.status as (typeof ORDER_PROGRESS_STEPS)[number]
+  const progressSteps =
+    order.fulfillment_type === "delivery"
+      ? ORDER_PROGRESS_STEPS_DELIVERY
+      : ORDER_PROGRESS_STEPS_PICKUP;
+
+  const currentStepIndex = progressSteps.indexOf(
+    order.status as (typeof progressSteps)[number]
   );
 
   const isCancelled = order.status === "cancelled";
@@ -149,7 +154,7 @@ export default function OrderTrackingPage() {
         {/* Progress stepper */}
         {!isCancelled && (
           <div className="bg-white rounded-2xl border border-black-100 p-4">
-            {ORDER_PROGRESS_STEPS.map((stepStatus, idx) => {
+            {progressSteps.map((stepStatus, idx) => {
               const isCompleted = idx <= currentStepIndex;
               const isActive = idx === currentStepIndex;
               return (
@@ -165,7 +170,7 @@ export default function OrderTrackingPage() {
                     >
                       {isCompleted ? "✓" : idx + 1}
                     </div>
-                    {idx < ORDER_PROGRESS_STEPS.length - 1 && (
+                    {idx < progressSteps.length - 1 && (
                       <div
                         className={cn(
                           "w-0.5 h-6 mt-1 transition-colors",

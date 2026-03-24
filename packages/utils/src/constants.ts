@@ -107,13 +107,23 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
 };
 
 // ─── Storefront order progress steps (for stepper UI) ────────────────────────
-export const ORDER_PROGRESS_STEPS: OrderStatus[] = [
+export const ORDER_PROGRESS_STEPS_DELIVERY: OrderStatus[] = [
   "confirmed",
   "preparing",
   "ready_for_pickup",
   "in_transit",
   "delivered",
 ];
+
+export const ORDER_PROGRESS_STEPS_PICKUP: OrderStatus[] = [
+  "confirmed",
+  "preparing",
+  "ready_for_pickup",
+  "delivered",
+];
+
+/** @deprecated use ORDER_PROGRESS_STEPS_DELIVERY or ORDER_PROGRESS_STEPS_PICKUP */
+export const ORDER_PROGRESS_STEPS = ORDER_PROGRESS_STEPS_DELIVERY;
 
 // ─── Share link token expiry (6 hours in ms) ─────────────────────────────────
 export const SHARE_LINK_EXPIRY_MS = 6 * 60 * 60 * 1000;
