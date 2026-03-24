@@ -2,7 +2,6 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createBrowserClient } from "@/lib/supabase/client";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { CheckCircle } from "lucide-react";
 
@@ -10,7 +9,6 @@ function PendingOrderContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { restaurant } = useRestaurant();
-  const supabase = createBrowserClient();
   const ref = searchParams.get("ref");
 
   const [, setAttempts] = useState(0);
@@ -22,15 +20,11 @@ function PendingOrderContent() {
     let timeout: ReturnType<typeof setTimeout>;
 
     async function poll() {
-      const { data } = await supabase
-        .from("payments")
-        .select("order_id")
-        .eq("paystack_ref", ref!)
-        .eq("paystack_status", "success")
-        .maybeSingle();
+      const res = await fetch(`/api/checkout/status?ref=${encodeURIComponent(ref!)}`);
+      const json = await res.json();
 
-      if (data?.order_id) {
-        router.replace(`/${restaurant.slug}/orders/${data.order_id}`);
+      if (json.orderId) {
+        router.replace(`/${restaurant.slug}/orders/${json.orderId}`);
         return;
       }
 

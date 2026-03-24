@@ -37,35 +37,42 @@ export async function POST(request: NextRequest) {
   // 3. Idempotency check
   const { data: existingPayment } = await supabase
     .from("payments")
-    .select("id, paystack_status, restaurant_id, metadata")
+    .select("id, paystack_status, order_id, restaurant_id, metadata")
     .eq("paystack_ref", paystackRef)
     .single();
 
   if (!existingPayment) {
+    console.log(`[webhook] Unknown paystack_ref: ${paystackRef}`);
     // Unknown reference — return 200 to prevent Paystack retries
     return NextResponse.json({ received: true });
   }
 
-  if (existingPayment.paystack_status === "success") {
+  // Only skip if order was already created (not just payment marked success)
+  if (existingPayment.paystack_status === "success" && existingPayment.order_id) {
+    console.log(`[webhook] Already processed ref=${paystackRef}, order_id=${existingPayment.order_id}`);
     return NextResponse.json({ received: true });
   }
+
+  console.log(`[webhook] Processing ref=${paystackRef}, payment_id=${existingPayment.id}, prior_status=${existingPayment.paystack_status}`);
 
   const meta = existingPayment.metadata as Record<string, unknown>;
   const restaurantId = existingPayment.restaurant_id;
 
-  // 4. Update payment record
-  await supabase
-    .from("payments")
-    .update({
-      paystack_status: "success",
-      paid_at: new Date().toISOString(),
-      metadata: {
-        ...(meta ?? {}),
-        paystack_channel: charge.channel,
-        paystack_fees: charge.fees,
-      } as import("@foodo/database").Json,
-    })
-    .eq("id", existingPayment.id);
+  // 4. Update payment record (only if not already success)
+  if (existingPayment.paystack_status !== "success") {
+    await supabase
+      .from("payments")
+      .update({
+        paystack_status: "success",
+        paid_at: new Date().toISOString(),
+        metadata: {
+          ...(meta ?? {}),
+          paystack_channel: charge.channel,
+          paystack_fees: charge.fees,
+        } as import("@foodo/database").Json,
+      })
+      .eq("id", existingPayment.id);
+  }
 
   // 5. Create the order
   const { data: order, error: orderError } = await supabase
@@ -96,9 +103,11 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (orderError || !order) {
-    console.error("Order creation failed:", orderError);
+    console.error("[webhook] Order creation failed:", JSON.stringify(orderError));
     return NextResponse.json({ error: "Order creation failed" }, { status: 500 });
   }
+
+  console.log(`[webhook] Order created: id=${order.id}, number=${order.order_number}`);
 
   // 6. Create order items (snapshot)
   const items = (meta.items as Array<{
