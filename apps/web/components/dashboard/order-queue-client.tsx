@@ -84,6 +84,7 @@ export function OrderQueueClient({
     return () => {
       channel.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId]);
 
   function playNewOrderSound() {

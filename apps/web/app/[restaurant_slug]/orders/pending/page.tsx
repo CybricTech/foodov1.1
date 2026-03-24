@@ -13,7 +13,7 @@ function PendingOrderContent() {
   const supabase = createBrowserClient();
   const ref = searchParams.get("ref");
 
-  const [attempts, setAttempts] = useState(0);
+  const [, setAttempts] = useState(0);
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
@@ -47,6 +47,7 @@ function PendingOrderContent() {
 
     timeout = setTimeout(poll, 2000);
     return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ref]);
 
   return (

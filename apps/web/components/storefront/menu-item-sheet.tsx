@@ -38,6 +38,7 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
       setSpecialRequest("");
       setAdded(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
 
   // Trap scroll when open

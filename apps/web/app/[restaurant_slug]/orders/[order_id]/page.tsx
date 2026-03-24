@@ -74,6 +74,7 @@ export default function OrderTrackingPage() {
     return () => {
       channel?.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.order_id]);
 
   if (loading) {
