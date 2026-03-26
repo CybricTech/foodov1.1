@@ -43,7 +43,14 @@
       "Bash(supabase status:*)",
       "Bash(curl -s -X POST \"https://hcyxbmfbyvgybriloffo.supabase.co/rest/v1/rpc/exec_sql\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Content-Type: application/json\" -d '{\"\"sql\"\":\"\"ALTER TABLE payments ALTER COLUMN order_id DROP NOT NULL;\"\"}')",
       "Bash(curl -s -X POST \"https://api.paystack.co/transaction/initialize\" -H \"Authorization: Bearer sk_test_25a37c1bd4b3d68d87fe8dfa034ea4fc55b7ed34\" -H \"Content-Type: application/json\" -d '{\"\"\"\"email\"\"\"\":\"\"\"\"test@test.com\"\"\"\",\"\"\"\"amount\"\"\"\":50000,\"\"\"\"currency\"\"\"\":\"\"\"\"NGN\"\"\"\",\"\"\"\"reference\"\"\"\":\"\"\"\"TEST-123\"\"\"\"}')",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(pnpm add:*)",
+      "Bash(npm install:*)",
+      "WebSearch",
+      "WebFetch(domain:developers.google.com)",
+      "Bash(node -e \"const l = require\\(''/Users/salihuaminu/Foodov1.1/node_modules/lucide-react''\\); const icons = Object.keys\\(l\\).filter\\(k => /instagram|facebook|twitter|tiktok|whatsapp|youtube/i.test\\(k\\)\\); console.log\\(icons\\)\")",
+      "Bash(curl -s -X POST \"https://hcyxbmfbyvgybriloffo.supabase.co/rest/v1/rpc/exec_sql\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"SELECT 1\"\"}')",
+      "Bash(curl -s -X POST \"https://hcyxbmfbyvgybriloffo.supabase.co/pg/query\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS instagram_url TEXT, ADD COLUMN IF NOT EXISTS facebook_url TEXT, ADD COLUMN IF NOT EXISTS twitter_url TEXT, ADD COLUMN IF NOT EXISTS youtube_url TEXT, ADD COLUMN IF NOT EXISTS whatsapp_number TEXT\"\"}')"
     ]
   }
 }
