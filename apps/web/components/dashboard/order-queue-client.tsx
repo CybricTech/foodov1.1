@@ -21,7 +21,7 @@ type Tab = "new" | "in_progress" | "completed";
 
 const TAB_STATUSES: Record<Tab, string[]> = {
   new: ["pending", "confirmed"],
-  in_progress: ["preparing", "ready_for_pickup", "in_transit"],
+  in_progress: ["preparing", "ready_for_pickup", "assigned_to_rider", "in_transit"],
   completed: ["delivered"],
 };
 
