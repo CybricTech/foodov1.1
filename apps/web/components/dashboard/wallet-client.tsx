@@ -48,7 +48,7 @@ interface WalletClientProps {
 }
 
 export function WalletClient({
-  restaurantId,
+  restaurantId: _restaurantId,
   wallet,
   transactions,
   settlements,

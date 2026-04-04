@@ -1,5 +1,4 @@
 import { createServiceClient } from "@/lib/supabase/server";
-import { formatKobo } from "@foodo/utils";
 import { SettlementsClient } from "@/components/admin/settlements-client";
 
 export const dynamic = "force-dynamic";
