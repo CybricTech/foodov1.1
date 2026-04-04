@@ -1,5 +1,5 @@
 import { getDashboardUser } from "@/lib/supabase/cached-queries";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { OrderQueueClient } from "@/components/dashboard/order-queue-client";
 import type { Database } from "@foodo/database";
@@ -20,10 +20,12 @@ export default async function DashboardPage() {
   const session = await getDashboardUser();
   if (!session) redirect("/dashboard/login");
 
-  const supabase = await createServerClient();
+  // Use service client so the fetch is never blocked by RLS —
+  // access control is already enforced by getDashboardUser() above.
+  const supabase = createServiceClient();
   const { restaurantId } = session;
 
-  const { data: orders } = await supabase
+  const { data: orders, error } = await supabase
     .from("orders")
     .select(
       `
@@ -34,11 +36,12 @@ export default async function DashboardPage() {
     `
     )
     .eq("restaurant_id", restaurantId)
-    .gte(
-      "created_at",
-      new Date(new Date().setHours(0, 0, 0, 0)).toISOString()
-    )
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    console.error("[dashboard] orders fetch error:", error.message);
+  }
 
   return (
     <OrderQueueClient
