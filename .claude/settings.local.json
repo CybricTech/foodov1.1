@@ -60,7 +60,8 @@
       "Bash(find /Users/salihuaminu/Foodov1.1 -name *.env* -not -path */node_modules/*)",
       "Bash(npm ls:*)",
       "Bash(cat /Users/salihuaminu/Foodov1.1/supabase/.temp/*.json)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''postgres_password'''',''''''''\\)\\)\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''postgres_password'''',''''''''\\)\\)\")",
+      "Bash(ls /Users/salihuaminu/Desktop/*.png)"
     ]
   }
 }
