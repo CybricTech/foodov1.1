@@ -24,7 +24,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  // 2. Only handle charge.success
+  // 2. Route to the correct event handler
+  if (
+    event.event === "transfer.success" ||
+    event.event === "transfer.failed" ||
+    event.event === "transfer.reversed"
+  ) {
+    await handleTransferEvent(createServiceClient(), event);
+    return NextResponse.json({ received: true });
+  }
+
   if (event.event !== "charge.success") {
     return NextResponse.json({ received: true });
   }
@@ -254,4 +263,43 @@ export async function POST(request: NextRequest) {
   }).catch(console.error);
 
   return NextResponse.json({ received: true });
+}
+
+// ── Transfer events (settlement payouts) ─────────────────────────────────────
+// Replicates supabase/functions/paystack-transfer-webhook/index.ts but runs
+// inside the Next.js route so a single webhook URL handles all Paystack events.
+
+async function handleTransferEvent(
+  supabase: ReturnType<typeof createServiceClient>,
+  event: { event: string; data: Record<string, unknown> }
+) {
+  const transferCode = event.data?.transfer_code as string | undefined;
+  if (!transferCode) return;
+
+  if (event.event === "transfer.success") {
+    await supabase
+      .from("settlements")
+      .update({ status: "paid", paid_at: new Date().toISOString() })
+      .eq("paystack_transfer_code", transferCode);
+    return;
+  }
+
+  if (event.event === "transfer.failed" || event.event === "transfer.reversed") {
+    const { data: settlement } = await supabase
+      .from("settlements")
+      .update({
+        status: "failed",
+        failure_reason: (event.data?.reason as string) ?? "Transfer failed",
+      })
+      .eq("paystack_transfer_code", transferCode)
+      .select("restaurant_id, amount_kobo")
+      .single();
+
+    if (settlement) {
+      await supabase.rpc("restore_failed_settlement", {
+        p_restaurant_id: settlement.restaurant_id,
+        p_amount_kobo: settlement.amount_kobo,
+      });
+    }
+  }
 }
