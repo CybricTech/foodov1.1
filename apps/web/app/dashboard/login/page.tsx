@@ -46,6 +46,7 @@ function MerchantLoginForm() {
     <div className="min-h-screen bg-black-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
+          <img src="/logo.png" alt="Kitchyn" className="h-10 mx-auto mb-6" />
           <h1 className="text-2xl font-bold text-black-900">Merchant Login</h1>
           <p className="text-sm text-black-400 mt-1">
             Sign in to manage your restaurant
@@ -63,7 +64,7 @@ function MerchantLoginForm() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoFocus
-              className="w-full px-4 py-3 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:ring-2 focus:ring-viridian-500/30 focus:border-viridian-500"
+              className="w-full px-4 py-3 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
               placeholder="you@restaurant.com"
             />
           </div>
@@ -77,7 +78,7 @@ function MerchantLoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:ring-2 focus:ring-viridian-500/30 focus:border-viridian-500"
+              className="w-full px-4 py-3 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
               placeholder="••••••••"
             />
           </div>
@@ -91,7 +92,7 @@ function MerchantLoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
+            className="w-full bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>

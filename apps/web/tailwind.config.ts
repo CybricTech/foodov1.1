@@ -18,8 +18,21 @@ const config: Config = {
           200: "#C6E6D4",
           500: "#2D6A4F",
         },
+        // Dashboard brand palette
+        purple: {
+          50:  "#F5EEFF",
+          100: "#E0AAFF",
+          200: "#C77DFF",
+          400: "#9D4EDD",
+          500: "#7B2CBF",
+          600: "#5A189A",
+          700: "#3C096C",
+          800: "#240046",
+          900: "#10002B",
+        },
         cinnabar: {
           100: "#FDEAEA",
+          200: "#F5C0C3",
           500: "#E63946",
         },
         dixie: {
@@ -27,8 +40,9 @@ const config: Config = {
           500: "#F4A261",
         },
         black: {
-          50: "#F9F9F9",
+          50:  "#F9F9F9",
           100: "#F2F2F2",
+          200: "#E0E0E0",
           400: "#9E9E9E",
           500: "#757575",
           900: "#212121",
@@ -39,7 +53,7 @@ const config: Config = {
         sans: ["Geist", "system-ui", "sans-serif"],
       },
       borderRadius: {
-        xl: "12px",
+        xl:  "12px",
         "2xl": "16px",
       },
       boxShadow: {

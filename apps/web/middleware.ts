@@ -52,11 +52,38 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+  const hostname = request.headers.get("host") ?? "";
+
+  // ─── Subdomain routing ─────────────────────────────────────────────────────
+  const isDashboardSub = hostname === "dashboard.kitchyn.app";
+  const isAdminSub     = hostname === "admin.kitchyn.app";
+  const isStorefrontSub =
+    hostname.endsWith(".kitchyn.app") && !isDashboardSub && !isAdminSub;
+
+  // dashboard.kitchyn.app/ → redirect to /dashboard (all /dashboard/* paths work as-is)
+  if (isDashboardSub && pathname === "/") {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  // admin.kitchyn.app/ → redirect to /admin
+  if (isAdminSub && pathname === "/") {
+    return NextResponse.redirect(new URL("/admin", request.url));
+  }
+
+  // slug.kitchyn.app/* → rewrite to /{slug}/*
+  if (isStorefrontSub) {
+    const slug = hostname.replace(".kitchyn.app", "");
+    if (!pathname.startsWith(`/${slug}`)) {
+      const rewritePath = pathname === "/" ? `/${slug}` : `/${slug}${pathname}`;
+      const response = NextResponse.rewrite(new URL(rewritePath, request.url));
+      supabaseResponse.cookies.getAll().forEach((c) => {
+        response.cookies.set(c.name, c.value);
+      });
+      return response;
+    }
+  }
 
   // ─── Merchant Dashboard guard ──────────────────────────────────────────────
-  // Only check session here. Role verification (merchant_owner / merchant_staff)
-  // is done in the layout server component — avoids an extra DB round-trip on
-  // every navigation that would otherwise stack on top of the layout's own check.
   if (pathname.startsWith("/dashboard") && !pathname.startsWith("/dashboard/login")) {
     if (!user) {
       const loginUrl = new URL("/dashboard/login", request.url);
@@ -66,9 +93,6 @@ export async function middleware(request: NextRequest) {
   }
 
   // ─── Super Admin guard ─────────────────────────────────────────────────────
-  // Only check session here. Role verification (super_admin) is done in the
-  // layout server component using the service client — more reliable and not
-  // subject to RLS or prefetch-request timing issues.
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
     if (!user) {
       const loginUrl = new URL("/admin/login", request.url);

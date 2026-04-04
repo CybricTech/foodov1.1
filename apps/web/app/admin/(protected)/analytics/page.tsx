@@ -84,8 +84,8 @@ export default async function AdminAnalyticsPage() {
   return (
     <div className="p-6 pb-24">
       <div className="mb-6">
-        <h1 className="text-2xl font-extrabold text-white">Analytics</h1>
-        <p className="text-white/40 text-sm mt-1">Last 30 days · Platform-wide</p>
+        <h1 className="text-2xl font-extrabold text-black-900">Analytics</h1>
+        <p className="text-black-500 text-sm mt-1">Last 30 days · Platform-wide</p>
       </div>
 
       {/* Summary metrics */}
@@ -103,13 +103,13 @@ export default async function AdminAnalyticsPage() {
       </div>
 
       {/* Merchant breakdown */}
-      <div className="bg-white/5 rounded-card border border-white/10 overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/10">
-          <h2 className="font-bold text-white text-sm">Top Merchants by Revenue</h2>
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <h2 className="font-bold text-black-900 text-sm">Top Merchants by Revenue</h2>
         </div>
 
         {topMerchants.length === 0 && (
-          <p className="text-white/30 text-sm px-4 py-8 text-center">No revenue data yet</p>
+          <p className="text-black-400 text-sm px-4 py-8 text-center">No revenue data yet</p>
         )}
 
         {topMerchants.map((m, i) => {
@@ -117,28 +117,28 @@ export default async function AdminAnalyticsPage() {
           return (
             <div
               key={m.id}
-              className="flex items-center gap-4 px-4 py-3 border-b border-white/10 last:border-0"
+              className="flex items-center gap-4 px-4 py-3 border-b border-black-200 last:border-0"
             >
-              <span className="text-sm font-bold text-primary w-5 flex-shrink-0">
+              <span className="text-sm font-bold text-purple-500 w-5 flex-shrink-0">
                 {i + 1}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-white truncate">{m.name}</p>
+                <p className="text-sm font-semibold text-black-900 truncate">{m.name}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-black-200 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-primary rounded-full"
+                      className="h-full bg-purple-500 rounded-full"
                       style={{ width: `${share}%` }}
                     />
                   </div>
-                  <span className="text-xs text-white/30 w-8 text-right flex-shrink-0">
+                  <span className="text-xs text-black-400 w-8 text-right flex-shrink-0">
                     {share.toFixed(0)}%
                   </span>
                 </div>
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="text-sm font-semibold text-white">{formatKobo(m.revenue)}</p>
-                <p className="text-xs text-white/40">{m.orders} orders</p>
+                <p className="text-sm font-semibold text-black-900">{formatKobo(m.revenue)}</p>
+                <p className="text-xs text-black-400">{m.orders} orders</p>
               </div>
             </div>
           );
@@ -150,9 +150,9 @@ export default async function AdminAnalyticsPage() {
 
 function AdminMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white/5 rounded-card border border-white/10 px-4 py-4">
-      <p className="text-xs text-white/40 font-semibold uppercase tracking-wide">{label}</p>
-      <p className="text-xl font-extrabold text-white mt-1">{value}</p>
+    <div className="bg-white rounded-2xl border border-black-200 px-4 py-4">
+      <p className="text-xs text-black-500 font-semibold uppercase tracking-wide">{label}</p>
+      <p className="text-xl font-extrabold text-black-900 mt-1">{value}</p>
     </div>
   );
 }

@@ -188,7 +188,7 @@ export function OrderQueueClient({
             className={cn(
               "flex items-center gap-1.5 px-4 py-3 md:py-2 text-sm font-medium border-b-2 md:rounded-xl md:border-0 transition-colors",
               activeTab === tab
-                ? "border-viridian-500 text-viridian-500 md:bg-viridian-500/10"
+                ? "border-purple-500 text-purple-500 md:bg-purple-50"
                 : "border-transparent text-black-400 hover:text-black-900"
             )}
           >
@@ -198,7 +198,7 @@ export function OrderQueueClient({
                 className={cn(
                   "text-xs px-1.5 py-0.5 rounded-full font-bold",
                   activeTab === tab
-                    ? "bg-viridian-500 text-white"
+                    ? "bg-purple-500 text-white"
                     : "bg-black-100 text-black-500"
                 )}
               >
@@ -334,7 +334,7 @@ function OrderCard({
               <button
                 onClick={() => onUpdateStatus(order.id, next)}
                 disabled={loading}
-                className="flex-1 bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+                className="flex-1 bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
               >
                 {loading ? "…" : actionLabel[order.status]}
               </button>
@@ -361,10 +361,10 @@ function OrderCard({
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; className: string }> = {
     pending: { label: "Pending", className: "bg-dixie-100 text-dixie-500" },
-    confirmed: { label: "Confirmed", className: "bg-viridian-100 text-viridian-500" },
-    preparing: { label: "Preparing", className: "bg-viridian-100 text-viridian-500" },
-    ready_for_pickup: { label: "Ready", className: "bg-viridian-200 text-viridian-500" },
-    in_transit: { label: "In Transit", className: "bg-viridian-100 text-viridian-500" },
+    confirmed: { label: "Confirmed", className: "bg-purple-50 text-purple-500" },
+    preparing: { label: "Preparing", className: "bg-purple-50 text-purple-500" },
+    ready_for_pickup: { label: "Ready", className: "bg-purple-100 text-purple-500" },
+    in_transit: { label: "In Transit", className: "bg-purple-50 text-purple-500" },
     delivered: { label: "Delivered", className: "bg-black-100 text-black-400" },
     cancelled: { label: "Cancelled", className: "bg-cinnabar-100 text-cinnabar-500" },
   };

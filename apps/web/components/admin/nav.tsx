@@ -15,17 +15,17 @@ import {
 } from "lucide-react";
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean }[] = [
-  { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
-  { href: "/admin/merchants", label: "Merchants", icon: Store, exact: false },
-  { href: "/admin/riders", label: "Riders", icon: Bike, exact: false },
-  { href: "/admin/analytics", label: "Analytics", icon: TrendingUp, exact: false },
-  { href: "/admin/disputes", label: "Disputes", icon: Scale, exact: false },
-  { href: "/admin/logs/sms", label: "SMS Logs", icon: MessageSquare, exact: false },
+  { href: "/admin",            label: "Overview",  icon: LayoutDashboard, exact: true  },
+  { href: "/admin/merchants",  label: "Merchants", icon: Store,           exact: false },
+  { href: "/admin/riders",     label: "Riders",    icon: Bike,            exact: false },
+  { href: "/admin/analytics",  label: "Analytics", icon: TrendingUp,      exact: false },
+  { href: "/admin/disputes",   label: "Disputes",  icon: Scale,           exact: false },
+  { href: "/admin/logs/sms",   label: "SMS Logs",  icon: MessageSquare,   exact: false },
 ];
 
 export function AdminNav({ userName }: { userName: string }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const router   = useRouter();
   const supabase = createBrowserClient();
 
   async function handleSignOut() {
@@ -34,10 +34,10 @@ export function AdminNav({ userName }: { userName: string }) {
   }
 
   return (
-    <nav className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-60 bg-black-900 border-r border-black-500 z-30">
-      <div className="px-4 py-5 border-b border-black-500">
-        <p className="font-bold text-white text-sm">Foodo Admin</p>
-        <p className="text-xs text-black-400 mt-0.5 truncate">{userName}</p>
+    <nav className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-black-200 z-30">
+      <div className="px-4 py-5 border-b border-black-200">
+        <p className="font-bold text-black-900 text-sm">Kitchyn Admin</p>
+        <p className="text-xs text-black-500 mt-0.5 truncate">{userName}</p>
       </div>
 
       <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
@@ -53,8 +53,8 @@ export function AdminNav({ userName }: { userName: string }) {
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-viridian-500/20 text-viridian-500"
-                  : "text-black-400 hover:bg-black-500/30 hover:text-white"
+                  ? "bg-purple-500 text-white"
+                  : "text-black-500 hover:bg-black-100 hover:text-black-900"
               )}
             >
               <Icon size={18} />
@@ -64,10 +64,10 @@ export function AdminNav({ userName }: { userName: string }) {
         })}
       </div>
 
-      <div className="px-3 py-4 border-t border-black-500">
+      <div className="px-3 py-4 border-t border-black-200">
         <button
           onClick={handleSignOut}
-          className="w-full text-left px-3 py-2.5 rounded-xl text-sm text-black-400 hover:text-white hover:bg-black-500/30 transition-colors"
+          className="w-full text-left px-3 py-2.5 rounded-xl text-sm text-black-500 hover:bg-black-100 hover:text-black-900 transition-colors"
         >
           Sign out
         </button>

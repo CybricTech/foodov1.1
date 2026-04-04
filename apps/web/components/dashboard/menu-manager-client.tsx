@@ -72,7 +72,7 @@ export function MenuManagerClient({
         <h1 className="font-bold text-black-900 text-lg">Menu</h1>
         <button
           onClick={() => setShowAddItem(true)}
-          className="bg-viridian-500 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-viridian-500/90 transition-colors"
+          className="bg-purple-500 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-purple-400 transition-colors"
         >
           + Add item
         </button>
@@ -87,7 +87,7 @@ export function MenuManagerClient({
               className={cn(
                 "group flex items-center border-b border-black-50 transition-colors",
                 activeCategory === cat.id
-                  ? "bg-viridian-500/10"
+                  ? "bg-purple-50"
                   : "hover:bg-black-50"
               )}
             >
@@ -96,7 +96,7 @@ export function MenuManagerClient({
                 className={cn(
                   "flex-1 text-left px-3 py-3 text-sm transition-colors",
                   activeCategory === cat.id
-                    ? "text-viridian-500 font-semibold"
+                    ? "text-purple-500 font-semibold"
                     : "text-black-500"
                 )}
               >
@@ -113,7 +113,7 @@ export function MenuManagerClient({
           ))}
           <button
             onClick={() => setShowAddCategory(true)}
-            className="w-full text-left px-3 py-3 text-sm text-black-400 hover:bg-black-50 hover:text-viridian-500 transition-colors border-b border-black-50"
+            className="w-full text-left px-3 py-3 text-sm text-black-400 hover:bg-black-50 hover:text-purple-500 transition-colors border-b border-black-50"
           >
             + Add category
           </button>
@@ -151,7 +151,7 @@ export function MenuManagerClient({
                   onClick={() => toggleAvailable(item.id, item.is_available)}
                   className={cn(
                     "relative w-10 h-5 rounded-full transition-colors",
-                    item.is_available ? "bg-viridian-500" : "bg-black-200"
+                    item.is_available ? "bg-purple-500" : "bg-black-200"
                   )}
                   title={item.is_available ? "Available" : "Unavailable"}
                 >
@@ -267,7 +267,7 @@ function AddCategoryModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
-              className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+              className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500"
               placeholder="e.g. Starters, Main Course, Drinks"
             />
           </div>
@@ -275,7 +275,7 @@ function AddCategoryModal({
           <button
             type="submit"
             disabled={saving}
-            className="w-full bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
+            className="w-full bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
           >
             {saving ? "Creating…" : "Create category"}
           </button>
@@ -573,7 +573,7 @@ function ItemFormModal({
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+              className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500"
               placeholder="e.g. Jollof Rice"
             />
           </div>
@@ -584,7 +584,7 @@ function ItemFormModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+              className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500"
               placeholder="Short description..."
             />
           </div>
@@ -595,7 +595,7 @@ function ItemFormModal({
               type="checkbox"
               checked={hasSizes}
               onChange={(e) => setHasSizes(e.target.checked)}
-              className="w-4 h-4 accent-viridian-500"
+              className="w-4 h-4 accent-purple-500"
             />
             <span className="text-sm text-black-900 font-medium">This item has multiple sizes / portions</span>
           </label>
@@ -609,7 +609,7 @@ function ItemFormModal({
                   <input
                     value={sizesLabel}
                     onChange={(e) => setSizesLabel(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                    className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500"
                     placeholder="e.g. Choose size"
                   />
                 </div>
@@ -618,7 +618,7 @@ function ItemFormModal({
                   <select
                     value={categoryId}
                     onChange={(e) => setCategoryId(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500 bg-white"
+                    className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 bg-white"
                   >
                     <option value="">No category</option>
                     {categories.map((c) => (
@@ -635,7 +635,7 @@ function ItemFormModal({
                       value={size.name}
                       onChange={(e) => setDraftSizes((prev) => prev.map((s, i) => i === si ? { ...s, name: e.target.value } : s))}
                       placeholder="e.g. 6 pieces"
-                      className="flex-1 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                      className="flex-1 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500"
                     />
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <span className="text-xs text-black-400">₦</span>
@@ -646,7 +646,7 @@ function ItemFormModal({
                         value={size.priceNgn}
                         onChange={(e) => setDraftSizes((prev) => prev.map((s, i) => i === si ? { ...s, priceNgn: e.target.value } : s))}
                         placeholder="2000"
-                        className="w-24 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                        className="w-24 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500"
                       />
                     </div>
                     {draftSizes.length > 2 && (
@@ -663,7 +663,7 @@ function ItemFormModal({
                 <button
                   type="button"
                   onClick={() => setDraftSizes((prev) => [...prev, { name: "", priceNgn: "" }])}
-                  className="text-xs text-black-400 hover:text-viridian-500 font-medium"
+                  className="text-xs text-black-400 hover:text-purple-500 font-medium"
                 >
                   + Add size
                 </button>
@@ -680,7 +680,7 @@ function ItemFormModal({
                   step="0.01"
                   value={priceNgn}
                   onChange={(e) => setPriceNgn(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                  className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500"
                   placeholder="1500"
                 />
               </div>
@@ -689,7 +689,7 @@ function ItemFormModal({
                 <select
                   value={categoryId}
                   onChange={(e) => setCategoryId(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500 bg-white"
+                  className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 bg-white"
                 >
                   <option value="">No category</option>
                   {categories.map((c) => (
@@ -704,7 +704,7 @@ function ItemFormModal({
           <div>
             <label className="block text-sm font-medium text-black-500 mb-1">Image (max 5MB)</label>
             <div
-              className="border-2 border-dashed border-black-200 rounded-xl p-4 text-center cursor-pointer hover:border-viridian-500 transition-colors"
+              className="border-2 border-dashed border-black-200 rounded-xl p-4 text-center cursor-pointer hover:border-purple-500 transition-colors"
               onClick={() => fileRef.current?.click()}
             >
               {imagePreview ? (
@@ -722,7 +722,7 @@ function ItemFormModal({
               type="checkbox"
               checked={isFeatured}
               onChange={(e) => setIsFeatured(e.target.checked)}
-              className="w-4 h-4 accent-viridian-500"
+              className="w-4 h-4 accent-purple-500"
             />
             <span className="text-sm text-black-900">Featured item</span>
           </label>
@@ -734,7 +734,7 @@ function ItemFormModal({
               <button
                 type="button"
                 onClick={addOption}
-                className="text-xs text-viridian-500 font-semibold hover:text-viridian-600"
+                className="text-xs text-purple-500 font-semibold hover:text-purple-400"
               >
                 + Add option group
               </button>
@@ -754,7 +754,7 @@ function ItemFormModal({
                     value={opt.name}
                     onChange={(e) => updateOption(oi, { name: e.target.value })}
                     placeholder="Group name (e.g. Choose Protein)"
-                    className="flex-1 px-3 py-1.5 rounded-lg border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                    className="flex-1 px-3 py-1.5 rounded-lg border border-black-200 text-sm focus:outline-none focus:border-purple-500"
                   />
                   <button
                     type="button"
@@ -772,7 +772,7 @@ function ItemFormModal({
                       type="checkbox"
                       checked={opt.isRequired}
                       onChange={(e) => updateOption(oi, { isRequired: e.target.checked })}
-                      className="w-3.5 h-3.5 accent-viridian-500"
+                      className="w-3.5 h-3.5 accent-purple-500"
                     />
                     <span className="text-xs text-black-500">Required</span>
                   </label>
@@ -783,7 +783,7 @@ function ItemFormModal({
                       min="1"
                       value={opt.maxSelections}
                       onChange={(e) => updateOption(oi, { maxSelections: parseInt(e.target.value) || 1 })}
-                      className="w-12 px-2 py-1 rounded-lg border border-black-200 text-xs text-center focus:outline-none focus:border-viridian-500"
+                      className="w-12 px-2 py-1 rounded-lg border border-black-200 text-xs text-center focus:outline-none focus:border-purple-500"
                     />
                   </div>
                 </div>
@@ -796,7 +796,7 @@ function ItemFormModal({
                         value={choice.name}
                         onChange={(e) => updateChoice(oi, ci, { name: e.target.value })}
                         placeholder="Choice name (e.g. Chicken)"
-                        className="flex-1 px-3 py-1.5 rounded-lg border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+                        className="flex-1 px-3 py-1.5 rounded-lg border border-black-200 text-sm focus:outline-none focus:border-purple-500"
                       />
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <span className="text-xs text-black-400">+₦</span>
@@ -807,7 +807,7 @@ function ItemFormModal({
                           value={choice.priceModifierNgn}
                           onChange={(e) => updateChoice(oi, ci, { priceModifierNgn: e.target.value })}
                           placeholder="0"
-                          className="w-16 px-2 py-1.5 rounded-lg border border-black-200 text-sm text-right focus:outline-none focus:border-viridian-500"
+                          className="w-16 px-2 py-1.5 rounded-lg border border-black-200 text-sm text-right focus:outline-none focus:border-purple-500"
                         />
                       </div>
                       <button
@@ -822,7 +822,7 @@ function ItemFormModal({
                   <button
                     type="button"
                     onClick={() => addChoice(oi)}
-                    className="text-xs text-black-400 hover:text-viridian-500 font-medium"
+                    className="text-xs text-black-400 hover:text-purple-500 font-medium"
                   >
                     + Add choice
                   </button>
@@ -838,7 +838,7 @@ function ItemFormModal({
           <button
             onClick={handleSave}
             disabled={saving}
-            className="w-full bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
+            className="w-full bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
           >
             {saving ? "Saving…" : item ? "Save changes" : "Add item"}
           </button>

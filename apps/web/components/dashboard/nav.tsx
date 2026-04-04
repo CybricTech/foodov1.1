@@ -21,16 +21,16 @@ interface DashboardNavProps {
 }
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean }[] = [
-  { href: "/dashboard", label: "Orders", icon: ClipboardList, exact: true },
-  { href: "/dashboard/menu", label: "Menu", icon: UtensilsCrossed, exact: false },
-  { href: "/dashboard/customers", label: "Customers", icon: Users, exact: false },
-  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3, exact: false },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings, exact: false },
+  { href: "/dashboard",           label: "Orders",     icon: ClipboardList,   exact: true  },
+  { href: "/dashboard/menu",      label: "Menu",        icon: UtensilsCrossed, exact: false },
+  { href: "/dashboard/customers", label: "Customers",   icon: Users,           exact: false },
+  { href: "/dashboard/analytics", label: "Analytics",   icon: BarChart3,       exact: false },
+  { href: "/dashboard/settings",  label: "Settings",    icon: Settings,        exact: false },
 ];
 
 export function DashboardNav({ restaurantId: _restaurantId, userName, role: _role }: DashboardNavProps) {
   const pathname = usePathname();
-  const router = useRouter();
+  const router  = useRouter();
   const supabase = createBrowserClient();
 
   async function handleSignOut() {
@@ -41,10 +41,10 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
   return (
     <>
       {/* Desktop sidebar */}
-      <nav className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-black-100 z-30">
-        <div className="px-4 py-5 border-b border-black-100">
-          <p className="font-bold text-black-900 text-sm">Foodo Dashboard</p>
-          <p className="text-xs text-black-400 mt-0.5 truncate">{userName}</p>
+      <nav className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-black-200 z-30">
+        <div className="px-4 py-5 border-b border-black-200">
+          <p className="font-bold text-black-900 text-sm">Kitchyn Dashboard</p>
+          <p className="text-xs text-black-500 mt-0.5 truncate">{userName}</p>
         </div>
 
         <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
@@ -60,8 +60,8 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-viridian-500/10 text-viridian-500"
-                    : "text-black-500 hover:bg-black-50 hover:text-black-900"
+                    ? "bg-purple-500 text-white"
+                    : "text-black-500 hover:bg-black-100 hover:text-black-900"
                 )}
               >
                 <Icon size={18} />
@@ -71,10 +71,10 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
           })}
         </div>
 
-        <div className="px-3 py-4 border-t border-black-100">
+        <div className="px-3 py-4 border-t border-black-200">
           <button
             onClick={handleSignOut}
-            className="w-full text-left px-3 py-2.5 rounded-xl text-sm text-black-400 hover:bg-black-50 hover:text-black-900 transition-colors"
+            className="w-full text-left px-3 py-2.5 rounded-xl text-sm text-black-500 hover:bg-black-100 hover:text-black-900 transition-colors"
           >
             Sign out
           </button>
@@ -82,7 +82,7 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
       </nav>
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-black-100 z-30 flex">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-black-200 z-30 flex">
         {NAV_ITEMS.slice(0, 5).map((item) => {
           const isActive = item.exact
             ? pathname === item.href
@@ -94,7 +94,7 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
               href={item.href}
               className={cn(
                 "flex-1 flex flex-col items-center py-2 gap-0.5",
-                isActive ? "text-viridian-500" : "text-black-400"
+                isActive ? "text-purple-500" : "text-black-400"
               )}
             >
               <Icon size={20} />

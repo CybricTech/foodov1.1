@@ -116,11 +116,12 @@ function AdminLoginForm() {
   }
 
   return (
-    <div className="min-h-screen bg-black-950 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-purple-900 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
+          <img src="/logo.png" alt="Kitchyn" className="h-10 mx-auto mb-6 brightness-0 invert" />
           <h1 className="text-2xl font-bold text-white">Admin Access</h1>
-          <p className="text-sm text-black-400 mt-1">
+          <p className="text-sm text-purple-300 mt-1">
             {step === "credentials"
               ? "Enter your credentials"
               : "Enter your 6-digit TOTP code"}
@@ -129,12 +130,12 @@ function AdminLoginForm() {
 
         <form
           onSubmit={step === "credentials" ? handleCredentials : handleTotp}
-          className="bg-black-900 rounded-2xl border border-black-500 p-6 space-y-4"
+          className="bg-purple-800 rounded-2xl border border-purple-700 p-6 space-y-4"
         >
           {step === "credentials" && (
             <>
               <div>
-                <label className="block text-sm font-medium text-black-400 mb-1">
+                <label className="block text-sm font-medium text-purple-300 mb-1">
                   Email
                 </label>
                 <input
@@ -143,11 +144,11 @@ function AdminLoginForm() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoFocus
-                  className="w-full px-4 py-3 rounded-xl bg-black-950 border border-black-500 text-white text-sm focus:outline-none focus:border-viridian-500"
+                  className="w-full px-4 py-3 rounded-xl bg-purple-900 border border-purple-700 text-white text-sm focus:outline-none focus:border-purple-400"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-black-400 mb-1">
+                <label className="block text-sm font-medium text-purple-300 mb-1">
                   Password
                 </label>
                 <input
@@ -155,7 +156,7 @@ function AdminLoginForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full px-4 py-3 rounded-xl bg-black-950 border border-black-500 text-white text-sm focus:outline-none focus:border-viridian-500"
+                  className="w-full px-4 py-3 rounded-xl bg-purple-900 border border-purple-700 text-white text-sm focus:outline-none focus:border-purple-400"
                 />
               </div>
             </>
@@ -163,7 +164,7 @@ function AdminLoginForm() {
 
           {step === "totp" && (
             <div>
-              <label className="block text-sm font-medium text-black-400 mb-1">
+              <label className="block text-sm font-medium text-purple-300 mb-1">
                 Authenticator code
               </label>
               <input
@@ -176,7 +177,7 @@ function AdminLoginForm() {
                 required
                 autoFocus
                 placeholder="000000"
-                className="w-full px-4 py-3 rounded-xl bg-black-950 border border-black-500 text-white text-sm text-center tracking-widest focus:outline-none focus:border-viridian-500"
+                className="w-full px-4 py-3 rounded-xl bg-purple-900 border border-purple-700 text-white text-sm text-center tracking-widest focus:outline-none focus:border-purple-400"
               />
             </div>
           )}
@@ -190,7 +191,7 @@ function AdminLoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
+            className="w-full bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
           >
             {loading ? "…" : step === "credentials" ? "Continue" : "Verify"}
           </button>

@@ -45,7 +45,7 @@ export function SmsLogsClient({ initialLogs }: { initialLogs: SmsLog[] }) {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">SMS Logs</h1>
+        <h1 className="text-2xl font-bold text-black-900">SMS Logs</h1>
         <div className="flex gap-2">
           {(["all", "failed", "sent"] as const).map((f) => (
             <button
@@ -54,8 +54,8 @@ export function SmsLogsClient({ initialLogs }: { initialLogs: SmsLog[] }) {
               className={cn(
                 "text-sm px-4 py-2 rounded-xl capitalize transition-colors",
                 filter === f
-                  ? "bg-viridian-500 text-white"
-                  : "bg-black-900 text-black-400 border border-black-500 hover:text-white"
+                  ? "bg-purple-500 text-white"
+                  : "bg-white text-black-500 border border-black-200 hover:text-black-900"
               )}
             >
               {f}
@@ -64,7 +64,7 @@ export function SmsLogsClient({ initialLogs }: { initialLogs: SmsLog[] }) {
         </div>
       </div>
 
-      <div className="bg-black-900 rounded-2xl border border-black-500 overflow-hidden">
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         {logs.length === 0 && (
           <div className="py-12 text-center text-black-400">
             <p className="text-sm">No logs found</p>
@@ -73,15 +73,15 @@ export function SmsLogsClient({ initialLogs }: { initialLogs: SmsLog[] }) {
         {logs.map((log) => (
           <div
             key={log.id}
-            className="flex items-center gap-4 px-4 py-3 border-b border-black-500 last:border-0"
+            className="flex items-center gap-4 px-4 py-3 border-b border-black-200 last:border-0"
           >
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-white font-medium">{log.phone}</p>
-              <p className="text-xs text-black-400 mt-0.5">
+              <p className="text-sm text-black-900 font-medium">{log.phone}</p>
+              <p className="text-xs text-black-500 mt-0.5">
                 {log.event_type} · {log.provider} ·{" "}
                 {log.restaurants?.name ?? "—"}
               </p>
-              <p className="text-xs text-black-500">
+              <p className="text-xs text-black-400">
                 {new Date(log.created_at).toLocaleString()}
               </p>
             </div>
@@ -90,10 +90,10 @@ export function SmsLogsClient({ initialLogs }: { initialLogs: SmsLog[] }) {
                 className={cn(
                   "text-xs px-2 py-0.5 rounded-full font-medium",
                   log.status === "sent"
-                    ? "bg-viridian-500/20 text-viridian-500"
+                    ? "bg-viridian-100 text-viridian-500"
                     : log.status === "failed"
-                    ? "bg-cinnabar-100/20 text-cinnabar-500"
-                    : "bg-dixie-100/20 text-dixie-500"
+                    ? "bg-cinnabar-100 text-cinnabar-500"
+                    : "bg-dixie-100 text-dixie-500"
                 )}
               >
                 {log.status}
@@ -102,7 +102,7 @@ export function SmsLogsClient({ initialLogs }: { initialLogs: SmsLog[] }) {
                 <button
                   onClick={() => retryLog(log)}
                   disabled={retrying === log.id}
-                  className="text-xs text-viridian-500 border border-viridian-500/40 px-2 py-1 rounded-lg hover:bg-viridian-500/10 disabled:opacity-50 transition-colors"
+                  className="text-xs text-purple-500 border border-purple-500/40 px-2 py-1 rounded-lg hover:bg-purple-500/10 disabled:opacity-50 transition-colors"
                 >
                   {retrying === log.id ? "…" : "Retry"}
                 </button>

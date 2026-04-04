@@ -43,8 +43,8 @@ export default async function AdminOverviewPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-white mb-6">Platform Overview</h1>
-      <p className="text-black-400 text-sm mb-6">Last 30 days</p>
+      <h1 className="text-2xl font-bold text-black-900 mb-6">Platform Overview</h1>
+      <p className="text-black-500 text-sm mb-6">Last 30 days</p>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <AdminMetric label="GMV" value={formatKobo(totalGmv)} />
@@ -64,9 +64,9 @@ export default async function AdminOverviewPage() {
 
 function AdminMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-black-900 rounded-2xl border border-black-500 px-4 py-4">
-      <p className="text-xs text-black-400 font-medium">{label}</p>
-      <p className="text-xl font-bold text-white mt-1">{value}</p>
+    <div className="bg-white rounded-2xl border border-black-200 px-4 py-4">
+      <p className="text-xs text-black-500 font-medium">{label}</p>
+      <p className="text-xl font-bold text-black-900 mt-1">{value}</p>
     </div>
   );
 }

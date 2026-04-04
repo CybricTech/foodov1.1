@@ -260,7 +260,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                   className={cn(
                     "w-full h-28 rounded-xl border-2 border-dashed border-black-200",
                     "flex flex-col items-center justify-center gap-1.5",
-                    "text-black-400 hover:border-viridian-500 hover:text-viridian-500",
+                    "text-black-400 hover:border-purple-500 hover:text-purple-500",
                     "disabled:opacity-50 transition-colors"
                   )}
                 >
@@ -373,7 +373,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                 role="switch"
                 className={cn(
                   "relative w-12 h-6 rounded-full transition-colors flex-shrink-0",
-                  acceptsOrders ? "bg-viridian-500" : "bg-black-200"
+                  acceptsOrders ? "bg-purple-500" : "bg-black-200"
                 )}
               >
                 <span
@@ -394,7 +394,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="w-full md:max-w-xs bg-viridian-500 hover:bg-viridian-500/90 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
+          className="w-full md:max-w-xs bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
         >
           {saving ? "Saving…" : saved ? "✓ Saved!" : "Save changes"}
         </button>
@@ -425,4 +425,4 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 const inputCls =
-  "w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-viridian-500";
+  "w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500";

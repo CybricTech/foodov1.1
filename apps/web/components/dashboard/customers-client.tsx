@@ -69,7 +69,7 @@ export function CustomersClient({
         <button
           onClick={handleExport}
           disabled={exporting}
-          className="text-sm text-viridian-500 border border-viridian-500 px-4 py-2 rounded-xl hover:bg-viridian-500/10 disabled:opacity-60 transition-colors font-medium"
+          className="text-sm text-purple-500 border border-purple-500 px-4 py-2 rounded-xl hover:bg-purple-50 disabled:opacity-60 transition-colors font-medium"
         >
           {exporting ? "Exporting…" : "Export CSV"}
         </button>
@@ -80,12 +80,12 @@ export function CustomersClient({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name or phone…"
-          className="flex-1 min-w-48 px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-viridian-500"
+          className="flex-1 min-w-48 px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500"
         />
         <select
           value={sortKey}
           onChange={(e) => setSortKey(e.target.value as SortKey)}
-          className="px-4 py-2.5 rounded-xl border border-black-200 text-sm bg-white focus:outline-none focus:border-viridian-500"
+          className="px-4 py-2.5 rounded-xl border border-black-200 text-sm bg-white focus:outline-none focus:border-purple-500"
         >
           <option value="total_spent_kobo">Sort: Total spent</option>
           <option value="total_orders">Sort: Total orders</option>
@@ -106,7 +106,7 @@ export function CustomersClient({
             key={c.id}
             className="flex items-center gap-4 px-4 py-3 border-b border-black-50 last:border-0"
           >
-            <div className="w-8 h-8 rounded-full bg-viridian-100 text-viridian-500 flex items-center justify-center text-xs font-bold flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-purple-50 text-purple-500 flex items-center justify-center text-xs font-bold flex-shrink-0">
               {(c.full_name ?? c.phone)[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">

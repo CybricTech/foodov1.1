@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Foodo",
-    short_name: "Foodo",
+    name: "Kitchyn",
+    short_name: "Kitchyn",
     description: "Order directly from your favourite restaurants",
     start_url: "/",
     display: "standalone",

@@ -30,9 +30,9 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen bg-black-950">
+    <div className="min-h-screen bg-black-50">
       <AdminNav userName={profile.full_name ?? user.email ?? ""} />
-      <main className="md:ml-60 min-h-screen text-white">{children}</main>
+      <main className="md:ml-60 min-h-screen text-black-900">{children}</main>
     </div>
   );
 }

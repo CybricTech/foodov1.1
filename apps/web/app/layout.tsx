@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "Foodo",
+  title: "Kitchyn",
   description: "Order directly from your favourite restaurants",
 };
 
