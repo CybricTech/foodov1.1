@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { AdminNav } from "@/components/admin/nav";
+
+export const metadata: Metadata = {
+  icons: { icon: "/favicon-icon.png" },
+};
 
 export default async function AdminLayout({
   children,

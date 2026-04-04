@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { DashboardNav } from "@/components/dashboard/nav";
+
+export const metadata: Metadata = {
+  icons: { icon: "/favicon-icon.png" },
+};
 
 export default async function DashboardLayout({
   children,
