@@ -62,7 +62,9 @@
       "Bash(cat /Users/salihuaminu/Foodov1.1/supabase/.temp/*.json)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''postgres_password'''',''''''''\\)\\)\")",
       "Bash(ls /Users/salihuaminu/Desktop/*.png)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git push:*)"
     ]
   }
 }
