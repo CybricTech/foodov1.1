@@ -11,16 +11,18 @@ import {
   TrendingUp,
   Scale,
   MessageSquare,
+  Banknote,
   type LucideIcon,
 } from "lucide-react";
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean }[] = [
-  { href: "/admin",            label: "Overview",  icon: LayoutDashboard, exact: true  },
-  { href: "/admin/merchants",  label: "Merchants", icon: Store,           exact: false },
-  { href: "/admin/riders",     label: "Riders",    icon: Bike,            exact: false },
-  { href: "/admin/analytics",  label: "Analytics", icon: TrendingUp,      exact: false },
-  { href: "/admin/disputes",   label: "Disputes",  icon: Scale,           exact: false },
-  { href: "/admin/logs/sms",   label: "SMS Logs",  icon: MessageSquare,   exact: false },
+  { href: "/admin",              label: "Overview",    icon: LayoutDashboard, exact: true  },
+  { href: "/admin/merchants",    label: "Merchants",   icon: Store,           exact: false },
+  { href: "/admin/riders",       label: "Riders",      icon: Bike,            exact: false },
+  { href: "/admin/analytics",    label: "Analytics",   icon: TrendingUp,      exact: false },
+  { href: "/admin/settlements",  label: "Settlements", icon: Banknote,        exact: false },
+  { href: "/admin/disputes",     label: "Disputes",    icon: Scale,           exact: false },
+  { href: "/admin/logs/sms",     label: "SMS Logs",    icon: MessageSquare,   exact: false },
 ];
 
 export function AdminNav({ userName }: { userName: string }) {

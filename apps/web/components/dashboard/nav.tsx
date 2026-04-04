@@ -11,6 +11,7 @@ import {
   Users,
   BarChart3,
   Settings,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,10 +23,11 @@ interface DashboardNavProps {
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean }[] = [
   { href: "/dashboard",           label: "Orders",     icon: ClipboardList,   exact: true  },
-  { href: "/dashboard/menu",      label: "Menu",        icon: UtensilsCrossed, exact: false },
-  { href: "/dashboard/customers", label: "Customers",   icon: Users,           exact: false },
-  { href: "/dashboard/analytics", label: "Analytics",   icon: BarChart3,       exact: false },
-  { href: "/dashboard/settings",  label: "Settings",    icon: Settings,        exact: false },
+  { href: "/dashboard/menu",      label: "Menu",       icon: UtensilsCrossed, exact: false },
+  { href: "/dashboard/customers", label: "Customers",  icon: Users,           exact: false },
+  { href: "/dashboard/analytics", label: "Analytics",  icon: BarChart3,       exact: false },
+  { href: "/dashboard/wallet",    label: "Wallet",     icon: Wallet,          exact: false },
+  { href: "/dashboard/settings",  label: "Settings",   icon: Settings,        exact: false },
 ];
 
 export function DashboardNav({ restaurantId: _restaurantId, userName, role: _role }: DashboardNavProps) {

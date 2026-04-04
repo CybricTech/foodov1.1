@@ -6,6 +6,157 @@ import { cn } from "@foodo/ui";
 import { ImagePlus } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
 
+// Nigerian bank list fetched from Paystack (cached in component state)
+type PaystackBank = { id: number; name: string; code: string };
+
+function BankAccountSection({ restaurantId, initialData }: {
+  restaurantId: string;
+  initialData: {
+    bank_code: string | null;
+    bank_account_number: string | null;
+    bank_account_name: string | null;
+    paystack_recipient_code: string | null;
+  } | null;
+}) {
+  const [banks, setBanks] = useState<PaystackBank[]>([]);
+  const [banksLoaded, setBanksLoaded] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [bankCode, setBankCode] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(initialData);
+
+  async function loadBanks() {
+    if (banksLoaded) return;
+    try {
+      const res = await fetch("https://api.paystack.co/bank?country=nigeria&perPage=100");
+      const data = await res.json();
+      if (data.status) setBanks(data.data ?? []);
+    } catch {
+      // ignore
+    }
+    setBanksLoaded(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/merchant/banking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restaurant_id: restaurantId, bank_code: bankCode, account_number: accountNumber }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to save bank account");
+      } else {
+        setSaved(data);
+        setShowForm(false);
+        setBankCode("");
+        setAccountNumber("");
+      }
+    } catch {
+      setError("Network error");
+    }
+    setSaving(false);
+  }
+
+  const maskedAccount = saved?.bank_account_number
+    ? `${saved.bank_account_number.slice(0, 3)}***${saved.bank_account_number.slice(-3)}`
+    : null;
+
+  return (
+    <Section title="Bank account">
+      {saved?.bank_account_name ? (
+        <div className="space-y-3">
+          <div className="bg-black-50 rounded-xl px-4 py-3">
+            <p className="text-xs text-black-500 font-medium">Account name</p>
+            <p className="text-sm font-semibold text-black-900 mt-0.5">{saved.bank_account_name}</p>
+          </div>
+          <div className="bg-black-50 rounded-xl px-4 py-3">
+            <p className="text-xs text-black-500 font-medium">Account number</p>
+            <p className="text-sm font-semibold text-black-900 mt-0.5">{maskedAccount}</p>
+          </div>
+          {saved.paystack_recipient_code && (
+            <p className="text-xs text-viridian-500">
+              Verified — ready for automatic settlement
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => { loadBanks(); setShowForm(true); }}
+            className="text-sm text-purple-500 font-medium hover:underline"
+          >
+            Update bank account
+          </button>
+        </div>
+      ) : (
+        !showForm && (
+          <button
+            type="button"
+            onClick={() => { loadBanks(); setShowForm(true); }}
+            className="w-full py-2.5 rounded-xl border border-dashed border-black-200 text-sm text-black-500 hover:border-purple-500 hover:text-purple-500 transition-colors"
+          >
+            + Add bank account
+          </button>
+        )
+      )}
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-black-500 mb-1">Bank</label>
+            <select
+              value={bankCode}
+              onChange={(e) => setBankCode(e.target.value)}
+              required
+              className={cn(inputCls, "bg-white")}
+            >
+              <option value="">Select bank…</option>
+              {banks.map((b) => (
+                <option key={b.code} value={b.code}>{b.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-black-500 mb-1">Account number</label>
+            <input
+              type="text"
+              value={accountNumber}
+              onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              required
+              maxLength={10}
+              pattern="\d{10}"
+              placeholder="10-digit account number"
+              className={inputCls}
+            />
+          </div>
+          {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
+            >
+              {saving ? "Verifying…" : "Save bank account"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="px-4 py-2.5 rounded-xl border border-black-200 text-sm text-black-500 hover:bg-black-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </Section>
+  );
+}
+
 type RestaurantExtended = Restaurant & {
   city?: string | null;
   state?: string | null;
@@ -385,6 +536,17 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               </button>
             </div>
           </Section>
+
+          {/* Bank account */}
+          <BankAccountSection
+            restaurantId={r.id}
+            initialData={{
+              bank_code: (r as RestaurantExtended & { bank_code?: string | null }).bank_code ?? null,
+              bank_account_number: (r as RestaurantExtended & { bank_account_number?: string | null }).bank_account_number ?? null,
+              bank_account_name: (r as RestaurantExtended & { bank_account_name?: string | null }).bank_account_name ?? null,
+              paystack_recipient_code: (r as RestaurantExtended & { paystack_recipient_code?: string | null }).paystack_recipient_code ?? null,
+            }}
+          />
 
           {error && <p className="text-sm text-cinnabar-500">{error}</p>}
         </div>

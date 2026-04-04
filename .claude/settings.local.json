@@ -52,7 +52,15 @@
       "Bash(curl -s -X POST \"https://hcyxbmfbyvgybriloffo.supabase.co/rest/v1/rpc/exec_sql\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"SELECT 1\"\"}')",
       "Bash(curl -s -X POST \"https://hcyxbmfbyvgybriloffo.supabase.co/pg/query\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjeXhibWZieXZneWJyaWxvZmZvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzQyNDEwMCwiZXhwIjoyMDg5MDAwMTAwfQ.Q9FITu4TgxuwxKSSOPyzwEPme1EgxtMx7Fw5bTaUpyI\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS instagram_url TEXT, ADD COLUMN IF NOT EXISTS facebook_url TEXT, ADD COLUMN IF NOT EXISTS twitter_url TEXT, ADD COLUMN IF NOT EXISTS youtube_url TEXT, ADD COLUMN IF NOT EXISTS whatsapp_number TEXT\"\"}')",
       "Bash(ls /Users/salihuaminu/Foodov1.1/apps/web/app/favicon*)",
-      "Bash(ls /Users/salihuaminu/Foodov1.1/apps/web/public/favicon*)"
+      "Bash(ls /Users/salihuaminu/Foodov1.1/apps/web/public/favicon*)",
+      "Bash(supabase --version)",
+      "Bash(psql --version)",
+      "Bash(brew install:*)",
+      "Bash(cat /Users/salihuaminu/.supabase/*)",
+      "Bash(find /Users/salihuaminu/Foodov1.1 -name *.env* -not -path */node_modules/*)",
+      "Bash(npm ls:*)",
+      "Bash(cat /Users/salihuaminu/Foodov1.1/supabase/.temp/*.json)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''postgres_password'''',''''''''\\)\\)\")"
     ]
   }
 }

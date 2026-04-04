@@ -139,3 +139,17 @@ export const MENU_IMAGE_MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
 // ─── GPS broadcast interval (10 seconds) ─────────────────────────────────────
 export const GPS_BROADCAST_INTERVAL_MS = 10_000;
+
+// ─── Wallet Transaction Types ─────────────────────────────────────────────────
+export const WALLET_TRANSACTION_TYPES = [
+  "order_credit",
+  "service_charge",
+  "logistics_fee",
+  "settlement_debit",
+  "manual_adjustment",
+] as const;
+export type WalletTransactionType = (typeof WALLET_TRANSACTION_TYPES)[number];
+
+// ─── Settlement Statuses ──────────────────────────────────────────────────────
+export const SETTLEMENT_STATUSES = ["pending", "processing", "paid", "failed"] as const;
+export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[number];

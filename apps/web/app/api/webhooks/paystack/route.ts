@@ -157,7 +157,68 @@ export async function POST(request: NextRequest) {
     .update({ order_id: order.id })
     .eq("id", existingPayment.id);
 
-  // 9. Trigger SMS notifications via Edge Function (fire-and-forget)
+  // 9. Credit merchant wallet
+  const { data: settings } = await supabase
+    .from("platform_settings")
+    .select("service_charge_pct, service_charge_fixed_kobo, settlement_hold_hours")
+    .single();
+
+  const pct = settings?.service_charge_pct ?? 0.03;
+  const fixedFee = settings?.service_charge_fixed_kobo ?? 0;
+  const holdHours = settings?.settlement_hold_hours ?? 24;
+
+  const subtotalKobo = meta.subtotal_kobo as number;
+  const deliveryFeeKobo = meta.delivery_fee_kobo as number;
+
+  // Service charge applied on subtotal only (delivery fee goes entirely to platform)
+  const serviceChargeKobo = Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
+  const restaurantCreditKobo = subtotalKobo - serviceChargeKobo;
+  const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
+
+  // Ensure wallet exists
+  await supabase
+    .from("restaurant_wallets")
+    .upsert({ restaurant_id: restaurantId }, { onConflict: "restaurant_id" });
+
+  // Insert 3 wallet transaction rows
+  await supabase.from("wallet_transactions").insert([
+    {
+      restaurant_id: restaurantId,
+      order_id: order.id,
+      type: "order_credit",
+      direction: "credit",
+      amount_kobo: restaurantCreditKobo,
+      status: "pending",
+      available_at: availableAt,
+      description: `Order #${order.order_number} — net revenue`,
+    },
+    {
+      restaurant_id: restaurantId,
+      order_id: order.id,
+      type: "service_charge",
+      direction: "debit",
+      amount_kobo: serviceChargeKobo,
+      status: "settled",
+      description: `Platform fee (${(Number(pct) * 100).toFixed(1)}% + ₦${(Number(fixedFee) / 100).toFixed(0)} fixed) on Order #${order.order_number}`,
+    },
+    {
+      restaurant_id: restaurantId,
+      order_id: order.id,
+      type: "logistics_fee",
+      direction: "debit",
+      amount_kobo: deliveryFeeKobo,
+      status: "settled",
+      description: `Delivery fee — Order #${order.order_number}`,
+    },
+  ]);
+
+  // Update wallet pending_balance and total_earned
+  await supabase.rpc("increment_wallet_pending", {
+    p_restaurant_id: restaurantId,
+    p_amount_kobo: restaurantCreditKobo,
+  });
+
+  // 10. Trigger SMS notifications via Edge Function (fire-and-forget)
   const edgeFnUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-sms`;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 

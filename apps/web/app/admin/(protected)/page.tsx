@@ -15,6 +15,9 @@ export default async function AdminOverviewPage() {
     { count: newMerchants },
     { data: revenueData },
     { count: totalOrders },
+    { data: platformFees },
+    { data: logisticsFees },
+    { count: pendingSettlements },
   ] = await Promise.all([
     supabase
       .from("restaurants")
@@ -34,10 +37,34 @@ export default async function AdminOverviewPage() {
       .select("id", { count: "exact", head: true })
       .gte("created_at", thirtyDaysAgo)
       .neq("status", "cancelled"),
+    supabase
+      .from("wallet_transactions")
+      .select("amount_kobo")
+      .eq("type", "service_charge")
+      .gte("created_at", thirtyDaysAgo),
+    supabase
+      .from("wallet_transactions")
+      .select("amount_kobo")
+      .eq("type", "logistics_fee")
+      .gte("created_at", thirtyDaysAgo),
+    supabase
+      .from("settlements")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["pending", "processing"]),
   ]);
 
   const totalGmv = (revenueData ?? []).reduce(
     (sum: number, p: { amount_kobo: number | null }) => sum + (p.amount_kobo ?? 0),
+    0
+  );
+
+  const totalPlatformRevenue = (platformFees ?? []).reduce(
+    (sum: number, t: { amount_kobo: number | null }) => sum + (t.amount_kobo ?? 0),
+    0
+  );
+
+  const totalLogisticsFees = (logisticsFees ?? []).reduce(
+    (sum: number, t: { amount_kobo: number | null }) => sum + (t.amount_kobo ?? 0),
     0
   );
 
@@ -46,7 +73,7 @@ export default async function AdminOverviewPage() {
       <h1 className="text-2xl font-bold text-black-900 mb-6">Platform Overview</h1>
       <p className="text-black-500 text-sm mb-6">Last 30 days</p>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
         <AdminMetric label="GMV" value={formatKobo(totalGmv)} />
         <AdminMetric label="Orders" value={(totalOrders ?? 0).toLocaleString()} />
         <AdminMetric
@@ -56,6 +83,15 @@ export default async function AdminOverviewPage() {
         <AdminMetric
           label="New Merchants"
           value={(newMerchants ?? 0).toLocaleString()}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <AdminMetric label="Platform Revenue" value={formatKobo(totalPlatformRevenue)} />
+        <AdminMetric label="Logistics Fees" value={formatKobo(totalLogisticsFees)} />
+        <AdminMetric
+          label="Pending Settlements"
+          value={(pendingSettlements ?? 0).toLocaleString()}
         />
       </div>
     </div>

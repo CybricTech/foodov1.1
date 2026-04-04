@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       audit_logs: {
@@ -613,7 +588,7 @@ export type Database = {
           currency: string
           id: string
           metadata: Json | null
-          order_id: string
+          order_id: string | null
           paid_at: string | null
           paystack_ref: string
           paystack_status: string
@@ -626,7 +601,7 @@ export type Database = {
           currency?: string
           id?: string
           metadata?: Json | null
-          order_id: string
+          order_id?: string | null
           paid_at?: string | null
           paystack_ref: string
           paystack_status: string
@@ -639,7 +614,7 @@ export type Database = {
           currency?: string
           id?: string
           metadata?: Json | null
-          order_id?: string
+          order_id?: string | null
           paid_at?: string | null
           paystack_ref?: string
           paystack_status?: string
@@ -720,29 +695,68 @@ export type Database = {
       }
       platform_settings: {
         Row: {
-          key: string
+          id: string
+          service_charge_fixed_kobo: number
+          service_charge_pct: number
+          settlement_hold_hours: number
           updated_at: string
           updated_by: string | null
-          value: Json
         }
         Insert: {
-          key: string
+          id?: string
+          service_charge_fixed_kobo?: number
+          service_charge_pct?: number
+          settlement_hold_hours?: number
           updated_at?: string
           updated_by?: string | null
-          value: Json
         }
         Update: {
-          key?: string
+          id?: string
+          service_charge_fixed_kobo?: number
+          service_charge_pct?: number
+          settlement_hold_hours?: number
           updated_at?: string
           updated_by?: string | null
-          value?: Json
+        }
+        Relationships: []
+      }
+      restaurant_wallets: {
+        Row: {
+          available_balance_kobo: number
+          created_at: string
+          id: string
+          pending_balance_kobo: number
+          restaurant_id: string
+          total_earned_kobo: number
+          total_withdrawn_kobo: number
+          updated_at: string
+        }
+        Insert: {
+          available_balance_kobo?: number
+          created_at?: string
+          id?: string
+          pending_balance_kobo?: number
+          restaurant_id: string
+          total_earned_kobo?: number
+          total_withdrawn_kobo?: number
+          updated_at?: string
+        }
+        Update: {
+          available_balance_kobo?: number
+          created_at?: string
+          id?: string
+          pending_balance_kobo?: number
+          restaurant_id?: string
+          total_earned_kobo?: number
+          total_withdrawn_kobo?: number
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "platform_settings_updated_by_fkey"
-            columns: ["updated_by"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
+            foreignKeyName: "restaurant_wallets_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: true
+            referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
         ]
@@ -751,6 +765,9 @@ export type Database = {
         Row: {
           accepts_orders: boolean
           address: string | null
+          bank_account_name: string | null
+          bank_account_number: string | null
+          bank_code: string | null
           banner_url: string | null
           city: string | null
           created_at: string
@@ -758,21 +775,30 @@ export type Database = {
           delivery_radius_km: number | null
           description: string | null
           estimated_delivery_minutes: number | null
+          facebook_url: string | null
           id: string
+          instagram_url: string | null
           is_active: boolean
           logistics_default: string
           logo_url: string | null
           min_order_amount: number | null
           name: string
+          paystack_recipient_code: string | null
           phone: string | null
           primary_color: string | null
           slug: string
           state: string | null
+          twitter_url: string | null
           updated_at: string
+          whatsapp_number: string | null
+          youtube_url: string | null
         }
         Insert: {
           accepts_orders?: boolean
           address?: string | null
+          bank_account_name?: string | null
+          bank_account_number?: string | null
+          bank_code?: string | null
           banner_url?: string | null
           city?: string | null
           created_at?: string
@@ -780,21 +806,30 @@ export type Database = {
           delivery_radius_km?: number | null
           description?: string | null
           estimated_delivery_minutes?: number | null
+          facebook_url?: string | null
           id?: string
+          instagram_url?: string | null
           is_active?: boolean
           logistics_default?: string
           logo_url?: string | null
           min_order_amount?: number | null
           name: string
+          paystack_recipient_code?: string | null
           phone?: string | null
           primary_color?: string | null
           slug: string
           state?: string | null
+          twitter_url?: string | null
           updated_at?: string
+          whatsapp_number?: string | null
+          youtube_url?: string | null
         }
         Update: {
           accepts_orders?: boolean
           address?: string | null
+          bank_account_name?: string | null
+          bank_account_number?: string | null
+          bank_code?: string | null
           banner_url?: string | null
           city?: string | null
           created_at?: string
@@ -802,17 +837,23 @@ export type Database = {
           delivery_radius_km?: number | null
           description?: string | null
           estimated_delivery_minutes?: number | null
+          facebook_url?: string | null
           id?: string
+          instagram_url?: string | null
           is_active?: boolean
           logistics_default?: string
           logo_url?: string | null
           min_order_amount?: number | null
           name?: string
+          paystack_recipient_code?: string | null
           phone?: string | null
           primary_color?: string | null
           slug?: string
           state?: string | null
+          twitter_url?: string | null
           updated_at?: string
+          whatsapp_number?: string | null
+          youtube_url?: string | null
         }
         Relationships: []
       }
@@ -870,6 +911,53 @@ export type Database = {
           },
           {
             foreignKeyName: "reviews_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      settlements: {
+        Row: {
+          amount_kobo: number
+          created_at: string
+          failure_reason: string | null
+          id: string
+          initiated_at: string
+          paid_at: string | null
+          paystack_transfer_code: string | null
+          paystack_transfer_ref: string | null
+          restaurant_id: string
+          status: string
+        }
+        Insert: {
+          amount_kobo: number
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          initiated_at?: string
+          paid_at?: string | null
+          paystack_transfer_code?: string | null
+          paystack_transfer_ref?: string | null
+          restaurant_id: string
+          status?: string
+        }
+        Update: {
+          amount_kobo?: number
+          created_at?: string
+          failure_reason?: string | null
+          id?: string
+          initiated_at?: string
+          paid_at?: string | null
+          paystack_transfer_code?: string | null
+          paystack_transfer_ref?: string | null
+          restaurant_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "settlements_restaurant_id_fkey"
             columns: ["restaurant_id"]
             isOneToOne: false
             referencedRelation: "restaurants"
@@ -990,13 +1078,90 @@ export type Database = {
           },
         ]
       }
+      wallet_transactions: {
+        Row: {
+          amount_kobo: number
+          available_at: string | null
+          created_at: string
+          description: string | null
+          direction: string
+          id: string
+          order_id: string | null
+          restaurant_id: string
+          settlement_id: string | null
+          status: string
+          type: string
+        }
+        Insert: {
+          amount_kobo: number
+          available_at?: string | null
+          created_at?: string
+          description?: string | null
+          direction: string
+          id?: string
+          order_id?: string | null
+          restaurant_id: string
+          settlement_id?: string | null
+          status?: string
+          type: string
+        }
+        Update: {
+          amount_kobo?: number
+          available_at?: string | null
+          created_at?: string
+          description?: string | null
+          direction?: string
+          id?: string
+          order_id?: string | null
+          restaurant_id?: string
+          settlement_id?: string | null
+          status?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_wallet_txn_settlement"
+            columns: ["settlement_id"]
+            isOneToOne: false
+            referencedRelation: "settlements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wallet_transactions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wallet_transactions_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      debit_wallet_for_settlement: {
+        Args: { p_amount_kobo: number; p_restaurant_id: string }
+        Returns: undefined
+      }
       get_my_restaurant_id: { Args: never; Returns: string }
       get_my_role: { Args: never; Returns: string }
+      increment_wallet_pending: {
+        Args: { p_amount_kobo: number; p_restaurant_id: string }
+        Returns: undefined
+      }
+      release_pending_wallet_balances: { Args: never; Returns: undefined }
+      restore_failed_settlement: {
+        Args: { p_amount_kobo: number; p_restaurant_id: string }
+        Returns: undefined
+      }
       upsert_customer: {
         Args: {
           p_email?: string
@@ -1135,45 +1300,7 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
 } as const
-
-// ── Convenience type aliases ──────────────────────────────────
-type PublicTables = Database["public"]["Tables"];
-
-export type Restaurant = PublicTables["restaurants"]["Row"];
-export type Customer = PublicTables["customers"]["Row"];
-export type Order = PublicTables["orders"]["Row"];
-export type OrderItem = PublicTables["order_items"]["Row"];
-export type MenuCategory = PublicTables["menu_categories"]["Row"];
-export type MenuItem = PublicTables["menu_items"]["Row"];
-export type MenuItemOption = PublicTables["menu_item_options"]["Row"];
-export type MenuItemOptionChoice = PublicTables["menu_item_option_choices"]["Row"];
-export type DeliveryAssignment = PublicTables["delivery_assignments"]["Row"];
-export type Payment = PublicTables["payments"]["Row"];
-export type SmsLog = PublicTables["sms_logs"]["Row"];
-export type UserProfile = PublicTables["user_profiles"]["Row"];
-export type PlatformRider = PublicTables["platform_riders"]["Row"];
-export type Review = PublicTables["reviews"]["Row"];
-export type ReviewInsert = PublicTables["reviews"]["Insert"];
-
-export type MenuItemWithOptions = MenuItem & {
-  options: (MenuItemOption & { choices: MenuItemOptionChoice[] })[];
-};
-export type OrderWithItems = Order & {
-  items: OrderItem[];
-  delivery_assignment: DeliveryAssignment | null;
-};
-export type CustomerWithOrders = Customer & {
-  orders: Pick<Order, "id" | "order_number" | "total_amount" | "status" | "created_at">[];
-};
-export interface SelectedOptionSnapshot {
-  optionId: string;
-  optionName: string;
-  choices: { choiceId: string; choiceName: string; priceModifierKobo: number }[];
-}
