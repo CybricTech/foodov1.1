@@ -29,8 +29,9 @@ export default function CheckoutPage() {
   // Fulfillment
   const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("pickup");
 
-  // Delivery address — selectedPlaceAddress is the full formatted address from Places
-  const [selectedPlaceAddress, setSelectedPlaceAddress] = useState("");
+  // Delivery address
+  const [addressInput, setAddressInput] = useState(""); // controlled input value
+  const [selectedPlaceAddress, setSelectedPlaceAddress] = useState(""); // confirmed address (from Places or manual)
   const [deliveryFeeKobo, setDeliveryFeeKobo] = useState<number | null>(null);
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
   const [deliveryFeeError, setDeliveryFeeError] = useState("");
@@ -68,6 +69,7 @@ export default function CheckoutPage() {
       autocompleteRef.current.addListener("place_changed", () => {
         const place = autocompleteRef.current!.getPlace();
         const address = place.formatted_address ?? "";
+        setAddressInput(address);
         setSelectedPlaceAddress(address);
         if (address) calculateDeliveryFee(address);
       });
@@ -96,6 +98,7 @@ export default function CheckoutPage() {
   // Reset delivery fee when switching fulfillment type
   useEffect(() => {
     if (fulfillmentType === "pickup") {
+      setAddressInput("");
       setSelectedPlaceAddress("");
       setDeliveryFeeKobo(null);
       setDeliveryFeeError("");
@@ -304,7 +307,26 @@ export default function CheckoutPage() {
                 ref={addressInputRef}
                 type="text"
                 placeholder="Start typing your address…"
-                defaultValue={selectedPlaceAddress}
+                value={addressInput}
+                onChange={(e) => {
+                  setAddressInput(e.target.value);
+                  // Reset confirmed address when user edits manually
+                  if (selectedPlaceAddress) {
+                    setSelectedPlaceAddress("");
+                    setDeliveryFeeKobo(null);
+                    setDeliveryFeeError("");
+                    setDistanceKm(null);
+                    setDurationMinutes(null);
+                  }
+                }}
+                onBlur={() => {
+                  const trimmed = addressInput.trim();
+                  // Fallback: if user typed an address but didn't pick from Places dropdown
+                  if (trimmed && !selectedPlaceAddress) {
+                    setSelectedPlaceAddress(trimmed);
+                    calculateDeliveryFee(trimmed);
+                  }
+                }}
                 className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
                 autoComplete="off"
               />
