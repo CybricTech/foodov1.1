@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { useCartStore } from "@/lib/stores/cart";
@@ -44,59 +44,6 @@ export default function CheckoutPage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
 
-  const addressInputRef = useRef<HTMLInputElement>(null);
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const feeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Load Google Maps Places API + initialise autocomplete
-  useEffect(() => {
-    if (fulfillmentType !== "delivery") return;
-
-    function initAutocomplete() {
-      if (!addressInputRef.current || autocompleteRef.current) return;
-      autocompleteRef.current = new window.google.maps.places.Autocomplete(
-        addressInputRef.current,
-        {
-          componentRestrictions: { country: "ng" },
-          fields: ["formatted_address", "geometry"],
-          // Bias toward Abuja
-          bounds: new window.google.maps.LatLngBounds(
-            new window.google.maps.LatLng(8.7, 6.9),
-            new window.google.maps.LatLng(9.4, 7.9)
-          ),
-          strictBounds: false,
-        }
-      );
-      autocompleteRef.current.addListener("place_changed", () => {
-        if (feeDebounceRef.current) clearTimeout(feeDebounceRef.current);
-        const place = autocompleteRef.current!.getPlace();
-        const address = place.formatted_address ?? "";
-        setAddressInput(address);
-        setSelectedPlaceAddress(address);
-        if (address) calculateDeliveryFee(address);
-      });
-    }
-
-    if (window.google?.maps?.places) {
-      initAutocomplete();
-      return;
-    }
-
-    // Script not yet loaded — load it
-    const existingScript = document.getElementById("google-maps-script");
-    if (!existingScript) {
-      const script = document.createElement("script");
-      script.id = "google-maps-script";
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
-      script.async = true;
-      script.onload = initAutocomplete;
-      document.head.appendChild(script);
-    } else {
-      existingScript.addEventListener("load", initAutocomplete);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fulfillmentType]);
-
   // Reset delivery fee when switching fulfillment type
   useEffect(() => {
     if (fulfillmentType === "pickup") {
@@ -106,7 +53,6 @@ export default function CheckoutPage() {
       setDeliveryFeeError("");
       setDistanceKm(null);
       setDurationMinutes(null);
-      autocompleteRef.current = null;
     }
   }, [fulfillmentType]);
 
@@ -305,15 +251,12 @@ export default function CheckoutPage() {
           ) : (
             <div className="px-4 py-4 space-y-2">
               <label className="block text-xs text-black-400">Delivery address</label>
-              <input
-                ref={addressInputRef}
-                type="text"
-                placeholder="Start typing your address…"
+              <textarea
+                rows={2}
+                placeholder="e.g. 12 Aminu Kano Crescent, Wuse 2, Abuja"
                 value={addressInput}
                 onChange={(e) => {
-                  const val = e.target.value;
-                  setAddressInput(val);
-                  // Reset confirmed address when user edits manually
+                  setAddressInput(e.target.value);
                   if (selectedPlaceAddress) {
                     setSelectedPlaceAddress("");
                     setDeliveryFeeKobo(null);
@@ -321,18 +264,27 @@ export default function CheckoutPage() {
                     setDistanceKm(null);
                     setDurationMinutes(null);
                   }
-                  // Debounce: auto-calculate after user stops typing (fallback when Places not used)
-                  if (feeDebounceRef.current) clearTimeout(feeDebounceRef.current);
-                  if (val.trim().length > 10) {
-                    feeDebounceRef.current = setTimeout(() => {
-                      setSelectedPlaceAddress(val.trim());
-                      calculateDeliveryFee(val.trim());
-                    }, 1500);
-                  }
                 }}
-                className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
-                autoComplete="off"
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white resize-none",
+                  "focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary",
+                  "placeholder:text-black-300",
+                  fieldErrors.deliveryAddress ? "border-cinnabar-500" : "border-black-200"
+                )}
               />
+              <button
+                type="button"
+                disabled={addressInput.trim().length < 5 || deliveryFeeLoading}
+                onClick={() => {
+                  const trimmed = addressInput.trim();
+                  if (!trimmed) return;
+                  setSelectedPlaceAddress(trimmed);
+                  calculateDeliveryFee(trimmed);
+                }}
+                className="w-full py-2.5 rounded-xl border border-black-200 text-sm text-black-600 font-medium hover:border-black-400 hover:text-black-900 transition-colors disabled:opacity-40"
+              >
+                {deliveryFeeLoading ? "Calculating…" : "Calculate delivery fee →"}
+              </button>
               {fieldErrors.deliveryAddress && (
                 <p className="text-xs text-cinnabar-500">{fieldErrors.deliveryAddress}</p>
               )}
