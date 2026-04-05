@@ -46,6 +46,7 @@ export default function CheckoutPage() {
 
   const addressInputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const feeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load Google Maps Places API + initialise autocomplete
   useEffect(() => {
@@ -67,6 +68,7 @@ export default function CheckoutPage() {
         }
       );
       autocompleteRef.current.addListener("place_changed", () => {
+        if (feeDebounceRef.current) clearTimeout(feeDebounceRef.current);
         const place = autocompleteRef.current!.getPlace();
         const address = place.formatted_address ?? "";
         setAddressInput(address);
@@ -309,7 +311,8 @@ export default function CheckoutPage() {
                 placeholder="Start typing your address…"
                 value={addressInput}
                 onChange={(e) => {
-                  setAddressInput(e.target.value);
+                  const val = e.target.value;
+                  setAddressInput(val);
                   // Reset confirmed address when user edits manually
                   if (selectedPlaceAddress) {
                     setSelectedPlaceAddress("");
@@ -318,13 +321,13 @@ export default function CheckoutPage() {
                     setDistanceKm(null);
                     setDurationMinutes(null);
                   }
-                }}
-                onBlur={() => {
-                  const trimmed = addressInput.trim();
-                  // Fallback: if user typed an address but didn't pick from Places dropdown
-                  if (trimmed && !selectedPlaceAddress) {
-                    setSelectedPlaceAddress(trimmed);
-                    calculateDeliveryFee(trimmed);
+                  // Debounce: auto-calculate after user stops typing (fallback when Places not used)
+                  if (feeDebounceRef.current) clearTimeout(feeDebounceRef.current);
+                  if (val.trim().length > 10) {
+                    feeDebounceRef.current = setTimeout(() => {
+                      setSelectedPlaceAddress(val.trim());
+                      calculateDeliveryFee(val.trim());
+                    }, 1500);
                   }
                 }}
                 className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
