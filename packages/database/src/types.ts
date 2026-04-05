@@ -460,8 +460,10 @@ export type Database = {
           customer_phone: string | null
           delivered_at: string | null
           delivery_address: string | null
+          delivery_distance_km: number | null
           delivery_fee: number
           delivery_fee_kobo: number
+          delivery_fee_kobo_calculated: number | null
           delivery_lat: number | null
           delivery_lng: number | null
           delivery_status: string | null
@@ -493,8 +495,10 @@ export type Database = {
           customer_phone?: string | null
           delivered_at?: string | null
           delivery_address?: string | null
+          delivery_distance_km?: number | null
           delivery_fee?: number
           delivery_fee_kobo?: number
+          delivery_fee_kobo_calculated?: number | null
           delivery_lat?: number | null
           delivery_lng?: number | null
           delivery_status?: string | null
@@ -526,8 +530,10 @@ export type Database = {
           customer_phone?: string | null
           delivered_at?: string | null
           delivery_address?: string | null
+          delivery_distance_km?: number | null
           delivery_fee?: number
           delivery_fee_kobo?: number
+          delivery_fee_kobo_calculated?: number | null
           delivery_lat?: number | null
           delivery_lng?: number | null
           delivery_status?: string | null
@@ -695,6 +701,10 @@ export type Database = {
       }
       platform_settings: {
         Row: {
+          delivery_base_fee_kobo: number
+          delivery_max_fee_kobo: number
+          delivery_max_radius_km: number
+          delivery_per_km_rate_kobo: number
           id: string
           service_charge_fixed_kobo: number
           service_charge_pct: number
@@ -703,6 +713,10 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          delivery_base_fee_kobo?: number
+          delivery_max_fee_kobo?: number
+          delivery_max_radius_km?: number
+          delivery_per_km_rate_kobo?: number
           id?: string
           service_charge_fixed_kobo?: number
           service_charge_pct?: number
@@ -711,6 +725,10 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          delivery_base_fee_kobo?: number
+          delivery_max_fee_kobo?: number
+          delivery_max_radius_km?: number
+          delivery_per_km_rate_kobo?: number
           id?: string
           service_charge_fixed_kobo?: number
           service_charge_pct?: number
@@ -779,8 +797,10 @@ export type Database = {
           id: string
           instagram_url: string | null
           is_active: boolean
+          latitude: number | null
           logistics_default: string
           logo_url: string | null
+          longitude: number | null
           min_order_amount: number | null
           name: string
           paystack_recipient_code: string | null
@@ -810,8 +830,10 @@ export type Database = {
           id?: string
           instagram_url?: string | null
           is_active?: boolean
+          latitude?: number | null
           logistics_default?: string
           logo_url?: string | null
+          longitude?: number | null
           min_order_amount?: number | null
           name: string
           paystack_recipient_code?: string | null
@@ -841,8 +863,10 @@ export type Database = {
           id?: string
           instagram_url?: string | null
           is_active?: boolean
+          latitude?: number | null
           logistics_default?: string
           logo_url?: string | null
+          longitude?: number | null
           min_order_amount?: number | null
           name?: string
           paystack_recipient_code?: string | null

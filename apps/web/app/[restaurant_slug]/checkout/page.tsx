@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { useCartStore } from "@/lib/stores/cart";
@@ -28,13 +28,105 @@ export default function CheckoutPage() {
 
   // Fulfillment
   const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("pickup");
-  const [deliveryAddress, setDeliveryAddress] = useState("");
+
+  // Delivery address — selectedPlaceAddress is the full formatted address from Places
+  const [selectedPlaceAddress, setSelectedPlaceAddress] = useState("");
+  const [deliveryFeeKobo, setDeliveryFeeKobo] = useState<number | null>(null);
+  const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
+  const [deliveryFeeError, setDeliveryFeeError] = useState("");
+  const [distanceKm, setDistanceKm] = useState<number | null>(null);
+  const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
 
   // Customer info
   const [phone, setPhone] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  // Load Google Maps Places API + initialise autocomplete
+  useEffect(() => {
+    if (fulfillmentType !== "delivery") return;
+
+    function initAutocomplete() {
+      if (!addressInputRef.current || autocompleteRef.current) return;
+      autocompleteRef.current = new window.google.maps.places.Autocomplete(
+        addressInputRef.current,
+        {
+          componentRestrictions: { country: "ng" },
+          fields: ["formatted_address", "geometry"],
+          // Bias toward Abuja
+          bounds: new window.google.maps.LatLngBounds(
+            new window.google.maps.LatLng(8.7, 6.9),
+            new window.google.maps.LatLng(9.4, 7.9)
+          ),
+          strictBounds: false,
+        }
+      );
+      autocompleteRef.current.addListener("place_changed", () => {
+        const place = autocompleteRef.current!.getPlace();
+        const address = place.formatted_address ?? "";
+        setSelectedPlaceAddress(address);
+        if (address) calculateDeliveryFee(address);
+      });
+    }
+
+    if (window.google?.maps?.places) {
+      initAutocomplete();
+      return;
+    }
+
+    // Script not yet loaded — load it
+    const existingScript = document.getElementById("google-maps-script");
+    if (!existingScript) {
+      const script = document.createElement("script");
+      script.id = "google-maps-script";
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
+      script.async = true;
+      script.onload = initAutocomplete;
+      document.head.appendChild(script);
+    } else {
+      existingScript.addEventListener("load", initAutocomplete);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fulfillmentType]);
+
+  // Reset delivery fee when switching fulfillment type
+  useEffect(() => {
+    if (fulfillmentType === "pickup") {
+      setSelectedPlaceAddress("");
+      setDeliveryFeeKobo(null);
+      setDeliveryFeeError("");
+      setDistanceKm(null);
+      setDurationMinutes(null);
+      autocompleteRef.current = null;
+    }
+  }, [fulfillmentType]);
+
+  async function calculateDeliveryFee(address: string) {
+    setDeliveryFeeLoading(true);
+    setDeliveryFeeError("");
+    try {
+      const res = await fetch(
+        `/api/delivery/fee?restaurantId=${restaurant.id}&destinationAddress=${encodeURIComponent(address)}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setDeliveryFeeError(data.error ?? "Could not calculate delivery fee");
+        setDeliveryFeeKobo(null);
+      } else {
+        setDeliveryFeeKobo(data.feeKobo);
+        setDistanceKm(data.distanceKm);
+        setDurationMinutes(data.durationMinutes);
+      }
+    } catch {
+      setDeliveryFeeError("Could not calculate delivery fee. Please try again.");
+    } finally {
+      setDeliveryFeeLoading(false);
+    }
+  }
 
   // Redirect if cart is empty — but not while payment is processing
   useEffect(() => {
@@ -73,8 +165,12 @@ export default function CheckoutPage() {
         errors[i.path[0] as string] = i.message;
       });
     }
-    if (fulfillmentType === "delivery" && !deliveryAddress.trim()) {
-      errors.deliveryAddress = "Delivery address is required";
+    if (fulfillmentType === "delivery") {
+      if (!selectedPlaceAddress) {
+        errors.deliveryAddress = "Select a delivery address from the suggestions";
+      } else if (deliveryFeeKobo === null) {
+        errors.deliveryAddress = "Delivery fee could not be calculated for this address";
+      }
     }
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -96,14 +192,15 @@ export default function CheckoutPage() {
           customerPhone: normalizedPhone,
           customerEmail: email || undefined,
           fulfillmentType,
-          deliveryAddress: deliveryAddress || undefined,
+          deliveryAddress: selectedPlaceAddress || undefined,
+          deliveryFeeKobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
+          deliveryDistanceKm: distanceKm ?? undefined,
           items: items.map((item) => ({
             menuItemId: item.menuItemId,
             name: item.name,
             priceKobo: item.price,
             quantity: item.quantity,
             selectedOptions: item.selectedOptions,
-            specialRequest: item.specialRequest,
           })),
         }),
       });
@@ -140,9 +237,16 @@ export default function CheckoutPage() {
     }
   }
 
-  const deliveryFee = restaurant.delivery_fee ?? 0;
-  const total = subtotal + (fulfillmentType === "delivery" ? deliveryFee : 0);
+  const effectiveDeliveryFee =
+    fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0;
+  const total = subtotal + effectiveDeliveryFee;
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
+
+  // Pay button is disabled for delivery until a valid fee is calculated
+  const payDisabled =
+    loading ||
+    (fulfillmentType === "delivery" &&
+      (deliveryFeeKobo === null || !!deliveryFeeError || deliveryFeeLoading));
 
   return (
     <div className="min-h-screen bg-black-50 pb-32">
@@ -177,7 +281,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Pickup address OR delivery address input */}
+          {/* Pickup info OR delivery address input */}
           {fulfillmentType === "pickup" ? (
             <div className="px-4 py-4 flex items-start gap-3">
               <span className="text-lg mt-0.5">🏪</span>
@@ -194,17 +298,21 @@ export default function CheckoutPage() {
               </div>
             </div>
           ) : (
-            <div className="px-4 py-4">
-              <label className="block text-xs text-black-400 mb-1.5">Delivery address</label>
-              <textarea
-                value={deliveryAddress}
-                onChange={(e) => setDeliveryAddress(e.target.value)}
-                placeholder="Enter your full delivery address..."
-                rows={2}
-                className={inputClass(!!fieldErrors.deliveryAddress)}
+            <div className="px-4 py-4 space-y-2">
+              <label className="block text-xs text-black-400">Delivery address</label>
+              <input
+                ref={addressInputRef}
+                type="text"
+                placeholder="Start typing your address…"
+                defaultValue={selectedPlaceAddress}
+                className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
+                autoComplete="off"
               />
               {fieldErrors.deliveryAddress && (
-                <p className="mt-1 text-xs text-cinnabar-500">{fieldErrors.deliveryAddress}</p>
+                <p className="text-xs text-cinnabar-500">{fieldErrors.deliveryAddress}</p>
+              )}
+              {deliveryFeeError && (
+                <p className="text-xs text-cinnabar-500">{deliveryFeeError}</p>
               )}
             </div>
           )}
@@ -218,12 +326,39 @@ export default function CheckoutPage() {
               </div>
               <span className="text-sm font-semibold text-black-900">{formatKobo(subtotal)}</span>
             </div>
+
             {fulfillmentType === "delivery" && (
               <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
-                <span className="text-sm text-black-500">Delivery fee</span>
-                <span className="text-sm font-semibold text-black-900">{formatKobo(deliveryFee)}</span>
+                <div className="text-sm text-black-500">
+                  <span>Delivery fee</span>
+                  {distanceKm !== null && durationMinutes !== null && (
+                    <span className="ml-1.5 text-xs text-black-400">
+                      {distanceKm}km · ~{durationMinutes} min
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm font-semibold text-black-900">
+                  {deliveryFeeLoading ? (
+                    <span className="inline-flex items-center gap-1 text-black-400 text-xs">
+                      <span className="w-3 h-3 border border-black-300 border-t-transparent rounded-full animate-spin" />
+                      Calculating…
+                    </span>
+                  ) : deliveryFeeKobo !== null ? (
+                    formatKobo(deliveryFeeKobo)
+                  ) : (
+                    <span className="text-black-300 text-xs">—</span>
+                  )}
+                </span>
               </div>
             )}
+
+            {fulfillmentType === "pickup" && (
+              <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
+                <span className="text-sm text-black-500">Delivery fee</span>
+                <span className="text-sm font-semibold text-viridian-600">Free</span>
+              </div>
+            )}
+
             <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
               <span className="text-sm font-bold text-black-900">Total</span>
               <span className="text-sm font-bold text-black-900">{formatKobo(total)}</span>
@@ -290,7 +425,7 @@ export default function CheckoutPage() {
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-black-100 px-4 py-4">
         <button
           onClick={handlePay}
-          disabled={loading}
+          disabled={payDisabled}
           className="w-full bg-primary hover:bg-primary/90 disabled:opacity-60 text-white font-bold py-4 rounded-xl transition-colors text-base"
         >
           {loading ? "Processing..." : `Pay now · ${formatKobo(total)}`}

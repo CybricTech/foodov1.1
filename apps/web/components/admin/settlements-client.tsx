@@ -30,6 +30,10 @@ type PlatformSettings = {
   service_charge_pct: number;
   service_charge_fixed_kobo: number;
   settlement_hold_hours: number;
+  delivery_base_fee_kobo?: number | null;
+  delivery_per_km_rate_kobo?: number | null;
+  delivery_max_radius_km?: number | null;
+  delivery_max_fee_kobo?: number | null;
 } | null;
 
 interface SettlementsClientProps {
@@ -68,9 +72,63 @@ export function SettlementsClient({
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsError, setSettingsError] = useState("");
 
+  // Delivery pricing form state
+  const [baseFeeNgn, setBaseFeeNgn] = useState(
+    settings?.delivery_base_fee_kobo ? String(Math.round(Number(settings.delivery_base_fee_kobo) / 100)) : "2300"
+  );
+  const [perKmNgn, setPerKmNgn] = useState(
+    settings?.delivery_per_km_rate_kobo ? String(Math.round(Number(settings.delivery_per_km_rate_kobo) / 100)) : "150"
+  );
+  const [maxRadius, setMaxRadius] = useState(
+    settings?.delivery_max_radius_km ? String(settings.delivery_max_radius_km) : "25"
+  );
+  const [maxFeeNgn, setMaxFeeNgn] = useState(
+    settings?.delivery_max_fee_kobo ? String(Math.round(Number(settings.delivery_max_fee_kobo) / 100)) : "15000"
+  );
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [deliverySaved, setDeliverySaved] = useState(false);
+  const [deliveryError, setDeliveryError] = useState("");
+
   const filtered = settlements.filter(
     (s) => statusFilter === "all" || s.status === statusFilter
   );
+
+  async function saveDeliverySettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingDelivery(true);
+    setDeliveryError("");
+    try {
+      const res = await fetch("/api/admin/platform-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          delivery_base_fee_kobo: Math.round(parseFloat(baseFeeNgn) * 100),
+          delivery_per_km_rate_kobo: Math.round(parseFloat(perKmNgn) * 100),
+          delivery_max_radius_km: parseInt(maxRadius),
+          delivery_max_fee_kobo: Math.round(parseFloat(maxFeeNgn) * 100),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeliveryError(data.error ?? "Failed to save");
+      } else {
+        setDeliverySaved(true);
+        setTimeout(() => setDeliverySaved(false), 3000);
+      }
+    } catch {
+      setDeliveryError("Network error");
+    }
+    setSavingDelivery(false);
+  }
+
+  // Live formula preview at 3km, 7km, 15km
+  function previewFee(km: number): string {
+    const base = parseFloat(baseFeeNgn) || 0;
+    const rate = parseFloat(perKmNgn) || 0;
+    const cap = parseFloat(maxFeeNgn) || 999999;
+    const fee = Math.min(base + km * rate, cap);
+    return `₦${fee.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
+  }
 
   async function triggerSettlement(restaurantId: string) {
     setTriggering(restaurantId);
@@ -223,6 +281,82 @@ export function SettlementsClient({
             ))}
           </div>
         )}
+      </div>
+
+      {/* Delivery pricing config */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <h2 className="font-bold text-black-900 text-sm">Delivery Pricing</h2>
+          <p className="text-xs text-black-400 mt-0.5">
+            Formula: Base fee + (distance × per-km rate), capped at max fee
+          </p>
+        </div>
+        <form onSubmit={saveDeliverySettings} className="px-4 py-4 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">Base fee (₦)</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={baseFeeNgn}
+                onChange={(e) => setBaseFeeNgn(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">Per km rate (₦/km)</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={perKmNgn}
+                onChange={(e) => setPerKmNgn(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">Max radius (km)</label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                max="100"
+                value={maxRadius}
+                onChange={(e) => setMaxRadius(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">Max fee cap (₦)</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={maxFeeNgn}
+                onChange={(e) => setMaxFeeNgn(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+          </div>
+
+          {/* Live formula preview */}
+          <div className="bg-black-50 rounded-xl px-4 py-3 text-xs text-black-500">
+            <span className="font-medium text-black-700">Preview: </span>
+            at 3km → {previewFee(3)} &nbsp;|&nbsp;
+            at 7km → {previewFee(7)} &nbsp;|&nbsp;
+            at 15km → {previewFee(15)}
+          </div>
+
+          {deliveryError && <p className="text-xs text-cinnabar-500">{deliveryError}</p>}
+          <button
+            type="submit"
+            disabled={savingDelivery}
+            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+          >
+            {savingDelivery ? "Saving…" : deliverySaved ? "Saved!" : "Save delivery pricing"}
+          </button>
+        </form>
       </div>
 
       {/* Service charge config */}

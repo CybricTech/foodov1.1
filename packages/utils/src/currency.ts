@@ -68,3 +68,28 @@ export function formatNGNCompact(ngn: number): string {
 export function parseNGN(formatted: string): number {
   return parseFloat(formatted.replace(/[₦,\s]/g, ""));
 }
+
+/**
+ * Calculate delivery fee in kobo given a distance.
+ * Uses the hardcoded fallback constants — the live endpoint uses platform_settings.
+ * Returns -1 if the distance exceeds the maximum radius.
+ */
+export function calculateDeliveryFee(
+  distanceKm: number,
+  options?: {
+    baseFeeKobo?: number;
+    perKmRateKobo?: number;
+    maxRadiusKm?: number;
+    maxFeeKobo?: number;
+  }
+): number {
+  // Import lazily to avoid circular deps — values must be passed in or will use module defaults
+  const base = options?.baseFeeKobo ?? 230000;
+  const perKm = options?.perKmRateKobo ?? 15000;
+  const maxRadius = options?.maxRadiusKm ?? 25;
+  const maxFee = options?.maxFeeKobo ?? 1500000;
+
+  if (distanceKm > maxRadius) return -1;
+  const fee = base + Math.round(distanceKm * perKm);
+  return Math.min(fee, maxFee);
+}

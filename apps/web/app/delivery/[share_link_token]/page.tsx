@@ -27,6 +27,7 @@ export default async function DeliveryCardPage({ params }: DeliveryCardProps) {
         special_instructions,
         total_kobo,
         status,
+        delivery_distance_km,
         order_items (id, item_name, quantity)
       ),
       restaurant:restaurants (name, phone, address)
@@ -113,6 +114,11 @@ export default async function DeliveryCardPage({ params }: DeliveryCardProps) {
               <p className="text-sm text-black-500">
                 {order?.delivery_address as string}
               </p>
+              {order?.delivery_distance_km != null && (
+                <p className="text-xs text-black-400 mt-1">
+                  📍 {Number(order.delivery_distance_km).toFixed(1)}km away
+                </p>
+              )}
               <a
                 href={`tel:${order?.customer_phone as string}`}
                 className="text-sm text-primary font-medium mt-1 block"

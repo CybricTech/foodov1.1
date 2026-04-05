@@ -2,15 +2,20 @@
 
 import { useState } from "react";
 import { cn } from "@foodo/ui";
-import { Store, ExternalLink } from "lucide-react";
+import { Store, ExternalLink, MapPin } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
 
+type RestaurantWithLocation = Restaurant & {
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
 interface MerchantsClientProps {
-  initialRestaurants: Restaurant[];
+  initialRestaurants: RestaurantWithLocation[];
 }
 
 export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
-  const [restaurants, setRestaurants] = useState(initialRestaurants);
+  const [restaurants, setRestaurants] = useState<RestaurantWithLocation[]>(initialRestaurants);
   const [showOnboard, setShowOnboard] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Restaurant | null>(null);
@@ -78,6 +83,18 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
               </p>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
+              <span
+                title={r.latitude && r.longitude ? `Location set: ${r.latitude}, ${r.longitude}` : "No location set — delivery fees will use base rate"}
+                className={cn(
+                  "flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium",
+                  r.latitude && r.longitude
+                    ? "bg-viridian-100 text-viridian-600"
+                    : "bg-dixie-100 text-dixie-600"
+                )}
+              >
+                <MapPin size={11} />
+                {r.latitude && r.longitude ? "Located" : "No location"}
+              </span>
               <span
                 className={cn(
                   "text-xs px-2 py-0.5 rounded-full font-medium",
@@ -174,7 +191,7 @@ function OnboardModal({
   onSuccess,
 }: {
   onClose: () => void;
-  onSuccess: (restaurant: Restaurant) => void;
+  onSuccess: (restaurant: RestaurantWithLocation) => void;
 }) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");

@@ -157,6 +157,110 @@ function BankAccountSection({ restaurantId, initialData }: {
   );
 }
 
+function RestaurantLocationSection({
+  restaurantId,
+  initialLat,
+  initialLng,
+}: {
+  restaurantId: string;
+  initialLat: number | null;
+  initialLng: number | null;
+}) {
+  const [lat, setLat] = useState(initialLat ? String(initialLat) : "");
+  const [lng, setLng] = useState(initialLng ? String(initialLng) : "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
+    if (isNaN(parsedLat) || isNaN(parsedLng)) {
+      setError("Enter valid latitude and longitude values");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/merchant/location", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latitude: parsedLat, longitude: parsedLng }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Failed to save location");
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch {
+      setError("Network error");
+    }
+    setSaving(false);
+  }
+
+  const hasLocation = initialLat && initialLng;
+
+  return (
+    <Section title="Restaurant location">
+      <p className="text-xs text-black-400">
+        Set your restaurant&apos;s coordinates accurately — this is used to calculate delivery fees for your customers.
+        {!hasLocation && (
+          <span className="ml-1 text-dixie-600 font-medium">Location not set — delivery fees will use the base rate until this is configured.</span>
+        )}
+      </p>
+      {hasLocation && (
+        <div className="bg-black-50 rounded-xl px-4 py-3 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-viridian-500 flex-shrink-0" />
+          <div>
+            <p className="text-xs font-medium text-black-700">Location set</p>
+            <p className="text-xs text-black-400">{initialLat}, {initialLng}</p>
+          </div>
+        </div>
+      )}
+      <form onSubmit={handleSave} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-black-500 mb-1">Latitude</label>
+            <input
+              type="number"
+              step="any"
+              value={lat}
+              onChange={(e) => setLat(e.target.value)}
+              placeholder="e.g. 9.0579"
+              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-black-500 mb-1">Longitude</label>
+            <input
+              type="number"
+              step="any"
+              value={lng}
+              onChange={(e) => setLng(e.target.value)}
+              placeholder="e.g. 7.4951"
+              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-black-400">
+          Find your coordinates: open Google Maps, right-click your restaurant location, and copy the numbers shown.
+        </p>
+        {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+        <button
+          type="submit"
+          disabled={saving}
+          className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+        >
+          {saving ? "Saving…" : saved ? "Saved!" : "Save location"}
+        </button>
+      </form>
+    </Section>
+  );
+}
+
 type RestaurantExtended = Restaurant & {
   city?: string | null;
   state?: string | null;
@@ -166,6 +270,8 @@ type RestaurantExtended = Restaurant & {
   twitter_url?: string | null;
   youtube_url?: string | null;
   whatsapp_number?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
@@ -546,6 +652,13 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               bank_account_name: (r as RestaurantExtended & { bank_account_name?: string | null }).bank_account_name ?? null,
               paystack_recipient_code: (r as RestaurantExtended & { paystack_recipient_code?: string | null }).paystack_recipient_code ?? null,
             }}
+          />
+
+          {/* Restaurant location */}
+          <RestaurantLocationSection
+            restaurantId={r.id}
+            initialLat={r.latitude ?? null}
+            initialLng={r.longitude ?? null}
           />
 
           {error && <p className="text-sm text-cinnabar-500">{error}</p>}

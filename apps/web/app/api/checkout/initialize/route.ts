@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
-// ngnToKobo available from @foodo/utils if needed
+import {
+  DELIVERY_BASE_FEE_KOBO,
+  DELIVERY_PER_KM_RATE_KOBO,
+  DELIVERY_MAX_RADIUS_KM,
+  DELIVERY_MAX_FEE_KOBO,
+} from "@foodo/utils";
 
 const InitializeSchema = z.object({
   restaurantId: z.string().uuid(),
@@ -11,6 +16,8 @@ const InitializeSchema = z.object({
   fulfillmentType: z.enum(["delivery", "pickup"]),
   deliveryAddress: z.string().optional(),
   specialInstructions: z.string().max(500).optional(),
+  deliveryFeeKobo: z.number().int().min(0).optional(),
+  deliveryDistanceKm: z.number().min(0).optional(),
   items: z.array(
     z.object({
       menuItemId: z.string().uuid(),
@@ -72,14 +79,78 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Compute total
+  // Compute subtotal
   const subtotalKobo = data.items.reduce(
     (sum, item) => sum + item.priceKobo * item.quantity,
     0
   );
 
-  const deliveryFeeKobo =
-    data.fulfillmentType === "delivery" ? (restaurant.delivery_fee ?? 0) : 0;
+  // Delivery fee — dynamic distance-based pricing
+  let deliveryFeeKobo = 0;
+
+  if (data.fulfillmentType === "delivery") {
+    if (data.deliveryFeeKobo !== undefined && data.deliveryAddress && data.deliveryDistanceKm !== undefined) {
+      // Server-side re-verification: re-fetch pricing and re-call Distance Matrix
+      // to ensure the client-submitted fee wasn't tampered with.
+      const { data: settings } = await supabase
+        .from("platform_settings")
+        .select("delivery_base_fee_kobo, delivery_per_km_rate_kobo, delivery_max_radius_km, delivery_max_fee_kobo")
+        .single();
+
+      const baseFeeKobo = Number(settings?.delivery_base_fee_kobo ?? DELIVERY_BASE_FEE_KOBO);
+      const perKmRateKobo = Number(settings?.delivery_per_km_rate_kobo ?? DELIVERY_PER_KM_RATE_KOBO);
+      const maxRadiusKm = Number(settings?.delivery_max_radius_km ?? DELIVERY_MAX_RADIUS_KM);
+      const maxFeeKobo = Number(settings?.delivery_max_fee_kobo ?? DELIVERY_MAX_FEE_KOBO);
+
+      const { data: rest } = await supabase
+        .from("restaurants")
+        .select("latitude, longitude")
+        .eq("id", data.restaurantId)
+        .single();
+
+      if (rest?.latitude && rest?.longitude) {
+        const origin = `${rest.latitude},${rest.longitude}`;
+        const destination = encodeURIComponent(data.deliveryAddress);
+        const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&units=metric&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+
+        const mapsRes = await fetch(mapsUrl);
+        const mapsData = await mapsRes.json();
+        const element = mapsData?.rows?.[0]?.elements?.[0];
+
+        if (element?.status === "OK") {
+          const distanceKm = element.distance.value / 1000;
+          if (distanceKm > maxRadiusKm) {
+            return NextResponse.json(
+              { error: "Delivery address is outside the allowed radius" },
+              { status: 422 }
+            );
+          }
+          const serverFee = Math.min(
+            baseFeeKobo + Math.round(distanceKm * perKmRateKobo),
+            maxFeeKobo
+          );
+          const clientFee = data.deliveryFeeKobo ?? 0;
+          // Reject if client fee differs from server re-calc by more than 10%
+          if (Math.abs(clientFee - serverFee) / Math.max(serverFee, 1) > 0.10) {
+            return NextResponse.json(
+              { error: "Delivery fee mismatch — please refresh and try again." },
+              { status: 422 }
+            );
+          }
+          deliveryFeeKobo = serverFee;
+        } else {
+          // Maps call failed — use client-submitted fee as fallback
+          deliveryFeeKobo = data.deliveryFeeKobo ?? baseFeeKobo;
+        }
+      } else {
+        // Restaurant has no coordinates — use client-submitted fee (base fee fallback)
+        deliveryFeeKobo = data.deliveryFeeKobo ?? baseFeeKobo;
+      }
+    } else {
+      // No dynamic fee submitted — fall back to restaurant's flat rate
+      deliveryFeeKobo = restaurant.delivery_fee ?? 0;
+    }
+  }
 
   const totalKobo = subtotalKobo + deliveryFeeKobo;
 
@@ -118,6 +189,7 @@ export async function POST(request: NextRequest) {
         items: data.items as unknown as import("@foodo/database").Json,
         subtotal_kobo: subtotalKobo,
         delivery_fee_kobo: deliveryFeeKobo,
+        delivery_distance_km: data.deliveryDistanceKm ?? null,
       } as import("@foodo/database").Json,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
