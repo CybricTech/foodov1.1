@@ -158,11 +158,9 @@ function BankAccountSection({ restaurantId, initialData }: {
 }
 
 function RestaurantLocationSection({
-  restaurantId,
   initialLat,
   initialLng,
 }: {
-  restaurantId: string;
   initialLat: number | null;
   initialLng: number | null;
 }) {
@@ -656,7 +654,6 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
 
           {/* Restaurant location */}
           <RestaurantLocationSection
-            restaurantId={r.id}
             initialLat={r.latitude ?? null}
             initialLng={r.longitude ?? null}
           />
