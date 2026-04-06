@@ -56,6 +56,19 @@ export default function CheckoutPage() {
     }
   }, [fulfillmentType]);
 
+  // Auto-calculate delivery fee after user stops typing
+  useEffect(() => {
+    if (fulfillmentType !== "delivery") return;
+    const trimmed = addressInput.trim();
+    if (trimmed.length < 8) return;
+    const timer = setTimeout(() => {
+      setSelectedPlaceAddress(trimmed);
+      calculateDeliveryFee(trimmed);
+    }, 1200);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addressInput, fulfillmentType]);
+
   async function calculateDeliveryFee(address: string) {
     setDeliveryFeeLoading(true);
     setDeliveryFeeError("");
@@ -272,20 +285,7 @@ export default function CheckoutPage() {
                   fieldErrors.deliveryAddress ? "border-cinnabar-500" : "border-black-200"
                 )}
               />
-              <button
-                type="button"
-                disabled={addressInput.trim().length < 5 || deliveryFeeLoading}
-                onClick={() => {
-                  const trimmed = addressInput.trim();
-                  if (!trimmed) return;
-                  setSelectedPlaceAddress(trimmed);
-                  calculateDeliveryFee(trimmed);
-                }}
-                className="w-full py-2.5 rounded-xl border border-black-200 text-sm text-black-600 font-medium hover:border-black-400 hover:text-black-900 transition-colors disabled:opacity-40"
-              >
-                {deliveryFeeLoading ? "Calculating…" : "Calculate delivery fee →"}
-              </button>
-              {fieldErrors.deliveryAddress && (
+{fieldErrors.deliveryAddress && (
                 <p className="text-xs text-cinnabar-500">{fieldErrors.deliveryAddress}</p>
               )}
               {deliveryFeeError && (
