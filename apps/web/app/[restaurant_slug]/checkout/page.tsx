@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { useCartStore } from "@/lib/stores/cart";
@@ -30,13 +30,18 @@ export default function CheckoutPage() {
   const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("pickup");
 
   // Delivery address
-  const [addressInput, setAddressInput] = useState(""); // controlled input value
-  const [selectedPlaceAddress, setSelectedPlaceAddress] = useState(""); // confirmed address (from Places or manual)
+  const [addressInput, setAddressInput] = useState("");
+  const [selectedPlaceAddress, setSelectedPlaceAddress] = useState("");
+  const [predictions, setPredictions] = useState<Array<{ description: string; place_id: string }>>([]);
+  const [showPredictions, setShowPredictions] = useState(false);
   const [deliveryFeeKobo, setDeliveryFeeKobo] = useState<number | null>(null);
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
   const [deliveryFeeError, setDeliveryFeeError] = useState("");
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
+
+  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
+  const predictionsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Customer info
   const [phone, setPhone] = useState("");
@@ -44,11 +49,13 @@ export default function CheckoutPage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
 
-  // Reset delivery fee when switching fulfillment type
+  // Reset state when switching to pickup
   useEffect(() => {
     if (fulfillmentType === "pickup") {
       setAddressInput("");
       setSelectedPlaceAddress("");
+      setPredictions([]);
+      setShowPredictions(false);
       setDeliveryFeeKobo(null);
       setDeliveryFeeError("");
       setDistanceKm(null);
@@ -56,18 +63,32 @@ export default function CheckoutPage() {
     }
   }, [fulfillmentType]);
 
-  // Auto-calculate delivery fee after user stops typing
+  // Load Google Maps script + init AutocompleteService when delivery tab is active
   useEffect(() => {
     if (fulfillmentType !== "delivery") return;
-    const trimmed = addressInput.trim();
-    if (trimmed.length < 8) return;
-    const timer = setTimeout(() => {
-      setSelectedPlaceAddress(trimmed);
-      calculateDeliveryFee(trimmed);
-    }, 1200);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addressInput, fulfillmentType]);
+
+    function initService() {
+      if (autocompleteServiceRef.current) return;
+      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+    }
+
+    if (window.google?.maps?.places) {
+      initService();
+      return;
+    }
+
+    const existing = document.getElementById("google-maps-script");
+    if (!existing) {
+      const script = document.createElement("script");
+      script.id = "google-maps-script";
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
+      script.async = true;
+      script.onload = initService;
+      document.head.appendChild(script);
+    } else {
+      existing.addEventListener("load", initService);
+    }
+  }, [fulfillmentType]);
 
   async function calculateDeliveryFee(address: string) {
     setDeliveryFeeLoading(true);
@@ -264,28 +285,77 @@ export default function CheckoutPage() {
           ) : (
             <div className="px-4 py-4 space-y-2">
               <label className="block text-xs text-black-400">Delivery address</label>
-              <textarea
-                rows={2}
-                placeholder="e.g. 12 Aminu Kano Crescent, Wuse 2, Abuja"
-                value={addressInput}
-                onChange={(e) => {
-                  setAddressInput(e.target.value);
-                  if (selectedPlaceAddress) {
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Start typing your address…"
+                  value={addressInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAddressInput(val);
                     setSelectedPlaceAddress("");
                     setDeliveryFeeKobo(null);
                     setDeliveryFeeError("");
                     setDistanceKm(null);
                     setDurationMinutes(null);
-                  }
-                }}
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white resize-none",
-                  "focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary",
-                  "placeholder:text-black-300",
-                  fieldErrors.deliveryAddress ? "border-cinnabar-500" : "border-black-200"
+
+                    if (predictionsDebounceRef.current) clearTimeout(predictionsDebounceRef.current);
+
+                    if (val.trim().length < 3) {
+                      setPredictions([]);
+                      setShowPredictions(false);
+                      return;
+                    }
+
+                    predictionsDebounceRef.current = setTimeout(() => {
+                      if (!autocompleteServiceRef.current) return;
+                      autocompleteServiceRef.current.getPlacePredictions(
+                        { input: val, componentRestrictions: { country: "ng" } },
+                        (results, status) => {
+                          if (
+                            status === window.google.maps.places.PlacesServiceStatus.OK &&
+                            results
+                          ) {
+                            setPredictions(
+                              results.map((r) => ({ description: r.description, place_id: r.place_id }))
+                            );
+                            setShowPredictions(true);
+                          } else {
+                            setPredictions([]);
+                            setShowPredictions(false);
+                          }
+                        }
+                      );
+                    }, 300);
+                  }}
+                  onBlur={() => setTimeout(() => setShowPredictions(false), 150)}
+                  onFocus={() => { if (predictions.length > 0) setShowPredictions(true); }}
+                  className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
+                  autoComplete="off"
+                />
+                {showPredictions && predictions.length > 0 && (
+                  <div className="absolute z-50 w-full bg-white border border-black-200 rounded-xl shadow-lg mt-1 overflow-hidden">
+                    {predictions.map((p) => (
+                      <button
+                        key={p.place_id}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setAddressInput(p.description);
+                          setSelectedPlaceAddress(p.description);
+                          setPredictions([]);
+                          setShowPredictions(false);
+                          calculateDeliveryFee(p.description);
+                        }}
+                        className="w-full text-left px-4 py-3 text-sm text-black-900 hover:bg-black-50 border-b border-black-100 last:border-0"
+                      >
+                        {p.description}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              />
-{fieldErrors.deliveryAddress && (
+              </div>
+              {fieldErrors.deliveryAddress && (
                 <p className="text-xs text-cinnabar-500">{fieldErrors.deliveryAddress}</p>
               )}
               {deliveryFeeError && (
