@@ -117,10 +117,19 @@ export default function CheckoutPage() {
     setDeliveryFeeLoading(true);
     setDeliveryFeeError("");
     try {
-      const res = await fetch(
-        `/api/delivery/fee?restaurantId=${restaurant.id}&destinationAddress=${encodeURIComponent(address)}`
-      );
-      const data = await res.json();
+      const url = `/api/delivery/fee?restaurantId=${restaurant.id}&destinationAddress=${encodeURIComponent(address)}`;
+      console.log("[Checkout] Fetching delivery fee:", url);
+      const res = await fetch(url);
+      const text = await res.text();
+      console.log("[Checkout] Delivery fee response:", res.status, text.substring(0, 500));
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        setDeliveryFeeError("Server returned an invalid response. Please try again.");
+        setDeliveryFeeKobo(null);
+        return;
+      }
       if (!res.ok) {
         setDeliveryFeeError(data.error ?? "Could not calculate delivery fee");
         setDeliveryFeeKobo(null);
@@ -129,7 +138,8 @@ export default function CheckoutPage() {
         setDistanceKm(data.distanceKm);
         setDurationMinutes(data.durationMinutes);
       }
-    } catch {
+    } catch (err) {
+      console.error("[Checkout] Delivery fee fetch error:", err);
       setDeliveryFeeError("Could not calculate delivery fee. Please try again.");
     } finally {
       setDeliveryFeeLoading(false);
