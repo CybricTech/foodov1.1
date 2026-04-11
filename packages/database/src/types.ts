@@ -801,6 +801,7 @@ export type Database = {
           logistics_default: string
           logo_url: string | null
           longitude: number | null
+          max_delivery_radius_km: number | null
           min_order_amount: number | null
           name: string
           paystack_recipient_code: string | null
@@ -834,6 +835,7 @@ export type Database = {
           logistics_default?: string
           logo_url?: string | null
           longitude?: number | null
+          max_delivery_radius_km?: number | null
           min_order_amount?: number | null
           name: string
           paystack_recipient_code?: string | null
@@ -867,6 +869,7 @@ export type Database = {
           logistics_default?: string
           logo_url?: string | null
           longitude?: number | null
+          max_delivery_radius_km?: number | null
           min_order_amount?: number | null
           name?: string
           paystack_recipient_code?: string | null
@@ -1328,38 +1331,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
-// ─── Convenience type aliases (hand-maintained) ───────────────────────────────
-type PublicTables = Database["public"]["Tables"];
-
-export type Restaurant = PublicTables["restaurants"]["Row"];
-export type Customer = PublicTables["customers"]["Row"];
-export type Order = PublicTables["orders"]["Row"];
-export type OrderItem = PublicTables["order_items"]["Row"];
-export type MenuCategory = PublicTables["menu_categories"]["Row"];
-export type MenuItem = PublicTables["menu_items"]["Row"];
-export type MenuItemOption = PublicTables["menu_item_options"]["Row"];
-export type MenuItemOptionChoice = PublicTables["menu_item_option_choices"]["Row"];
-export type DeliveryAssignment = PublicTables["delivery_assignments"]["Row"];
-export type Payment = PublicTables["payments"]["Row"];
-export type SmsLog = PublicTables["sms_logs"]["Row"];
-export type UserProfile = PublicTables["user_profiles"]["Row"];
-export type PlatformRider = PublicTables["platform_riders"]["Row"];
-export type Review = PublicTables["reviews"]["Row"];
-export type ReviewInsert = PublicTables["reviews"]["Insert"];
-
-export type MenuItemWithOptions = MenuItem & {
-  options: (MenuItemOption & { choices: MenuItemOptionChoice[] })[];
-};
-export type OrderWithItems = Order & {
-  items: OrderItem[];
-  delivery_assignment: DeliveryAssignment | null;
-};
-export type CustomerWithOrders = Customer & {
-  orders: Pick<Order, "id" | "order_number" | "total_amount" | "status" | "created_at">[];
-};
-export interface SelectedOptionSnapshot {
-  optionId: string;
-  optionName: string;
-  choices: { choiceId: string; choiceName: string; priceModifierKobo: number }[];
-}

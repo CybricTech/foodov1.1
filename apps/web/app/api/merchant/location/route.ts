@@ -27,7 +27,11 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { latitude, longitude } = body as { latitude?: number; longitude?: number };
+  const { latitude, longitude, max_delivery_radius_km } = body as {
+    latitude?: number;
+    longitude?: number;
+    max_delivery_radius_km?: number | null;
+  };
 
   if (latitude === undefined || longitude === undefined) {
     return NextResponse.json({ error: "latitude and longitude are required" }, { status: 400 });
@@ -35,7 +39,11 @@ export async function PATCH(request: NextRequest) {
 
   const { error } = await serviceClient
     .from("restaurants")
-    .update({ latitude, longitude })
+    .update({
+      latitude,
+      longitude,
+      max_delivery_radius_km: max_delivery_radius_km ?? null,
+    })
     .eq("id", profile.restaurant_id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

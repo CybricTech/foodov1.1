@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
 
       const { data: rest } = await supabase
         .from("restaurants")
-        .select("latitude, longitude")
+        .select("latitude, longitude, max_delivery_radius_km")
         .eq("id", data.restaurantId)
         .single();
 
@@ -119,7 +119,10 @@ export async function POST(request: NextRequest) {
 
         if (element?.status === "OK") {
           const distanceKm = element.distance.value / 1000;
-          if (distanceKm > maxRadiusKm) {
+          const effectiveMaxRadius = rest.max_delivery_radius_km
+            ? Number(rest.max_delivery_radius_km)
+            : maxRadiusKm;
+          if (distanceKm > effectiveMaxRadius) {
             return NextResponse.json(
               { error: "Delivery address is outside the allowed radius" },
               { status: 422 }

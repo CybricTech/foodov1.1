@@ -160,12 +160,15 @@ function BankAccountSection({ restaurantId, initialData }: {
 function RestaurantLocationSection({
   initialLat,
   initialLng,
+  initialMaxRadius,
 }: {
   initialLat: number | null;
   initialLng: number | null;
+  initialMaxRadius: number | null;
 }) {
   const [lat, setLat] = useState(initialLat ? String(initialLat) : "");
   const [lng, setLng] = useState(initialLng ? String(initialLng) : "");
+  const [maxRadius, setMaxRadius] = useState(initialMaxRadius ? String(initialMaxRadius) : "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -184,7 +187,11 @@ function RestaurantLocationSection({
       const res = await fetch("/api/merchant/location", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latitude: parsedLat, longitude: parsedLng }),
+        body: JSON.stringify({
+          latitude: parsedLat,
+          longitude: parsedLng,
+          max_delivery_radius_km: maxRadius ? parseInt(maxRadius) : null,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -243,6 +250,22 @@ function RestaurantLocationSection({
             />
           </div>
         </div>
+        <div>
+          <label className="block text-xs font-medium text-black-500 mb-1">Max delivery radius (km)</label>
+          <input
+            type="number"
+            step="1"
+            min="1"
+            max="100"
+            value={maxRadius}
+            onChange={(e) => setMaxRadius(e.target.value)}
+            placeholder="e.g. 15"
+            className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+          />
+          <p className="text-xs text-black-400 mt-1">
+            Orders beyond this distance will be rejected. Leave blank to use the platform default.
+          </p>
+        </div>
         <p className="text-xs text-black-400">
           Find your coordinates: open Google Maps, right-click your restaurant location, and copy the numbers shown.
         </p>
@@ -270,6 +293,7 @@ type RestaurantExtended = Restaurant & {
   whatsapp_number?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  max_delivery_radius_km?: number | null;
 };
 
 export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
@@ -656,6 +680,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
           <RestaurantLocationSection
             initialLat={r.latitude ?? null}
             initialLng={r.longitude ?? null}
+            initialMaxRadius={r.max_delivery_radius_km ?? null}
           />
 
           {error && <p className="text-sm text-cinnabar-500">{error}</p>}

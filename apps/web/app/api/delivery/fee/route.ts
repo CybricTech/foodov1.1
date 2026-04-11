@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
   const { data: restaurant } = await supabase
     .from("restaurants")
-    .select("latitude, longitude, name, address")
+    .select("latitude, longitude, name, address, max_delivery_radius_km")
     .eq("id", restaurantId)
     .single();
 
@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
   const mapsRes = await fetch(mapsUrl);
   const mapsData = await mapsRes.json();
 
+
   const element = mapsData?.rows?.[0]?.elements?.[0];
 
   if (!element || element.status !== "OK") {
@@ -77,10 +78,15 @@ export async function GET(request: NextRequest) {
   const durationSeconds: number = element.duration.value;
   const durationMinutes = Math.ceil(durationSeconds / 60);
 
-  if (distanceKm > maxRadiusKm) {
+  // Use restaurant-specific radius if set, otherwise fall back to platform default
+  const effectiveMaxRadius = restaurant.max_delivery_radius_km
+    ? Number(restaurant.max_delivery_radius_km)
+    : maxRadiusKm;
+
+  if (distanceKm > effectiveMaxRadius) {
     return NextResponse.json(
       {
-        error: `Sorry, this location is outside our delivery area (${Math.round(distanceKm)}km away, max is ${maxRadiusKm}km).`,
+        error: `Sorry, this location is outside our delivery area (${Math.round(distanceKm)}km away, max is ${effectiveMaxRadius}km).`,
       },
       { status: 422 }
     );

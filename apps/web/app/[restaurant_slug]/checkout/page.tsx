@@ -40,7 +40,7 @@ export default function CheckoutPage() {
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
 
-  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesReadyRef = useRef(false);
   const predictionsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Customer info
@@ -63,31 +63,54 @@ export default function CheckoutPage() {
     }
   }, [fulfillmentType]);
 
-  // Load Google Maps script + init AutocompleteService when delivery tab is active
+  // Load Google Maps script + Places library (new API) when delivery tab is active
   useEffect(() => {
     if (fulfillmentType !== "delivery") return;
+    let cancelled = false;
 
-    function initService() {
-      if (autocompleteServiceRef.current) return;
-      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+    async function loadPlaces() {
+      if (placesReadyRef.current) return;
+
+      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        console.warn("[Checkout] NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set");
+        return;
+      }
+
+      // Load the Maps bootstrap script if not already present
+      if (!document.getElementById("google-maps-script")) {
+        const script = document.createElement("script");
+        script.id = "google-maps-script";
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+        script.async = true;
+        document.head.appendChild(script);
+
+        // Wait for the script to load
+        await new Promise<void>((resolve, reject) => {
+          script.onload = () => resolve();
+          script.onerror = (e) => reject(e);
+        });
+      }
+
+      if (cancelled) return;
+
+      // Wait for google.maps.places to be available
+      await new Promise<void>((resolve) => {
+        if (window.google?.maps?.places) { resolve(); return; }
+        const iv = setInterval(() => {
+          if (window.google?.maps?.places) { clearInterval(iv); resolve(); }
+        }, 100);
+      });
+
+      placesReadyRef.current = true;
+      console.log("[Checkout] Google Places library loaded (new API)");
     }
 
-    if (window.google?.maps?.places) {
-      initService();
-      return;
-    }
+    loadPlaces().catch((err) =>
+      console.error("[Checkout] Failed to load Google Places:", err)
+    );
 
-    const existing = document.getElementById("google-maps-script");
-    if (!existing) {
-      const script = document.createElement("script");
-      script.id = "google-maps-script";
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
-      script.async = true;
-      script.onload = initService;
-      document.head.appendChild(script);
-    } else {
-      existing.addEventListener("load", initService);
-    }
+    return () => { cancelled = true; };
   }, [fulfillmentType]);
 
   async function calculateDeliveryFee(address: string) {
@@ -307,25 +330,34 @@ export default function CheckoutPage() {
                       return;
                     }
 
-                    predictionsDebounceRef.current = setTimeout(() => {
-                      if (!autocompleteServiceRef.current) return;
-                      autocompleteServiceRef.current.getPlacePredictions(
-                        { input: val, componentRestrictions: { country: "ng" } },
-                        (results, status) => {
-                          if (
-                            status === window.google.maps.places.PlacesServiceStatus.OK &&
-                            results
-                          ) {
-                            setPredictions(
-                              results.map((r) => ({ description: r.description, place_id: r.place_id }))
-                            );
-                            setShowPredictions(true);
-                          } else {
-                            setPredictions([]);
-                            setShowPredictions(false);
-                          }
-                        }
-                      );
+                    predictionsDebounceRef.current = setTimeout(async () => {
+                      if (!placesReadyRef.current) {
+                        console.warn("[Checkout] Places library not ready — typed:", val);
+                        return;
+                      }
+                      try {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const ACS = (google.maps.places as any).AutocompleteSuggestion;
+                        const { suggestions } = await ACS.fetchAutocompleteSuggestions({
+                          input: val,
+                          includedRegionCodes: ["ng"],
+                          locationBias: {
+                            center: { lat: 9.0579, lng: 7.4951 },
+                            radius: 50000,
+                          },
+                        });
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        const mapped = (suggestions as any[]).filter((s: any) => s.placePrediction).map((s: any) => ({
+                          description: s.placePrediction.text?.text ?? s.placePrediction.description ?? "",
+                          place_id: s.placePrediction.placeId ?? "",
+                        }));
+                        setPredictions(mapped);
+                        setShowPredictions(mapped.length > 0);
+                      } catch (err) {
+                        console.error("[Checkout] Autocomplete error:", err);
+                        setPredictions([]);
+                        setShowPredictions(false);
+                      }
                     }, 300);
                   }}
                   onBlur={() => setTimeout(() => setShowPredictions(false), 150)}
