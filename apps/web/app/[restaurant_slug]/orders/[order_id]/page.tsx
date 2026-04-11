@@ -7,9 +7,7 @@ import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { formatKobo } from "@foodo/utils";
 import { ORDER_PROGRESS_STEPS_DELIVERY, ORDER_PROGRESS_STEPS_PICKUP } from "@foodo/utils";
 import { cn } from "@foodo/ui";
-import type { Database } from "@foodo/database";
-
-type Order = Database["public"]["Tables"]["orders"]["Row"];
+import type { Order } from "@foodo/database";
 
 interface OrderWithItems extends Order {
   order_items: Array<{

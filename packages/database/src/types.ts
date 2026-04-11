@@ -1331,3 +1331,53 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
+// ─── Helper type aliases ────────────────────────────────────────────────
+// Derived from the generated Database type for convenience across the app.
+// Keep these at the BOTTOM of this file so `supabase gen types` can overwrite
+// everything above without breaking downstream imports.
+
+export type PublicTables = Database["public"]["Tables"];
+
+export type Restaurant = PublicTables["restaurants"]["Row"];
+export type Order = PublicTables["orders"]["Row"];
+export type MenuCategory = PublicTables["menu_categories"]["Row"];
+export type MenuItem = PublicTables["menu_items"]["Row"];
+export type Review = PublicTables["reviews"]["Row"];
+
+export type MenuItemOption = PublicTables["menu_item_options"]["Row"];
+export type MenuItemOptionChoice = PublicTables["menu_item_option_choices"]["Row"];
+
+export interface MenuItemWithOptions extends MenuItem {
+  options: (MenuItemOption & { choices: MenuItemOptionChoice[] })[];
+}
+
+export interface SelectedOptionSnapshot {
+  optionId: string;
+  optionName: string;
+  choices: {
+    choiceId: string;
+    choiceName: string;
+    priceModifierKobo: number;
+  }[];
+}
+
+export type Customer = PublicTables["customers"]["Row"];
+export type OrderItem = PublicTables["order_items"]["Row"];
+export type ReviewInsert = PublicTables["reviews"]["Insert"];
+export type DeliveryAssignment = PublicTables["delivery_assignments"]["Row"];
+
+export interface CustomerWithOrders extends Customer {
+  orders: {
+    id: string;
+    order_number: number;
+    total_amount: number;
+    status: string;
+    created_at: string;
+  }[];
+}
+
+export interface OrderWithItems extends Order {
+  items: OrderItem[];
+  delivery_assignment: DeliveryAssignment | null;
+}
