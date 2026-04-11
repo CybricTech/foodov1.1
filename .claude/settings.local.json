@@ -66,7 +66,8 @@
       "Bash(npx tsc:*)",
       "Bash(git push:*)",
       "Bash(git commit -m \"fix: use service client for order fetch, remove today-only date filter:*)",
-      "Bash(git commit -m \"feat: handle transfer events in paystack webhook route:*)"
+      "Bash(git commit -m \"feat: handle transfer events in paystack webhook route:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

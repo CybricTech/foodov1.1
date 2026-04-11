@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { Restaurant } from "@foodo/database";
 
 type RestaurantExtended = Restaurant & {
@@ -116,6 +117,24 @@ export function LocationSection({ restaurant, restaurantSlug }: LocationSectionP
             >
               Order online
             </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="mt-8 flex flex-col items-center justify-center gap-4 pb-4">
+        <p className="text-sm font-medium text-black-500 text-center px-4">
+          © {new Date().getFullYear()} {r.name}. All rights reserved.
+        </p>
+        <div className="flex items-center gap-2 text-sm text-black-500 font-medium">
+          <span>Powered by</span>
+          <div className="relative h-6 w-24">
+            <Image
+              src="/logo.png"
+              alt="Kitchyn"
+              fill
+              className="object-contain object-left md:object-center"
+            />
           </div>
         </div>
       </div>

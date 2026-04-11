@@ -60,7 +60,25 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
         )}
 
         {/* Dark gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 mt-20 to-transparent" />
+
+        {/* Top Navbar overlay */}
+        <div className="absolute top-0 inset-x-0 z-20 flex justify-between items-center p-4 md:px-6 md:py-5 bg-gradient-to-b from-black/60 to-transparent">
+          {restaurant.logo_url ? (
+            <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden border-[3px] border-white shadow-xl bg-white flex-shrink-0">
+              <Image
+                src={restaurant.logo_url}
+                alt={`${restaurant.name} logo`}
+                fill
+                className="object-cover"
+              />
+            </div>
+          ) : (
+            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-primary flex items-center justify-center border-[3px] border-white shadow-xl flex-shrink-0">
+              <span className="text-white font-bold text-2xl drop-shadow-sm">{restaurant.name.charAt(0)}</span>
+            </div>
+          )}
+        </div>
 
         {/* Hero text */}
         <div className="absolute bottom-0 left-0 right-0 px-6 pb-8">

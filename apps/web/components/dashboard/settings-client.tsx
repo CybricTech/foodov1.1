@@ -324,6 +324,63 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
+  // Logo upload state
+  const [logoUrl, setLogoUrl] = useState(r.logo_url ?? "");
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState("");
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleLogoUpload(file: File) {
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError("File too large — max 2 MB");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setLogoError("Please select an image file");
+      return;
+    }
+
+    setLogoUploading(true);
+    setLogoError("");
+
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const path = `${r.id}/logo-${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("menu-images")
+      .upload(path, file, { contentType: file.type });
+
+    if (uploadError) {
+      setLogoError(uploadError.message);
+      setLogoUploading(false);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage.from("menu-images").getPublicUrl(path);
+
+    const { error: dbError } = await supabase
+      .from("restaurants")
+      .update({ logo_url: urlData.publicUrl })
+      .eq("id", r.id);
+
+    if (dbError) {
+      setLogoError(dbError.message);
+    } else {
+      setLogoUrl(urlData.publicUrl);
+    }
+    setLogoUploading(false);
+  }
+
+  async function handleLogoRemove() {
+    setLogoError("");
+    const { error: dbError } = await supabase
+      .from("restaurants")
+      .update({ logo_url: null })
+      .eq("id", r.id);
+    if (dbError) setLogoError(dbError.message);
+    else setLogoUrl("");
+  }
+
   // Banner upload state
   const [bannerUrl, setBannerUrl] = useState(r.banner_url ?? "");
   const [bannerUploading, setBannerUploading] = useState(false);
@@ -404,6 +461,8 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         twitter_url: twitterUrl || null,
         youtube_url: youtubeUrl || null,
         whatsapp_number: whatsappNumber || null,
+        logo_url: logoUrl || null,
+        banner_url: bannerUrl || null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       .eq("id", r.id);
@@ -489,6 +548,70 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                 />
                 <span className="text-sm text-black-500">{primaryColor}</span>
               </div>
+            </Field>
+
+            {/* Store logo upload */}
+            <Field label="Store logo" hint="Recommended square aspect ratio e.g., 500x500">
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleLogoUpload(file);
+                  e.target.value = "";
+                }}
+              />
+
+              {logoUrl ? (
+                <div className="space-y-3">
+                  <div className="relative w-24 h-24 rounded-full overflow-hidden border border-black-100 bg-black-100 mx-auto sm:mx-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={logoUrl} alt="Store logo preview" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={logoUploading}
+                      className="py-2 px-4 rounded-xl border border-black-200 text-sm font-medium text-black-900 hover:bg-black-50 disabled:opacity-50 transition-colors"
+                    >
+                      {logoUploading ? "Uploading…" : "Replace logo"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLogoRemove}
+                      disabled={logoUploading}
+                      className="py-2 px-4 rounded-xl border border-cinnabar-500/30 text-sm font-medium text-cinnabar-500 hover:bg-cinnabar-100 disabled:opacity-50 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={logoUploading}
+                  className={cn(
+                    "w-full h-28 rounded-xl border-2 border-dashed border-black-200",
+                    "flex flex-col items-center justify-center gap-1.5",
+                    "text-black-400 hover:border-purple-500 hover:text-purple-500",
+                    "disabled:opacity-50 transition-colors"
+                  )}
+                >
+                  <ImagePlus size={28} />
+                  <span className="text-sm font-medium">
+                    {logoUploading ? "Uploading…" : "Upload store logo"}
+                  </span>
+                  <span className="text-xs">JPG, PNG or WebP · max 2 MB</span>
+                </button>
+              )}
+
+              {logoError && (
+                <p className="text-xs text-cinnabar-500 mt-1">{logoError}</p>
+              )}
             </Field>
 
             {/* Hero banner upload */}
