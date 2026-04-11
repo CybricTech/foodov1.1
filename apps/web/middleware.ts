@@ -70,10 +70,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/admin", request.url));
   }
 
-  // slug.kitchyn.app/* → rewrite to /{slug}/*
+  // slug.kitchyn.app/* → rewrite to /{slug}/*  (but NOT /api/* paths)
   if (isStorefrontSub) {
     const slug = hostname.replace(".kitchyn.app", "");
-    if (!pathname.startsWith(`/${slug}`)) {
+    if (!pathname.startsWith("/api") && !pathname.startsWith(`/${slug}`)) {
       const rewritePath = pathname === "/" ? `/${slug}` : `/${slug}${pathname}`;
       const response = NextResponse.rewrite(new URL(rewritePath, request.url));
       supabaseResponse.cookies.getAll().forEach((c) => {
