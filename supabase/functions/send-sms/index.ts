@@ -27,6 +27,7 @@ const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+// ── Simple SMS message builder (customer notifications + SMS fallback) ────────
 function buildMessage(
   eventType: SmsPayload["eventType"],
   orderNumber: string | number | undefined,
@@ -53,6 +54,98 @@ function buildMessage(
   }
 }
 
+// ── Format kobo to human-readable Naira ───────────────────────────────────────
+function formatKoboToNaira(kobo: number): string {
+  const naira = kobo / 100;
+  return `₦${naira.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
+}
+
+// ── Rich WhatsApp message for merchant new order alerts ───────────────────────
+interface OrderForMessage {
+  order_number: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  fulfillment_type: string;
+  delivery_address: string | null;
+  special_instructions: string | null;
+  subtotal_kobo: number;
+  delivery_fee_kobo: number;
+  total_kobo: number;
+  order_items: Array<{
+    item_name: string;
+    quantity: number;
+    line_total_kobo: number;
+    selected_options: unknown;
+  }>;
+}
+
+function buildWhatsAppOrderMessage(order: OrderForMessage): string {
+  const lines: string[] = [];
+
+  lines.push(`🍽️ *New Order #${order.order_number}*`);
+  lines.push("");
+  lines.push(`👤 *Customer:* ${order.customer_name ?? "—"}`);
+  lines.push(`📞 *Phone:* ${order.customer_phone ?? "—"}`);
+  lines.push("");
+  lines.push("📦 *Items:*");
+
+  for (const item of order.order_items) {
+    lines.push(
+      `• ${item.item_name} x${item.quantity} — ${formatKoboToNaira(item.line_total_kobo)}`
+    );
+
+    // Show selected options if present
+    if (item.selected_options && Array.isArray(item.selected_options)) {
+      for (const opt of item.selected_options as Array<{
+        optionName?: string;
+        choices?: Array<{ choiceName?: string }>;
+      }>) {
+        if (opt.choices && Array.isArray(opt.choices)) {
+          for (const choice of opt.choices) {
+            if (choice.choiceName) {
+              lines.push(`  ↳ ${opt.optionName ?? "Option"}: ${choice.choiceName}`);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  lines.push("");
+
+  if (order.fulfillment_type === "pickup") {
+    lines.push("🏠 *Fulfillment:* Pickup (customer will collect)");
+  } else {
+    lines.push("🏠 *Fulfillment:* Delivery");
+    if (order.delivery_address) {
+      lines.push(`📍 *Address:* ${order.delivery_address}`);
+    }
+  }
+
+  if (order.special_instructions) {
+    lines.push("");
+    lines.push(`📝 *Special Instructions:* ${order.special_instructions}`);
+  }
+
+  lines.push("");
+  lines.push(`💰 *Subtotal:* ${formatKoboToNaira(order.subtotal_kobo)}`);
+  if (order.delivery_fee_kobo > 0) {
+    lines.push(`🚚 *Delivery Fee:* ${formatKoboToNaira(order.delivery_fee_kobo)}`);
+  }
+  lines.push(`💳 *Total Paid:* ${formatKoboToNaira(order.total_kobo)}`);
+
+  return lines.join("\n");
+}
+
+// Admin version — prepended with restaurant name
+function buildAdminWhatsAppOrderMessage(
+  order: OrderForMessage,
+  restaurantName: string
+): string {
+  return `🏪 *[${restaurantName}]*\n\n${buildWhatsAppOrderMessage(order)}`;
+}
+
+// ── Send via Termii (SMS — generic channel) ───────────────────────────────────
 async function sendViaTermii(
   phone: string,
   message: string
@@ -79,6 +172,30 @@ async function sendViaTermii(
   return res.ok && body.code !== "err";
 }
 
+// ── Send via Termii (WhatsApp channel) ────────────────────────────────────────
+async function sendViaTermiiWhatsApp(
+  phone: string,
+  message: string
+): Promise<boolean> {
+  const res = await fetch("https://api.ng.termii.com/api/sms/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: phone,
+      from: TERMII_SENDER_ID,
+      sms: message,
+      type: "plain",
+      api_key: TERMII_API_KEY,
+      channel: "whatsapp",
+    }),
+  });
+
+  if (res.status === 429) return false;
+  const body = await res.json().catch(() => ({}));
+  return res.ok && body.code !== "err";
+}
+
+// ── Send via Twilio (SMS fallback) ────────────────────────────────────────────
 async function sendViaTwilio(
   phone: string,
   message: string
@@ -108,6 +225,54 @@ async function sendViaTwilio(
   return res.ok;
 }
 
+// ── Helper: log to sms_logs ───────────────────────────────────────────────────
+async function createLog(params: {
+  restaurantId: string;
+  orderId: string;
+  phone: string;
+  message: string;
+  eventType: string;
+  provider: string;
+  channel: "sms" | "whatsapp";
+  status: "queued" | "sent" | "failed";
+}): Promise<string | null> {
+  const { data: log, error } = await supabase
+    .from("sms_logs")
+    .insert({
+      restaurant_id: params.restaurantId,
+      order_id: params.orderId,
+      phone: params.phone,
+      message: params.message,
+      event_type: params.eventType,
+      provider: params.provider,
+      status: params.status,
+      channel: params.channel,
+    })
+    .select("id")
+    .single();
+
+  if (error) console.error("Failed to create SMS log:", error);
+  return log?.id ?? null;
+}
+
+async function updateLog(
+  logId: string,
+  status: "sent" | "failed",
+  provider: string,
+  channel: "sms" | "whatsapp"
+) {
+  await supabase
+    .from("sms_logs")
+    .update({
+      status,
+      provider,
+      channel,
+      sent_at: status === "sent" ? new Date().toISOString() : null,
+    })
+    .eq("id", logId);
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -122,18 +287,155 @@ serve(async (req) => {
 
   const { restaurantId, eventType, orderId, orderNumber } = payload;
 
-  // Resolve restaurant name (for message copy)
+  // Resolve restaurant info (including whatsapp_number)
   const { data: restaurant } = await supabase
     .from("restaurants")
-    .select("name, phone")
+    .select("name, phone, whatsapp_number")
     .eq("id", restaurantId)
     .single();
 
   const restaurantName = restaurant?.name ?? "the restaurant";
 
-  // Resolve recipient phone
+  // ── Merchant new order alerts: WhatsApp with SMS fallback ───────────────
+  if (eventType === "new_order_merchant") {
+    // Fetch full order + items for rich message
+    const { data: order } = await supabase
+      .from("orders")
+      .select(
+        `
+        id,
+        order_number,
+        customer_name,
+        customer_phone,
+        fulfillment_type,
+        delivery_address,
+        special_instructions,
+        subtotal_kobo,
+        delivery_fee_kobo,
+        total_kobo,
+        order_items (
+          item_name,
+          quantity,
+          line_total_kobo,
+          selected_options
+        )
+      `
+      )
+      .eq("id", orderId)
+      .single();
+
+    const whatsappNumber = restaurant?.whatsapp_number;
+    let sent = false;
+    let provider = "termii";
+    let channel: "sms" | "whatsapp" = "sms";
+    const recipientPhone = whatsappNumber ?? restaurant?.phone;
+
+    if (!recipientPhone) {
+      return new Response(
+        JSON.stringify({ error: "No recipient phone" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // Determine which message to build
+    let messageToSend: string;
+
+    if (whatsappNumber && order) {
+      // Try WhatsApp with rich message
+      messageToSend = buildWhatsAppOrderMessage(order);
+      const logId = await createLog({
+        restaurantId,
+        orderId,
+        phone: whatsappNumber,
+        message: messageToSend,
+        eventType,
+        provider: "termii",
+        channel: "whatsapp",
+        status: "queued",
+      });
+
+      sent = await sendViaTermiiWhatsApp(whatsappNumber, messageToSend);
+      channel = "whatsapp";
+
+      if (!sent) {
+        // WhatsApp failed — fall back to SMS on same number
+        const simpleMessage = buildMessage(eventType, orderNumber, restaurantName);
+        sent = await sendViaTermii(whatsappNumber, simpleMessage);
+        channel = "sms";
+        messageToSend = simpleMessage;
+      }
+
+      if (logId) {
+        await updateLog(logId, sent ? "sent" : "failed", provider, channel);
+      }
+    } else {
+      // No WhatsApp number — send SMS on restaurant phone
+      messageToSend = buildMessage(eventType, orderNumber, restaurantName);
+      const logId = await createLog({
+        restaurantId,
+        orderId,
+        phone: recipientPhone,
+        message: messageToSend,
+        eventType,
+        provider: "termii",
+        channel: "sms",
+        status: "queued",
+      });
+
+      sent = await sendViaTermii(recipientPhone, messageToSend);
+
+      if (!sent) {
+        sent = await sendViaTwilio(recipientPhone, messageToSend);
+        provider = "twilio";
+      }
+
+      if (logId) {
+        await updateLog(logId, sent ? "sent" : "failed", provider, "sms");
+      }
+    }
+
+    // ── Admin copy (fire-and-forget) ──────────────────────────────────────
+    if (order) {
+      const { data: platformSettings } = await supabase
+        .from("platform_settings")
+        .select("admin_whatsapp_number")
+        .single();
+
+      const adminWhatsappNumber = platformSettings?.admin_whatsapp_number;
+
+      if (adminWhatsappNumber) {
+        const adminMessage = buildAdminWhatsAppOrderMessage(order, restaurantName);
+
+        // Fire-and-forget: send + log
+        sendViaTermiiWhatsApp(adminWhatsappNumber, adminMessage)
+          .then(async (adminSent) => {
+            await createLog({
+              restaurantId,
+              orderId,
+              phone: adminWhatsappNumber,
+              message: adminMessage,
+              eventType,
+              provider: "termii",
+              channel: "whatsapp",
+              status: adminSent ? "sent" : "failed",
+            });
+          })
+          .catch(console.error);
+      }
+    }
+
+    return new Response(
+      JSON.stringify({ success: sent, provider, channel }),
+      {
+        status: sent ? 200 : 502,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  // ── All other events (customer notifications) — existing SMS logic ──────
   let recipientPhone = payload.phone;
-  if (!recipientPhone && eventType === "new_order_merchant") {
+  if (!recipientPhone) {
     recipientPhone = restaurant?.phone ?? undefined;
   }
 
@@ -146,24 +448,16 @@ serve(async (req) => {
 
   const message = buildMessage(eventType, orderNumber, restaurantName);
 
-  // Create SMS log (status=queued)
-  const { data: log, error: logError } = await supabase
-    .from("sms_logs")
-    .insert({
-      restaurant_id: restaurantId,
-      order_id: orderId,
-      phone: recipientPhone,
-      message,
-      event_type: eventType,
-      provider: "termii",
-      status: "queued",
-    })
-    .select("id")
-    .single();
-
-  if (logError) {
-    console.error("Failed to create SMS log:", logError);
-  }
+  const logId = await createLog({
+    restaurantId,
+    orderId,
+    phone: recipientPhone,
+    message,
+    eventType,
+    provider: "termii",
+    channel: "sms",
+    status: "queued",
+  });
 
   // Try Termii first
   let sent = await sendViaTermii(recipientPhone, message);
@@ -176,15 +470,8 @@ serve(async (req) => {
   }
 
   // Update log
-  if (log) {
-    await supabase
-      .from("sms_logs")
-      .update({
-        status: sent ? "sent" : "failed",
-        provider: provider as "termii" | "twilio",
-        sent_at: sent ? new Date().toISOString() : null,
-      })
-      .eq("id", log.id);
+  if (logId) {
+    await updateLog(logId, sent ? "sent" : "failed", provider, "sms");
   }
 
   return new Response(

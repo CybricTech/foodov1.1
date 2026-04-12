@@ -34,6 +34,7 @@ type PlatformSettings = {
   delivery_per_km_rate_kobo?: number | null;
   delivery_max_radius_km?: number | null;
   delivery_max_fee_kobo?: number | null;
+  admin_whatsapp_number?: string | null;
 } | null;
 
 interface SettlementsClientProps {
@@ -89,6 +90,14 @@ export function SettlementsClient({
   const [deliverySaved, setDeliverySaved] = useState(false);
   const [deliveryError, setDeliveryError] = useState("");
 
+  // Admin WhatsApp number state
+  const [adminWhatsappNumber, setAdminWhatsappNumber] = useState(
+    settings?.admin_whatsapp_number ?? ""
+  );
+  const [savingWhatsapp, setSavingWhatsapp] = useState(false);
+  const [whatsappSaved, setWhatsappSaved] = useState(false);
+  const [whatsappError, setWhatsappError] = useState("");
+
   const filtered = settlements.filter(
     (s) => statusFilter === "all" || s.status === statusFilter
   );
@@ -119,6 +128,36 @@ export function SettlementsClient({
       setDeliveryError("Network error");
     }
     setSavingDelivery(false);
+  }
+
+  async function saveAdminWhatsapp(e: React.FormEvent) {
+    e.preventDefault();
+    // Validate format if not clearing
+    if (adminWhatsappNumber && !/^\+[0-9]{9,14}$/.test(adminWhatsappNumber)) {
+      setWhatsappError("Invalid format — must start with + followed by 10-15 digits");
+      return;
+    }
+    setSavingWhatsapp(true);
+    setWhatsappError("");
+    try {
+      const res = await fetch("/api/admin/platform-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          admin_whatsapp_number: adminWhatsappNumber || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setWhatsappError(data.error ?? "Failed to save");
+      } else {
+        setWhatsappSaved(true);
+        setTimeout(() => setWhatsappSaved(false), 3000);
+      }
+    } catch {
+      setWhatsappError("Network error");
+    }
+    setSavingWhatsapp(false);
   }
 
   // Live formula preview at 3km, 7km, 15km
@@ -422,6 +461,51 @@ export function SettlementsClient({
             className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
           >
             {savingSettings ? "Saving…" : settingsSaved ? "✓ Saved!" : "Save configuration"}
+          </button>
+        </form>
+      </div>
+
+      {/* Admin notifications */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <h2 className="font-bold text-black-900 text-sm">Admin Notifications</h2>
+          <p className="text-xs text-black-400 mt-0.5">
+            Receive WhatsApp alerts for all new orders across all restaurants
+          </p>
+        </div>
+        <form onSubmit={saveAdminWhatsapp} className="px-4 py-4 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-black-500 mb-1">
+              📱 Admin WhatsApp Alert Number
+            </label>
+            <input
+              type="tel"
+              value={adminWhatsappNumber}
+              onChange={(e) => setAdminWhatsappNumber(e.target.value)}
+              placeholder="+2348012345678"
+              className={`w-full px-3 py-2.5 rounded-xl border text-sm text-black-900 focus:outline-none ${
+                adminWhatsappNumber && !/^\+[0-9]{9,14}$/.test(adminWhatsappNumber)
+                  ? "border-cinnabar-500 focus:border-cinnabar-500"
+                  : "border-black-200 focus:border-purple-500"
+              }`}
+            />
+            <p className="text-xs text-black-400 mt-1">
+              All new orders from all restaurants will be sent to this number
+            </p>
+            {adminWhatsappNumber && /^\+[0-9]{9,14}$/.test(adminWhatsappNumber) && (
+              <p className="text-xs text-viridian-500 font-medium mt-1.5 flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-viridian-500" />
+                ✓ Active — receiving all order alerts
+              </p>
+            )}
+          </div>
+          {whatsappError && <p className="text-xs text-cinnabar-500">{whatsappError}</p>}
+          <button
+            type="submit"
+            disabled={savingWhatsapp}
+            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+          >
+            {savingWhatsapp ? "Saving…" : whatsappSaved ? "✓ Saved!" : "Save notification settings"}
           </button>
         </form>
       </div>

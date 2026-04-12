@@ -8,6 +8,7 @@ import type { Restaurant } from "@foodo/database";
 type RestaurantWithLocation = Restaurant & {
   latitude?: number | null;
   longitude?: number | null;
+  whatsapp_number?: string | null;
 };
 
 interface MerchantsClientProps {
@@ -94,6 +95,16 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
               >
                 <MapPin size={11} />
                 {r.latitude && r.longitude ? "Located" : "No location"}
+              </span>
+              <span
+                className={cn(
+                  "flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium",
+                  r.whatsapp_number
+                    ? "bg-viridian-100 text-viridian-600"
+                    : "bg-black-100 text-black-400"
+                )}
+              >
+                {r.whatsapp_number ? "💬 WhatsApp" : "SMS only"}
               </span>
               <span
                 className={cn(

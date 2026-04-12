@@ -49,7 +49,7 @@ export default async function AdminSettlementsPage() {
 
     supabase
       .from("platform_settings")
-      .select("service_charge_pct, service_charge_fixed_kobo, settlement_hold_hours, delivery_base_fee_kobo, delivery_per_km_rate_kobo, delivery_max_radius_km, delivery_max_fee_kobo")
+      .select("service_charge_pct, service_charge_fixed_kobo, settlement_hold_hours, delivery_base_fee_kobo, delivery_per_km_rate_kobo, delivery_max_radius_km, delivery_max_fee_kobo, admin_whatsapp_number")
       .single(),
   ]);
 

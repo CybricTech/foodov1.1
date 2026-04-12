@@ -680,6 +680,40 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
             </Field>
           </Section>
 
+          {/* Notifications */}
+          <Section title="Notifications">
+            <Field label="📱 WhatsApp Alert Number" hint="Order alerts will be sent to this WhatsApp number. Must be in international format (e.g. +2348012345678)">
+              <input
+                value={whatsappNumber}
+                onChange={(e) => setWhatsappNumber(e.target.value)}
+                className={cn(
+                  inputCls,
+                  whatsappNumber && !/^\+[0-9]{9,14}$/.test(whatsappNumber)
+                    ? "border-cinnabar-500 focus:border-cinnabar-500"
+                    : ""
+                )}
+                placeholder="+2348012345678"
+                type="tel"
+              />
+              {whatsappNumber && /^\+[0-9]{9,14}$/.test(whatsappNumber) && (
+                <p className="text-xs text-viridian-500 font-medium mt-1.5 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-viridian-500" />
+                  ✓ WhatsApp alerts active
+                </p>
+              )}
+              {whatsappNumber && !/^\+[0-9]{9,14}$/.test(whatsappNumber) && (
+                <p className="text-xs text-cinnabar-500 mt-1.5">
+                  Invalid format — must start with + followed by 10-15 digits (e.g. +2348012345678)
+                </p>
+              )}
+              {!whatsappNumber && (
+                <p className="text-xs text-black-400 mt-1.5">
+                  No WhatsApp number set — alerts will be sent via SMS
+                </p>
+              )}
+            </Field>
+          </Section>
+
           {/* Social media */}
           <Section title="Social media">
             <Field label="Instagram" hint="Full URL e.g. https://instagram.com/yourhandle">
@@ -716,15 +750,6 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                 className={inputCls}
                 placeholder="https://youtube.com/@yourchannel"
                 type="url"
-              />
-            </Field>
-            <Field label="WhatsApp number" hint="Include country code e.g. 2348012345678">
-              <input
-                value={whatsappNumber}
-                onChange={(e) => setWhatsappNumber(e.target.value)}
-                className={inputCls}
-                placeholder="2348012345678"
-                type="tel"
               />
             </Field>
           </Section>

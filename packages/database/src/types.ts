@@ -701,6 +701,7 @@ export type Database = {
       }
       platform_settings: {
         Row: {
+          admin_whatsapp_number: string | null
           delivery_base_fee_kobo: number
           delivery_max_fee_kobo: number
           delivery_max_radius_km: number
@@ -713,6 +714,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          admin_whatsapp_number?: string | null
           delivery_base_fee_kobo?: number
           delivery_max_fee_kobo?: number
           delivery_max_radius_km?: number
@@ -725,6 +727,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          admin_whatsapp_number?: string | null
           delivery_base_fee_kobo?: number
           delivery_max_fee_kobo?: number
           delivery_max_radius_km?: number
@@ -994,6 +997,7 @@ export type Database = {
       }
       sms_logs: {
         Row: {
+          channel: string
           created_at: string
           event_type: string
           id: string
@@ -1009,6 +1013,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          channel?: string
           created_at?: string
           event_type: string
           id?: string
@@ -1024,6 +1029,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          channel?: string
           created_at?: string
           event_type?: string
           id?: string
