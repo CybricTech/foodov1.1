@@ -294,16 +294,6 @@ export function OrderQueueClient({
 
 // ── Order Card ──────────────────────────────────────────────────────────────
 
-const CARD_ACCENT: Record<string, string> = {
-  pending:         "border-l-dixie-500",
-  confirmed:       "border-l-purple-400",
-  preparing:       "border-l-purple-500",
-  ready_for_pickup:"border-l-viridian-500",
-  assigned_to_rider:"border-l-viridian-500",
-  in_transit:      "border-l-purple-600",
-  delivered:       "border-l-black-200",
-  cancelled:       "border-l-cinnabar-500",
-};
 
 function OrderCard({
   order,
@@ -340,14 +330,9 @@ function OrderCard({
 
   const next = nextStatus[order.status];
   const canCancel = ["pending", "confirmed"].includes(order.status);
-  const accent = CARD_ACCENT[order.status] ?? "border-l-black-200";
-
   return (
     <div
-      className={cn(
-        "bg-white rounded-2xl border border-black-100 border-l-4 overflow-hidden shadow-card",
-        accent
-      )}
+      className="bg-white rounded-2xl border border-black-100 overflow-hidden shadow-card"
     >
       {/* ── Card header ── */}
       <button
