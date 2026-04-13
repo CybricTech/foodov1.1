@@ -519,7 +519,8 @@ function ItemFormModal({
             name: opt.name.trim(),
             is_required: opt.isRequired,
             min_selections: opt.isRequired ? 1 : 0,
-            max_selections: opt.maxSelections ?? undefined,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            max_selections: opt.maxSelections as any,
           })
           .select("id")
           .single();

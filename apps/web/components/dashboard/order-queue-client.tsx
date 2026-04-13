@@ -16,13 +16,31 @@ import {
 } from "lucide-react";
 import type { Database } from "@foodo/database";
 
+type OptionChoice = {
+  choiceId: string;
+  choiceName: string;
+  priceModifierKobo: number;
+  quantity?: number;
+};
+
+type OptionSnapshot = {
+  optionId: string;
+  optionName: string;
+  choices: OptionChoice[];
+};
+
 type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
+  subtotal_kobo: number;
+  delivery_fee_kobo: number;
+  vat_kobo: number;
+  service_fee_kobo: number;
+  total_kobo: number;
   order_items: Array<{
     id: string;
     item_name: string;
     quantity: number;
     line_total_kobo: number;
-    selected_options: unknown;
+    selected_options: OptionSnapshot[] | null;
   }>;
 };
 
@@ -374,20 +392,79 @@ function OrderCard({
         <div className="border-t border-black-100 divide-y divide-black-50">
 
           {/* Items */}
-          <div className="px-4 py-3 space-y-1.5">
-            {order.order_items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md bg-purple-50 text-purple-600 text-[11px] font-bold flex items-center justify-center flex-shrink-0">
-                    {item.quantity}
-                  </span>
-                  <span className="text-sm text-black-900">{item.item_name}</span>
+          <div className="px-4 py-3 space-y-3">
+            {order.order_items.map((item) => {
+              const opts = Array.isArray(item.selected_options)
+                ? (item.selected_options as OptionSnapshot[])
+                : [];
+              return (
+                <div key={item.id}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                      <span className="w-5 h-5 rounded-md bg-purple-50 text-purple-600 text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                        {item.quantity}
+                      </span>
+                      <span className="text-sm font-medium text-black-900 leading-snug">{item.item_name}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-black-900 flex-shrink-0">
+                      {formatKobo(item.line_total_kobo)}
+                    </span>
+                  </div>
+                  {/* Add-ons / options */}
+                  {opts.length > 0 && (
+                    <div className="ml-7 mt-1 space-y-0.5">
+                      {opts.map((opt) =>
+                        opt.choices.map((c) => {
+                          const qty = c.quantity ?? 1;
+                          return (
+                            <div key={c.choiceId} className="flex items-center justify-between">
+                              <span className="text-xs text-black-400">
+                                {qty > 1 ? `${qty}× ` : ""}{c.choiceName}
+                              </span>
+                              {c.priceModifierKobo > 0 && (
+                                <span className="text-xs text-black-400">
+                                  +{formatKobo(c.priceModifierKobo * qty)}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
-                <span className="text-xs text-black-400 font-medium">
-                  {formatKobo(item.line_total_kobo)}
-                </span>
+              );
+            })}
+          </div>
+
+          {/* Price breakdown */}
+          <div className="px-4 py-3 space-y-1.5 bg-black-50">
+            <div className="flex justify-between text-xs text-black-500">
+              <span>Items</span>
+              <span>{formatKobo(order.subtotal_kobo)}</span>
+            </div>
+            {order.fulfillment_type === "delivery" && (
+              <div className="flex justify-between text-xs text-black-500">
+                <span>Delivery fee</span>
+                <span>{order.delivery_fee_kobo > 0 ? formatKobo(order.delivery_fee_kobo) : "Free"}</span>
               </div>
-            ))}
+            )}
+            {order.vat_kobo > 0 && (
+              <div className="flex justify-between text-xs text-black-500">
+                <span>VAT</span>
+                <span>{formatKobo(order.vat_kobo)}</span>
+              </div>
+            )}
+            {order.service_fee_kobo > 0 && (
+              <div className="flex justify-between text-xs text-black-500">
+                <span>Service fee</span>
+                <span>{formatKobo(order.service_fee_kobo)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm font-bold text-black-900 pt-1.5 border-t border-black-200">
+              <span>Total</span>
+              <span>{formatKobo(order.total_kobo)}</span>
+            </div>
           </div>
 
           {/* Fulfillment + special instructions */}

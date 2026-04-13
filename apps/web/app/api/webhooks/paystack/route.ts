@@ -100,11 +100,19 @@ export async function POST(request: NextRequest) {
       payment_status: "paid" as const,
       subtotal_kobo: meta.subtotal_kobo as number,
       delivery_fee_kobo: meta.delivery_fee_kobo as number,
+      vat_kobo: (meta.vat_kobo as number) || 0,
+      service_fee_kobo: (meta.service_fee_kobo as number) || 0,
       total_kobo:
-        (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number) + ((meta.vat_kobo as number) || 0),
+        (meta.subtotal_kobo as number) +
+        (meta.delivery_fee_kobo as number) +
+        ((meta.vat_kobo as number) || 0) +
+        ((meta.service_fee_kobo as number) || 0),
       subtotal: meta.subtotal_kobo as number,
       total_amount:
-        (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number) + ((meta.vat_kobo as number) || 0),
+        (meta.subtotal_kobo as number) +
+        (meta.delivery_fee_kobo as number) +
+        ((meta.vat_kobo as number) || 0) +
+        ((meta.service_fee_kobo as number) || 0),
       delivery_distance_km: (meta.delivery_distance_km as number) || null,
       delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
       order_number: `ORD-${Date.now()}`,
@@ -181,15 +189,23 @@ export async function POST(request: NextRequest) {
   const subtotalKobo = meta.subtotal_kobo as number;
   const deliveryFeeKobo = meta.delivery_fee_kobo as number;
 
-  // If service_fee_kobo is present in metadata, the fee was already charged to the
-  // customer — merchant receives full subtotal. Otherwise fall back to deducting from merchant.
-  const metaServiceFeeKobo = (meta.service_fee_kobo as number) ?? 0;
-  const serviceChargeKobo = metaServiceFeeKobo > 0
+  // Determine who bears the service fee.
+  // If service_fee_kobo is in metadata the customer already paid it at checkout —
+  // merchant gets the full subtotal and we do NOT debit them again.
+  // Legacy orders (no service_fee_kobo in meta) fall back to deducting from merchant.
+  const metaServiceFeeKobo = (meta.service_fee_kobo as number) || 0;
+  const customerPaidServiceFee = metaServiceFeeKobo > 0;
+
+  const serviceChargeKobo = customerPaidServiceFee
     ? metaServiceFeeKobo
     : Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
-  const restaurantCreditKobo = metaServiceFeeKobo > 0
-    ? subtotalKobo  // customer paid the fee — merchant gets full subtotal
+
+  // When customer paid: merchant credit = full subtotal (no deduction)
+  // When merchant pays: merchant credit = subtotal minus service charge
+  const restaurantCreditKobo = customerPaidServiceFee
+    ? subtotalKobo
     : subtotalKobo - serviceChargeKobo;
+
   const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
 
   // Ensure wallet exists
@@ -197,8 +213,9 @@ export async function POST(request: NextRequest) {
     .from("restaurant_wallets")
     .upsert({ restaurant_id: restaurantId }, { onConflict: "restaurant_id" });
 
-  // Insert 3 wallet transaction rows
-  await supabase.from("wallet_transactions").insert([
+  // Build wallet transaction rows — only debit service charge when merchant bears the fee
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const walletRows: any[] = [
     {
       restaurant_id: restaurantId,
       order_id: order.id,
@@ -209,15 +226,19 @@ export async function POST(request: NextRequest) {
       available_at: availableAt,
       description: `Order #${order.order_number} — net revenue`,
     },
-    {
-      restaurant_id: restaurantId,
-      order_id: order.id,
-      type: "service_charge",
-      direction: "debit",
-      amount_kobo: serviceChargeKobo,
-      status: "settled",
-      description: `Platform fee (${(Number(pct) * 100).toFixed(1)}% + ₦${(Number(fixedFee) / 100).toFixed(0)} fixed) on Order #${order.order_number}`,
-    },
+    ...(customerPaidServiceFee
+      ? []
+      : [
+          {
+            restaurant_id: restaurantId,
+            order_id: order.id,
+            type: "service_charge",
+            direction: "debit",
+            amount_kobo: serviceChargeKobo,
+            status: "settled",
+            description: `Platform fee (${(Number(pct) * 100).toFixed(1)}% + ₦${(Number(fixedFee) / 100).toFixed(0)} fixed) on Order #${order.order_number}`,
+          },
+        ]),
     {
       restaurant_id: restaurantId,
       order_id: order.id,
@@ -227,7 +248,9 @@ export async function POST(request: NextRequest) {
       status: "settled",
       description: `Delivery fee — Order #${order.order_number}`,
     },
-  ]);
+  ];
+
+  await supabase.from("wallet_transactions").insert(walletRows);
 
   // Update wallet pending_balance and total_earned
   await supabase.rpc("increment_wallet_pending", {

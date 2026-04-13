@@ -217,7 +217,8 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
 
           {/* Options */}
           {item.options?.map((opt) => {
-            const isSingleSelect = opt.max_selections === 1;
+            // Radio only when required AND capped at exactly 1 (forced single pick, e.g. size/protein)
+            const isSingleSelect = !!opt.is_required && opt.max_selections === 1;
             const isSizeGroup = isSizedItem && opt.is_required && isSingleSelect;
             const count = totalSelected(opt.id);
 
