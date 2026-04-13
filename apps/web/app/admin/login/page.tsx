@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { createBrowserClient } from "@/lib/supabase/client";
 
 export default function AdminLoginPage() {
@@ -119,7 +120,7 @@ function AdminLoginForm() {
     <div className="min-h-screen bg-purple-900 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="Kitchyn" className="h-10 mx-auto mb-6 brightness-0 invert" />
+          <Image src="/logo.png" alt="Kitchyn" width={120} height={40} className="h-10 w-auto mx-auto mb-6 brightness-0 invert" />
           <h1 className="text-2xl font-bold text-white">Admin Access</h1>
           <p className="text-sm text-purple-300 mt-1">
             {step === "credentials"

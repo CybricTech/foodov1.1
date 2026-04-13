@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { createBrowserClient } from "@/lib/supabase/client";
 
 export default function MerchantLoginPage() {
@@ -46,7 +47,7 @@ function MerchantLoginForm() {
     <div className="min-h-screen bg-black-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="Kitchyn" className="h-10 mx-auto mb-6" />
+          <Image src="/logo.png" alt="Kitchyn" width={120} height={40} className="h-10 w-auto mx-auto mb-6" />
           <h1 className="text-2xl font-bold text-black-900">Merchant Login</h1>
           <p className="text-sm text-black-400 mt-1">
             Sign in to manage your restaurant
