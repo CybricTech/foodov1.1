@@ -73,7 +73,11 @@
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"food delivery merchant dashboard SaaS restaurant management\" --design-system -p \"Foodo Merchant\")",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard sidebar navbar\" --stack nextjs)",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"sidebar navigation dashboard admin\" --domain style)",
-      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant merchant order queue management dashboard\" --design-system -p \"Kitchyn Orders\")"
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant merchant order queue management dashboard\" --design-system -p \"Kitchyn Orders\")",
+      "Bash(grep -h \"^CREATE TABLE\" /Users/salihuaminu/Foodov1.1/supabase/migrations/*.sql)",
+      "Bash(grep -n \"vat\\\\|select.*restaurant\\\\|from.*restaurants\" /Users/salihuaminu/Foodov1.1/apps/web/app/[restaurant_slug]/layout.tsx)",
+      "Bash(grep -rn \"RestaurantProvider\\\\|from.*restaurants\\\\|select.*\\\\*\" /Users/salihuaminu/Foodov1.1/apps/web/app/[restaurant_slug]/ --include=\"*.tsx\" --include=\"*.ts\")",
+      "Bash(grep -n \"getRestaurantBySlug\\\\|select\" /Users/salihuaminu/Foodov1.1/packages/database/src/*.ts)"
     ]
   }
 }

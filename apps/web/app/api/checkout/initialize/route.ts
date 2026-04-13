@@ -61,12 +61,13 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceClient();
 
   // Verify restaurant exists and accepts orders
-  const { data: restaurant, error: restError } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: restaurant, error: restError } = await (supabase
     .from("restaurants")
-    .select("id, name, accepts_orders, min_order_amount, delivery_fee")
+    .select("id, name, accepts_orders, min_order_amount, delivery_fee, vat_percentage")
     .eq("id", data.restaurantId)
     .eq("is_active", true)
-    .single();
+    .single() as any);
 
   if (restError || !restaurant) {
     return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
@@ -155,7 +156,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const totalKobo = subtotalKobo + deliveryFeeKobo;
+  // VAT — applied on subtotal only (not delivery fee)
+  const vatPct = restaurant.vat_percentage ? Number(restaurant.vat_percentage) : 0;
+  const vatKobo = vatPct > 0 ? Math.round(subtotalKobo * vatPct / 100) : 0;
+
+  const totalKobo = subtotalKobo + deliveryFeeKobo + vatKobo;
 
   if (
     restaurant.min_order_amount &&
@@ -192,6 +197,8 @@ export async function POST(request: NextRequest) {
         items: data.items as unknown as import("@foodo/database").Json,
         subtotal_kobo: subtotalKobo,
         delivery_fee_kobo: deliveryFeeKobo,
+        vat_kobo: vatKobo,
+        vat_percentage: vatPct,
         delivery_distance_km: data.deliveryDistanceKm ?? null,
       } as import("@foodo/database").Json,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -250,5 +257,7 @@ export async function POST(request: NextRequest) {
     paymentId: payment.id,
     totalKobo,
     deliveryFeeKobo,
+    vatKobo,
+    vatPercentage: vatPct,
   });
 }

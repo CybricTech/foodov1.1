@@ -268,7 +268,10 @@ export default function CheckoutPage() {
 
   const effectiveDeliveryFee =
     fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0;
-  const total = subtotal + effectiveDeliveryFee;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const vatPct = (restaurant as any).vat_percentage ? Number((restaurant as any).vat_percentage) : 0;
+  const vatKobo = vatPct > 0 ? Math.round(subtotal * vatPct / 100) : 0;
+  const total = subtotal + effectiveDeliveryFee + vatKobo;
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
   // Pay button is disabled for delivery until a valid fee is calculated
@@ -476,6 +479,13 @@ export default function CheckoutPage() {
               <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
                 <span className="text-sm text-black-500">Delivery fee</span>
                 <span className="text-sm font-semibold text-viridian-600">Free</span>
+              </div>
+            )}
+
+            {vatKobo > 0 && (
+              <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
+                <span className="text-sm text-black-500">VAT ({vatPct}%)</span>
+                <span className="text-sm font-semibold text-black-900">{formatKobo(vatKobo)}</span>
               </div>
             )}
 

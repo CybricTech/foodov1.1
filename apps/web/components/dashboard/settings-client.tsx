@@ -294,6 +294,7 @@ type RestaurantExtended = Restaurant & {
   latitude?: number | null;
   longitude?: number | null;
   max_delivery_radius_km?: number | null;
+  vat_percentage?: number | null;
 };
 
 export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
@@ -318,6 +319,9 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   const [twitterUrl, setTwitterUrl] = useState(r.twitter_url ?? "");
   const [youtubeUrl, setYoutubeUrl] = useState(r.youtube_url ?? "");
   const [whatsappNumber, setWhatsappNumber] = useState(r.whatsapp_number ?? "");
+  const [vatPercentage, setVatPercentage] = useState(
+    r.vat_percentage != null ? r.vat_percentage.toString() : ""
+  );
   const [logisticsDefault, setLogisticsDefault] = useState(r.logistics_default);
   const [acceptsOrders, setAcceptsOrders] = useState(r.accepts_orders);
   const [saving, setSaving] = useState(false);
@@ -454,6 +458,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         state: state || null,
         primary_color: primaryColor,
         min_order_amount: minOrderNgn ? Math.round(parseFloat(minOrderNgn) * 100) : null,
+        vat_percentage: vatPercentage ? parseFloat(vatPercentage) : null,
         logistics_default: logisticsDefault,
         accepts_orders: acceptsOrders,
         instagram_url: instagramUrl || null,
@@ -774,6 +779,21 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                 onChange={(e) => setDeliveryFeeNgn(e.target.value)}
                 className={inputCls}
                 placeholder="0"
+              />
+            </Field>
+            <Field
+              label="VAT (%)"
+              hint="Applied to the order subtotal. Leave blank if you don't charge VAT."
+            >
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={vatPercentage}
+                onChange={(e) => setVatPercentage(e.target.value)}
+                className={inputCls}
+                placeholder="e.g. 7.5"
               />
             </Field>
             <Field label="Default logistics mode">
