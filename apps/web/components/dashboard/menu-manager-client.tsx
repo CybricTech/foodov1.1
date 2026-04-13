@@ -293,7 +293,8 @@ interface DraftChoice {
 interface DraftOption {
   name: string;
   isRequired: boolean;
-  maxSelections: number;
+  /** null = unlimited */
+  maxSelections: number | null;
   choices: DraftChoice[];
 }
 
@@ -369,7 +370,7 @@ function ItemFormModal({
   function addOption() {
     setDraftOptions((prev) => [
       ...prev,
-      { name: "", isRequired: false, maxSelections: 1, choices: [{ name: "", priceModifierNgn: "" }] },
+      { name: "", isRequired: false, maxSelections: null, choices: [{ name: "", priceModifierNgn: "" }] },
     ]);
   }
 
@@ -518,7 +519,7 @@ function ItemFormModal({
             name: opt.name.trim(),
             is_required: opt.isRequired,
             min_selections: opt.isRequired ? 1 : 0,
-            max_selections: opt.maxSelections,
+            max_selections: opt.maxSelections ?? undefined,
           })
           .select("id")
           .single();
@@ -776,16 +777,31 @@ function ItemFormModal({
                     />
                     <span className="text-xs text-black-500">Required</span>
                   </label>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-black-400">Max selections:</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
-                      type="number"
-                      min="1"
-                      value={opt.maxSelections}
-                      onChange={(e) => updateOption(oi, { maxSelections: parseInt(e.target.value) || 1 })}
-                      className="w-12 px-2 py-1 rounded-lg border border-black-200 text-xs text-center focus:outline-none focus:border-purple-500"
+                      type="checkbox"
+                      checked={opt.maxSelections !== null}
+                      onChange={(e) =>
+                        updateOption(oi, { maxSelections: e.target.checked ? 1 : null })
+                      }
+                      className="w-3.5 h-3.5 accent-purple-500"
                     />
-                  </div>
+                    <span className="text-xs text-black-500">Limit to</span>
+                  </label>
+                  {opt.maxSelections !== null && (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min="1"
+                        value={opt.maxSelections}
+                        onChange={(e) =>
+                          updateOption(oi, { maxSelections: parseInt(e.target.value) || 1 })
+                        }
+                        className="w-12 px-2 py-1 rounded-lg border border-black-200 text-xs text-center focus:outline-none focus:border-purple-500"
+                      />
+                      <span className="text-xs text-black-400">max</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Choices */}
