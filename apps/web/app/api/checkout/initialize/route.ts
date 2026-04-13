@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     .select("vat_percentage")
     .eq("id", data.restaurantId)
     .single();
-  const vatPercentageRaw = vatRow ? (vatRow as Record<string, unknown>)["vat_percentage"] : null;
+  const vatPercentageRaw = vatRow ? (vatRow as unknown as Record<string, unknown>)["vat_percentage"] : null;
 
   if (restError || !restaurant) {
     return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
