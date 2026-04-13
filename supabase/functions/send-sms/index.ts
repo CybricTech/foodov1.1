@@ -150,7 +150,7 @@ async function sendViaTermii(
   phone: string,
   message: string
 ): Promise<boolean> {
-  const res = await fetch("https://api.ng.termii.com/api/sms/send", {
+  const res = await fetch("https://v3.api.termii.com/api/sms/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -177,7 +177,7 @@ async function sendViaTermiiWhatsApp(
   phone: string,
   message: string
 ): Promise<boolean> {
-  const res = await fetch("https://api.ng.termii.com/api/sms/send", {
+  const res = await fetch("https://v3.api.termii.com/api/sms/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -229,20 +229,29 @@ async function sendViaTwilio(
 async function createLog(params: {
   restaurantId: string;
   orderId: string;
-  phone: string;
-  message: string;
+  phone: string | null | undefined;
+  message: string | null | undefined;
   eventType: string;
   provider: string;
   channel: "sms" | "whatsapp";
   status: "queued" | "sent" | "failed";
 }): Promise<string | null> {
+  if (!params.phone) {
+    console.warn("Skipping sms_logs insert: recipient_phone is null");
+    return null;
+  }
+  if (!params.message) {
+    console.warn("Skipping sms_logs insert: message_body is null");
+    return null;
+  }
+
   const { data: log, error } = await supabase
     .from("sms_logs")
     .insert({
       restaurant_id: params.restaurantId,
       order_id: params.orderId,
-      phone: params.phone,
-      message: params.message,
+      recipient_phone: params.phone,
+      message_body: params.message,
       event_type: params.eventType,
       provider: params.provider,
       status: params.status,
