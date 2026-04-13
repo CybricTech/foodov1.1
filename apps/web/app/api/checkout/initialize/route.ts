@@ -167,7 +167,19 @@ export async function POST(request: NextRequest) {
   const vatPct = vatPercentageRaw ? Number(vatPercentageRaw) : 0;
   const vatKobo = vatPct > 0 ? Math.round(subtotalKobo * vatPct / 100) : 0;
 
-  const totalKobo = subtotalKobo + deliveryFeeKobo + vatKobo;
+  // Platform service fee — charged to the customer
+  const { data: feeSettings } = await supabase
+    .from("platform_settings")
+    .select("service_charge_pct, service_charge_fixed_kobo")
+    .single();
+  const serviceChargePct = Number(feeSettings?.service_charge_pct ?? 0);
+  const serviceChargeFixedKobo = Number(feeSettings?.service_charge_fixed_kobo ?? 0);
+  const serviceFeeKobo =
+    serviceChargePct > 0 || serviceChargeFixedKobo > 0
+      ? Math.round(subtotalKobo * serviceChargePct) + serviceChargeFixedKobo
+      : 0;
+
+  const totalKobo = subtotalKobo + deliveryFeeKobo + vatKobo + serviceFeeKobo;
 
   if (
     restaurant.min_order_amount &&
@@ -206,6 +218,8 @@ export async function POST(request: NextRequest) {
         delivery_fee_kobo: deliveryFeeKobo,
         vat_kobo: vatKobo,
         vat_percentage: vatPct,
+        service_fee_kobo: serviceFeeKobo,
+        service_charge_pct: serviceChargePct,
         delivery_distance_km: data.deliveryDistanceKm ?? null,
       } as import("@foodo/database").Json,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -266,5 +280,7 @@ export async function POST(request: NextRequest) {
     deliveryFeeKobo,
     vatKobo,
     vatPercentage: vatPct,
+    serviceFeeKobo,
+    serviceChargePct,
   });
 }

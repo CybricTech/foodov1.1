@@ -47,6 +47,20 @@ export default function CheckoutPage() {
   const [aptSuiteFloor, setAptSuiteFloor] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
 
+  // Platform service fee
+  const [serviceChargePct, setServiceChargePct] = useState(0);
+  const [serviceChargeFixedKobo, setServiceChargeFixedKobo] = useState(0);
+
+  useEffect(() => {
+    fetch("/api/checkout/service-fee")
+      .then((r) => r.json())
+      .then((d) => {
+        setServiceChargePct(Number(d.pct ?? 0));
+        setServiceChargeFixedKobo(Number(d.fixedKobo ?? 0));
+      })
+      .catch(() => {});
+  }, []);
+
   // Customer info
   const [phone, setPhone] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -271,7 +285,11 @@ export default function CheckoutPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const vatPct = (restaurant as any).vat_percentage ? Number((restaurant as any).vat_percentage) : 0;
   const vatKobo = vatPct > 0 ? Math.round(subtotal * vatPct / 100) : 0;
-  const total = subtotal + effectiveDeliveryFee + vatKobo;
+  const serviceFeeKobo =
+    serviceChargePct > 0 || serviceChargeFixedKobo > 0
+      ? Math.round(subtotal * serviceChargePct) + serviceChargeFixedKobo
+      : 0;
+  const total = subtotal + effectiveDeliveryFee + vatKobo + serviceFeeKobo;
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
   // Pay button is disabled for delivery until a valid fee is calculated
@@ -486,6 +504,20 @@ export default function CheckoutPage() {
               <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
                 <span className="text-sm text-black-500">VAT ({vatPct}%)</span>
                 <span className="text-sm font-semibold text-black-900">{formatKobo(vatKobo)}</span>
+              </div>
+            )}
+
+            {serviceFeeKobo > 0 && (
+              <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
+                <div className="text-sm text-black-500">
+                  <span>Service fee</span>
+                  {serviceChargePct > 0 && (
+                    <span className="ml-1.5 text-xs text-black-400">
+                      ({(serviceChargePct * 100).toFixed(1)}%{serviceChargeFixedKobo > 0 ? ` + ${formatKobo(serviceChargeFixedKobo)}` : ""})
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm font-semibold text-black-900">{formatKobo(serviceFeeKobo)}</span>
               </div>
             )}
 

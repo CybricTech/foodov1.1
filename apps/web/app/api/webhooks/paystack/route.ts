@@ -181,9 +181,15 @@ export async function POST(request: NextRequest) {
   const subtotalKobo = meta.subtotal_kobo as number;
   const deliveryFeeKobo = meta.delivery_fee_kobo as number;
 
-  // Service charge applied on subtotal only (delivery fee goes entirely to platform)
-  const serviceChargeKobo = Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
-  const restaurantCreditKobo = subtotalKobo - serviceChargeKobo;
+  // If service_fee_kobo is present in metadata, the fee was already charged to the
+  // customer — merchant receives full subtotal. Otherwise fall back to deducting from merchant.
+  const metaServiceFeeKobo = (meta.service_fee_kobo as number) ?? 0;
+  const serviceChargeKobo = metaServiceFeeKobo > 0
+    ? metaServiceFeeKobo
+    : Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
+  const restaurantCreditKobo = metaServiceFeeKobo > 0
+    ? subtotalKobo  // customer paid the fee — merchant gets full subtotal
+    : subtotalKobo - serviceChargeKobo;
   const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
 
   // Ensure wallet exists

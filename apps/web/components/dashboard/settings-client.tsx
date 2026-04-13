@@ -282,6 +282,23 @@ function RestaurantLocationSection({
   );
 }
 
+type DayHours = { enabled: boolean; open: string; close: string };
+type OpeningHours = Record<string, DayHours>;
+
+const DAYS = [
+  { key: "mon", label: "Monday" },
+  { key: "tue", label: "Tuesday" },
+  { key: "wed", label: "Wednesday" },
+  { key: "thu", label: "Thursday" },
+  { key: "fri", label: "Friday" },
+  { key: "sat", label: "Saturday" },
+  { key: "sun", label: "Sunday" },
+];
+
+const DEFAULT_HOURS: OpeningHours = Object.fromEntries(
+  DAYS.map(({ key }) => [key, { enabled: true, open: "09:00", close: "22:00" }])
+);
+
 type RestaurantExtended = Restaurant & {
   city?: string | null;
   state?: string | null;
@@ -295,6 +312,7 @@ type RestaurantExtended = Restaurant & {
   longitude?: number | null;
   max_delivery_radius_km?: number | null;
   vat_percentage?: number | null;
+  opening_hours?: OpeningHours | null;
 };
 
 export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
@@ -324,6 +342,9 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   );
   const [logisticsDefault, setLogisticsDefault] = useState(r.logistics_default);
   const [acceptsOrders, setAcceptsOrders] = useState(r.accepts_orders);
+  const [openingHours, setOpeningHours] = useState<OpeningHours>(
+    r.opening_hours ?? DEFAULT_HOURS
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -461,6 +482,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         vat_percentage: vatPercentage ? parseFloat(vatPercentage) : null,
         logistics_default: logisticsDefault,
         accepts_orders: acceptsOrders,
+        opening_hours: openingHours,
         instagram_url: instagramUrl || null,
         facebook_url: facebookUrl || null,
         twitter_url: twitterUrl || null,
@@ -830,6 +852,79 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                   )}
                 />
               </button>
+            </div>
+          </Section>
+
+          {/* Operating hours */}
+          <Section title="Operating hours">
+            <p className="text-xs text-black-400 mb-3">
+              Customers will see a &quot;closed&quot; notice outside these hours. Disabled days are treated as closed all day.
+            </p>
+            <div className="space-y-2">
+              {DAYS.map(({ key, label }) => {
+                const day = openingHours[key] ?? { enabled: true, open: "09:00", close: "22:00" };
+                return (
+                  <div key={key} className="flex items-center gap-3">
+                    {/* Day toggle */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={day.enabled}
+                      onClick={() =>
+                        setOpeningHours((prev) => ({
+                          ...prev,
+                          [key]: { ...day, enabled: !day.enabled },
+                        }))
+                      }
+                      className={cn(
+                        "relative w-10 h-5 rounded-full flex-shrink-0 transition-colors",
+                        day.enabled ? "bg-purple-500" : "bg-black-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform",
+                          day.enabled ? "left-5" : "left-0.5"
+                        )}
+                      />
+                    </button>
+                    {/* Day label */}
+                    <span className={cn("text-sm w-24 flex-shrink-0", day.enabled ? "text-black-900 font-medium" : "text-black-400")}>
+                      {label}
+                    </span>
+                    {/* Time pickers */}
+                    {day.enabled ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="time"
+                          value={day.open}
+                          onChange={(e) =>
+                            setOpeningHours((prev) => ({
+                              ...prev,
+                              [key]: { ...day, open: e.target.value },
+                            }))
+                          }
+                          className="flex-1 text-sm border border-black-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-300"
+                        />
+                        <span className="text-xs text-black-400">to</span>
+                        <input
+                          type="time"
+                          value={day.close}
+                          onChange={(e) =>
+                            setOpeningHours((prev) => ({
+                              ...prev,
+                              [key]: { ...day, close: e.target.value },
+                            }))
+                          }
+                          className="flex-1 text-sm border border-black-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-300"
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-xs text-black-400 italic">Closed</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </Section>
 
