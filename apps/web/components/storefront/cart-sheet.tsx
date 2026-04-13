@@ -33,7 +33,9 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
   // Summarise selected options into a readable string
   function optionsSummary(item: typeof items[number]) {
     const parts = item.selectedOptions.flatMap((opt) =>
-      opt.choices.map((c) => c.choiceName)
+      opt.choices.map((c) =>
+        (c.quantity ?? 1) > 1 ? `${c.quantity}× ${c.choiceName}` : c.choiceName
+      )
     );
     return parts.join(", ");
   }

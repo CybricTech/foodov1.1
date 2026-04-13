@@ -1365,6 +1365,8 @@ export interface SelectedOptionSnapshot {
     choiceId: string;
     choiceName: string;
     priceModifierKobo: number;
+    /** Quantity of this choice selected (default 1 when omitted) */
+    quantity?: number;
   }[];
 }
 

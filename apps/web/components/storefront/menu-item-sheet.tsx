@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
-import { useCartStore, buildOptionsKey } from "@/lib/stores/cart";
+import { useCartStore } from "@/lib/stores/cart";
 import { useRestaurant } from "./restaurant-context";
 import type { MenuItemWithOptions, SelectedOptionSnapshot } from "@foodo/database";
 
@@ -13,12 +13,17 @@ interface MenuItemSheetProps {
   onClose: () => void;
 }
 
+// choiceQtys: optionId → choiceId → quantity (0 means unselected)
+type ChoiceQtys = Record<string, Record<string, number>>;
+
+const MAX_CHOICE_QTY = 20;
+
 export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
   const { restaurant } = useRestaurant();
   const addItem = useCartStore((s) => s.addItem);
 
   const [quantity, setQuantity] = useState(1);
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({});
+  const [choiceQtys, setChoiceQtys] = useState<ChoiceQtys>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [specialRequest, setSpecialRequest] = useState("");
   const [added, setAdded] = useState(false);
@@ -27,13 +32,15 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
   useEffect(() => {
     if (item) {
       setQuantity(1);
-      const defaults: Record<string, string[]> = {};
+      const defaults: ChoiceQtys = {};
       item.options?.forEach((opt) => {
+        defaults[opt.id] = {};
+        // Pre-select the single required choice if there's only one
         if (opt.min_selections > 0 && opt.choices.length === 1) {
-          defaults[opt.id] = [opt.choices[0].id];
+          defaults[opt.id][opt.choices[0].id] = 1;
         }
       });
-      setSelectedOptions(defaults);
+      setChoiceQtys(defaults);
       setErrors({});
       setSpecialRequest("");
       setAdded(false);
@@ -49,29 +56,42 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
 
   if (!item) return null;
 
-  function toggleChoice(optionId: string, choiceId: string, isMulti: boolean) {
-    setSelectedOptions((prev) => {
-      const current = prev[optionId] ?? [];
-      if (isMulti) {
-        return {
-          ...prev,
-          [optionId]: current.includes(choiceId)
-            ? current.filter((id) => id !== choiceId)
-            : [...current, choiceId],
-        };
-      }
+  /** For single-select groups: toggle choice on/off (qty 0 or 1). */
+  function handleSingleSelect(optionId: string, choiceId: string) {
+    setChoiceQtys((prev) => {
+      const current = prev[optionId] ?? {};
+      const already = current[choiceId] === 1;
+      // Deselect all others, set this to 1 (or 0 if already selected)
+      const next: Record<string, number> = {};
+      if (!already) next[choiceId] = 1;
+      return { ...prev, [optionId]: next };
+    });
+    setErrors((prev) => ({ ...prev, [optionId]: "" }));
+  }
+
+  /** For multi-select groups: set an explicit quantity for a choice. */
+  function handleChoiceQty(optionId: string, choiceId: string, delta: number) {
+    setChoiceQtys((prev) => {
+      const current = prev[optionId] ?? {};
+      const current_qty = current[choiceId] ?? 0;
+      const next_qty = Math.max(0, Math.min(MAX_CHOICE_QTY, current_qty + delta));
       return {
         ...prev,
-        [optionId]: current.includes(choiceId) ? [] : [choiceId],
+        [optionId]: { ...current, [choiceId]: next_qty },
       };
     });
     setErrors((prev) => ({ ...prev, [optionId]: "" }));
   }
 
+  /** Sum of all choice quantities for a given option group. */
+  function totalSelected(optionId: string): number {
+    return Object.values(choiceQtys[optionId] ?? {}).reduce((s, q) => s + q, 0);
+  }
+
   function validate(): boolean {
     const newErrors: Record<string, string> = {};
     item!.options?.forEach((opt) => {
-      const count = (selectedOptions[opt.id] ?? []).length;
+      const count = totalSelected(opt.id);
       if (count < opt.min_selections) {
         newErrors[opt.id] = `Please select at least ${opt.min_selections}`;
       }
@@ -86,9 +106,10 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
   function computeUnitPrice(): number {
     let price = item!.price_kobo;
     item!.options?.forEach((opt) => {
-      (selectedOptions[opt.id] ?? []).forEach((choiceId) => {
-        const choice = opt.choices.find((c) => c.id === choiceId);
-        if (choice) price += choice.price_modifier_kobo ?? 0;
+      const qtys = choiceQtys[opt.id] ?? {};
+      opt.choices.forEach((choice) => {
+        const qty = qtys[choice.id] ?? 0;
+        if (qty > 0) price += (choice.price_modifier_kobo ?? 0) * qty;
       });
     });
     return price;
@@ -96,19 +117,19 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
 
   function buildSnapshot(): SelectedOptionSnapshot[] {
     return (item!.options ?? [])
-      .filter((opt) => (selectedOptions[opt.id] ?? []).length > 0)
-      .map((opt) => ({
-        optionId: opt.id,
-        optionName: opt.name,
-        choices: (selectedOptions[opt.id] ?? []).map((choiceId) => {
-          const choice = opt.choices.find((c) => c.id === choiceId)!;
-          return {
-            choiceId: choice.id,
-            choiceName: choice.name,
-            priceModifierKobo: choice.price_modifier_kobo ?? 0,
-          };
-        }),
-      }));
+      .map((opt) => {
+        const qtys = choiceQtys[opt.id] ?? {};
+        const selectedChoices = opt.choices
+          .filter((c) => (qtys[c.id] ?? 0) > 0)
+          .map((c) => ({
+            choiceId: c.id,
+            choiceName: c.name,
+            priceModifierKobo: c.price_modifier_kobo ?? 0,
+            quantity: qtys[c.id] ?? 1,
+          }));
+        return { optionId: opt.id, optionName: opt.name, choices: selectedChoices };
+      })
+      .filter((opt) => opt.choices.length > 0);
   }
 
   function handleAddToCart() {
@@ -118,8 +139,9 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
     const snapshot = buildSnapshot();
     const unitPrice = computeUnitPrice();
     const req = specialRequest.trim();
-    // Include request in key so items with different requests are separate cart lines
-    const optionsKey = buildOptionsKey(snapshot) + (req ? `|req:${req}` : "");
+    // Include quantities in key so 2× Extra Cheese is a different cart line than 1×
+    const optionsKey =
+      buildOptionsKeyWithQty(snapshot) + (req ? `|req:${req}` : "");
 
     addItem(restaurant.id, restaurant.slug, {
       menuItemId: item.id,
@@ -132,7 +154,6 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
       optionsKey,
     });
 
-    // Show "Added ✓" briefly — prevents ghost-tap on CartBar on mobile
     setAdded(true);
     setTimeout(onClose, 700);
   }
@@ -140,15 +161,17 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
   const unitPrice = computeUnitPrice();
   const totalPrice = unitPrice * quantity;
 
-  // Items with price_kobo=0 use a required single-select option group as size/portion selector
-  const isSizedItem = item.price_kobo === 0 &&
+  const isSizedItem =
+    item.price_kobo === 0 &&
     item.options?.some((o) => o.is_required && o.max_selections === 1);
   const minSizePrice = isSizedItem
-    ? Math.min(...(item.options?.flatMap((o) =>
-        o.is_required && o.max_selections === 1
-          ? o.choices.map((c) => c.price_modifier_kobo ?? 0)
-          : []
-      ) ?? [0]))
+    ? Math.min(
+        ...(item.options?.flatMap((o) =>
+          o.is_required && o.max_selections === 1
+            ? o.choices.map((c) => c.price_modifier_kobo ?? 0)
+            : []
+        ) ?? [0])
+      )
     : 0;
 
   return (
@@ -194,63 +217,139 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
 
           {/* Options */}
           {item.options?.map((opt) => {
-            const isSizeGroup = isSizedItem && opt.is_required && opt.max_selections === 1;
+            const isSingleSelect = opt.max_selections === 1;
+            const isSizeGroup = isSizedItem && opt.is_required && isSingleSelect;
+            const count = totalSelected(opt.id);
+
             return (
               <div key={opt.id} className="mt-5">
                 <div className="flex items-baseline justify-between mb-2">
                   <h3 className="font-semibold text-black-900 text-sm">{opt.name}</h3>
-                  <span
-                    className={cn(
-                      "text-xs px-2 py-0.5 rounded-full font-medium",
-                      opt.min_selections > 0
-                        ? "bg-cinnabar-100 text-cinnabar-500"
-                        : "bg-black-100 text-black-400"
+                  <div className="flex items-center gap-1.5">
+                    {!isSingleSelect && opt.max_selections && (
+                      <span className="text-xs text-black-400">
+                        max {opt.max_selections}
+                      </span>
                     )}
-                  >
-                    {opt.min_selections > 0 ? "Required" : "Optional"}
-                  </span>
+                    <span
+                      className={cn(
+                        "text-xs px-2 py-0.5 rounded-full font-medium",
+                        opt.min_selections > 0
+                          ? "bg-cinnabar-100 text-cinnabar-500"
+                          : "bg-black-100 text-black-400"
+                      )}
+                    >
+                      {opt.min_selections > 0 ? "Required" : "Optional"}
+                    </span>
+                  </div>
                 </div>
                 {errors[opt.id] && (
                   <p className="text-xs text-cinnabar-500 mb-1">{errors[opt.id]}</p>
                 )}
+
                 <div className="space-y-2">
                   {opt.choices.map((choice) => {
-                    const isSelected = (selectedOptions[opt.id] ?? []).includes(choice.id);
-                    const isMulti = (opt.max_selections ?? 1) > 1;
+                    const qty = choiceQtys[opt.id]?.[choice.id] ?? 0;
+                    const isSelected = qty > 0;
+
+                    if (isSingleSelect) {
+                      // ── Radio-style row ──
+                      return (
+                        <label
+                          key={choice.id}
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors",
+                            isSelected
+                              ? "border-primary bg-primary/5"
+                              : "border-black-100 hover:border-black-200"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={cn(
+                                "w-4 h-4 border-2 rounded-full transition-colors flex-shrink-0",
+                                isSelected
+                                  ? "border-primary bg-primary"
+                                  : "border-black-300"
+                              )}
+                            />
+                            <span className="text-sm text-black-900">{choice.name}</span>
+                          </div>
+                          {(choice.price_modifier_kobo ?? 0) !== 0 && (
+                            <span className="text-xs text-black-400 ml-2">
+                              {isSizeGroup
+                                ? formatKobo(choice.price_modifier_kobo ?? 0)
+                                : `+${formatKobo(choice.price_modifier_kobo ?? 0)}`}
+                            </span>
+                          )}
+                          <input
+                            type="radio"
+                            className="sr-only"
+                            checked={isSelected}
+                            onChange={() => handleSingleSelect(opt.id, choice.id)}
+                          />
+                        </label>
+                      );
+                    }
+
+                    // ── Multi-select: quantity stepper row ──
+                    const atMax =
+                      opt.max_selections != null && count >= opt.max_selections && !isSelected;
+
                     return (
-                      <label
+                      <div
                         key={choice.id}
                         className={cn(
-                          "flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors",
+                          "flex items-center justify-between p-3 rounded-xl border transition-colors",
                           isSelected
                             ? "border-primary bg-primary/5"
-                            : "border-black-100 hover:border-black-200"
+                            : "border-black-100"
                         )}
                       >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={cn(
-                              "w-4 h-4 border-2 transition-colors flex-shrink-0",
-                              isMulti ? "rounded" : "rounded-full",
-                              isSelected ? "border-primary bg-primary" : "border-black-300"
-                            )}
-                          />
+                        <div className="flex-1 min-w-0">
                           <span className="text-sm text-black-900">{choice.name}</span>
+                          {(choice.price_modifier_kobo ?? 0) !== 0 && (
+                            <span className="text-xs text-black-400 ml-2">
+                              +{formatKobo(choice.price_modifier_kobo ?? 0)} each
+                            </span>
+                          )}
                         </div>
-                        {(choice.price_modifier_kobo ?? 0) !== 0 && (
-                          <span className="text-xs text-black-400 ml-2">
-                            {isSizeGroup
-                              ? formatKobo(choice.price_modifier_kobo ?? 0)
-                              : `+${formatKobo(choice.price_modifier_kobo ?? 0)}`}
-                          </span>
-                        )}
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={isSelected}
-                          onChange={() => toggleChoice(opt.id, choice.id, isMulti)}
-                        />
-                      </label>
+
+                        {/* Stepper */}
+                        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                          {isSelected ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleChoiceQty(opt.id, choice.id, -1)}
+                                className="w-7 h-7 rounded-full border border-black-200 flex items-center justify-center text-black-600 hover:border-black-400 transition-colors font-bold text-base leading-none"
+                              >
+                                −
+                              </button>
+                              <span className="w-5 text-center text-sm font-semibold text-black-900">
+                                {qty}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleChoiceQty(opt.id, choice.id, 1)}
+                                disabled={atMax || qty >= MAX_CHOICE_QTY}
+                                className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white hover:bg-primary/90 disabled:opacity-40 transition-colors font-bold text-base leading-none"
+                              >
+                                +
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={atMax}
+                              onClick={() => handleChoiceQty(opt.id, choice.id, 1)}
+                              className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white hover:bg-primary/90 disabled:opacity-40 transition-colors font-bold text-base leading-none"
+                            >
+                              +
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -314,4 +413,14 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
       </div>
     </>
   );
+}
+
+/** Like buildOptionsKey but includes quantities so 2× Extra Cheese ≠ 1× Extra Cheese. */
+function buildOptionsKeyWithQty(snapshot: SelectedOptionSnapshot[]): string {
+  const parts = snapshot.flatMap((opt) =>
+    opt.choices.map(
+      (c) => `${opt.optionId}:${c.choiceId}:${c.quantity ?? 1}`
+    )
+  );
+  return parts.sort().join("|") || "no-options";
 }
