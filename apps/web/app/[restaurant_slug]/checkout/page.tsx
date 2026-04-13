@@ -43,6 +43,10 @@ export default function CheckoutPage() {
   const placesReadyRef = useRef(false);
   const predictionsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Optional delivery detail fields
+  const [aptSuiteFloor, setAptSuiteFloor] = useState("");
+  const [deliveryInstructions, setDeliveryInstructions] = useState("");
+
   // Customer info
   const [phone, setPhone] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -60,6 +64,8 @@ export default function CheckoutPage() {
       setDeliveryFeeError("");
       setDistanceKm(null);
       setDurationMinutes(null);
+      setAptSuiteFloor("");
+      setDeliveryInstructions("");
     }
   }, [fulfillmentType]);
 
@@ -210,7 +216,12 @@ export default function CheckoutPage() {
           customerPhone: normalizedPhone,
           customerEmail: email || undefined,
           fulfillmentType,
-          deliveryAddress: selectedPlaceAddress || undefined,
+          deliveryAddress: selectedPlaceAddress
+            ? aptSuiteFloor.trim()
+              ? `${selectedPlaceAddress}, ${aptSuiteFloor.trim()}`
+              : selectedPlaceAddress
+            : undefined,
+          specialInstructions: deliveryInstructions.trim() || undefined,
           deliveryFeeKobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
           deliveryDistanceKm: distanceKm ?? undefined,
           items: items.map((item) => ({
@@ -403,6 +414,26 @@ export default function CheckoutPage() {
               {deliveryFeeError && (
                 <p className="text-xs text-cinnabar-500">{deliveryFeeError}</p>
               )}
+              <div>
+                <label className="block text-xs text-black-400 mb-1.5">Street / Apt / Floor <span className="text-black-300">(optional)</span></label>
+                <input
+                  type="text"
+                  placeholder="Apt 4B, Suite 200, 3rd floor…"
+                  value={aptSuiteFloor}
+                  onChange={(e) => setAptSuiteFloor(e.target.value)}
+                  className={inputClass(false)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-black-400 mb-1.5">Delivery instructions <span className="text-black-300">(optional)</span></label>
+                <textarea
+                  placeholder="Leave at front door, don't ring the bell…"
+                  value={deliveryInstructions}
+                  onChange={(e) => setDeliveryInstructions(e.target.value)}
+                  rows={3}
+                  className={cn(inputClass(false), "resize-none")}
+                />
+              </div>
             </div>
           )}
 

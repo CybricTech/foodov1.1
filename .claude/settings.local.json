@@ -67,7 +67,13 @@
       "Bash(git push:*)",
       "Bash(git commit -m \"fix: use service client for order fetch, remove today-only date filter:*)",
       "Bash(git commit -m \"feat: handle transfer events in paystack webhook route:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(find /Users/salihuaminu/Foodov1.1/apps/web -type f -name *checkout* -o -name *order*)",
+      "Bash(uipro init:*)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"food delivery merchant dashboard SaaS restaurant management\" --design-system -p \"Foodo Merchant\")",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard sidebar navbar\" --stack nextjs)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"sidebar navigation dashboard admin\" --domain style)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant merchant order queue management dashboard\" --design-system -p \"Kitchyn Orders\")"
     ]
   }
 }

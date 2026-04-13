@@ -24,7 +24,7 @@ export default async function DashboardLayout({
         userName={session.fullName || session.email}
         role={session.role}
       />
-      <main className="md:ml-60 min-h-screen">{children}</main>
+      <main className="md:ml-60 min-h-screen pb-20 md:pb-0">{children}</main>
     </div>
   );
 }
