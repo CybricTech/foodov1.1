@@ -2,22 +2,6 @@ import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServiceClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { OrderQueueClient } from "@/components/dashboard/order-queue-client";
-import type { Database } from "@foodo/database";
-
-type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
-  subtotal_kobo: number;
-  delivery_fee_kobo: number;
-  vat_kobo: number;
-  service_fee_kobo: number;
-  total_kobo: number;
-  order_items: Array<{
-    id: string;
-    item_name: string;
-    quantity: number;
-    line_total_kobo: number;
-    selected_options: unknown;
-  }>;
-};
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +36,8 @@ export default async function DashboardPage() {
   return (
     <OrderQueueClient
       restaurantId={restaurantId}
-      initialOrders={(orders as unknown as OrderRow[]) ?? []}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      initialOrders={(orders ?? []) as any}
     />
   );
 }
