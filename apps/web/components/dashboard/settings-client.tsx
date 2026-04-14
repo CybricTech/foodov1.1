@@ -64,10 +64,6 @@ function BankAccountSection({ restaurantId, initialData }: {
     setSaving(false);
   }
 
-  const maskedAccount = saved?.bank_account_number
-    ? `${saved.bank_account_number.slice(0, 3)}***${saved.bank_account_number.slice(-3)}`
-    : null;
-
   return (
     <Section title="Bank account">
       {saved?.bank_account_name ? (
@@ -78,7 +74,7 @@ function BankAccountSection({ restaurantId, initialData }: {
           </div>
           <div className="bg-black-50 rounded-xl px-4 py-3">
             <p className="text-xs text-black-500 font-medium">Account number</p>
-            <p className="text-sm font-semibold text-black-900 mt-0.5">{maskedAccount}</p>
+            <p className="text-sm font-semibold text-black-900 mt-0.5">{saved.bank_account_number}</p>
           </div>
           {saved.paystack_recipient_code && (
             <p className="text-xs text-viridian-500">
