@@ -27,7 +27,7 @@ export default function CheckoutPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Fulfillment
-  const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("pickup");
+  const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("delivery");
 
   // Delivery address
   const [addressInput, setAddressInput] = useState("");
@@ -314,7 +314,7 @@ export default function CheckoutPage() {
           {/* Pickup / Delivery toggle */}
           <div className="p-4 border-b border-black-100">
             <div className="flex bg-black-100 rounded-xl p-1 gap-1">
-              {(["pickup", "delivery"] as const).map((type) => (
+              {(["delivery", "pickup"] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setFulfillmentType(type)}
@@ -493,12 +493,7 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {fulfillmentType === "pickup" && (
-              <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
-                <span className="text-sm text-black-500">Delivery fee</span>
-                <span className="text-sm font-semibold text-viridian-600">Free</span>
-              </div>
-            )}
+
 
             {vatKobo > 0 && (
               <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">

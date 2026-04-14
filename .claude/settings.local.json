@@ -77,7 +77,13 @@
       "Bash(grep -h \"^CREATE TABLE\" /Users/salihuaminu/Foodov1.1/supabase/migrations/*.sql)",
       "Bash(grep -n \"vat\\\\|select.*restaurant\\\\|from.*restaurants\" /Users/salihuaminu/Foodov1.1/apps/web/app/[restaurant_slug]/layout.tsx)",
       "Bash(grep -rn \"RestaurantProvider\\\\|from.*restaurants\\\\|select.*\\\\*\" /Users/salihuaminu/Foodov1.1/apps/web/app/[restaurant_slug]/ --include=\"*.tsx\" --include=\"*.ts\")",
-      "Bash(grep -n \"getRestaurantBySlug\\\\|select\" /Users/salihuaminu/Foodov1.1/packages/database/src/*.ts)"
+      "Bash(grep -n \"getRestaurantBySlug\\\\|select\" /Users/salihuaminu/Foodov1.1/packages/database/src/*.ts)",
+      "Bash(pkill -f \"next-server\")",
+      "Bash(npm run:*)",
+      "Bash(grep -n \"getRestaurantBySlug\" /Users/salihuaminu/Foodov1.1/packages/database/src/*.ts)",
+      "Bash(python3 /Users/salihuaminu/Foodov1.1/.claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant dashboard order management minimal clean\" --design-system -p \"Foodo Merchant Dashboard\")",
+      "Bash(lsof -ti:3000)",
+      "Bash(xargs kill:*)"
     ]
   }
 }
