@@ -449,12 +449,10 @@ function OrderCard({
                 <span>{order.delivery_fee_kobo > 0 ? formatKobo(order.delivery_fee_kobo) : "Free"}</span>
               </div>
             )}
-            {order.vat_kobo > 0 && (
-              <div className="flex justify-between text-xs text-black-500">
-                <span>VAT</span>
-                <span>{formatKobo(order.vat_kobo)}</span>
-              </div>
-            )}
+            <div className="flex justify-between text-xs text-black-500">
+              <span>VAT</span>
+              <span>{order.vat_kobo > 0 ? formatKobo(order.vat_kobo) : "₦0.00"}</span>
+            </div>
             {order.service_fee_kobo > 0 && (
               <div className="flex justify-between text-xs text-black-500">
                 <span>Service fee</span>
