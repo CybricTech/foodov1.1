@@ -38,10 +38,10 @@ export default async function AdminOverviewPage() {
       .gte("created_at", thirtyDaysAgo)
       .neq("status", "cancelled"),
     supabase
-      .from("wallet_transactions")
-      .select("amount_kobo")
-      .eq("type", "service_charge")
-      .gte("created_at", thirtyDaysAgo),
+      .from("orders")
+      .select("service_fee_kobo")
+      .gte("created_at", thirtyDaysAgo)
+      .neq("status", "cancelled"),
     supabase
       .from("wallet_transactions")
       .select("amount_kobo")
@@ -59,7 +59,7 @@ export default async function AdminOverviewPage() {
   );
 
   const totalPlatformRevenue = (platformFees ?? []).reduce(
-    (sum: number, t: { amount_kobo: number | null }) => sum + (t.amount_kobo ?? 0),
+    (sum: number, t: { service_fee_kobo: number | null }) => sum + (t.service_fee_kobo ?? 0),
     0
   );
 
