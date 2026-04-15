@@ -58,8 +58,8 @@ export default async function AdminOverviewPage() {
     0
   );
 
-  const totalPlatformRevenue = (platformFees ?? []).reduce(
-    (sum: number, t: { service_fee_kobo: number | null }) => sum + (t.service_fee_kobo ?? 0),
+  const totalPlatformRevenue = ((platformFees ?? []) as unknown as Array<{ service_fee_kobo: number | null }>).reduce(
+    (sum, t) => sum + (t.service_fee_kobo ?? 0),
     0
   );
 
