@@ -217,8 +217,8 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
 
           {/* Options */}
           {item.options?.map((opt) => {
-            // Radio only when required AND capped at exactly 1 (forced single pick, e.g. size/protein)
-            const isSingleSelect = !!opt.is_required && opt.max_selections === 1;
+            // Radio when max_selections === 1 (single pick), regardless of required/optional
+            const isSingleSelect = opt.max_selections === 1;
             const isSizeGroup = isSizedItem && opt.is_required && isSingleSelect;
             const count = totalSelected(opt.id);
 
@@ -311,7 +311,9 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
                           <span className="text-sm text-black-900">{choice.name}</span>
                           {(choice.price_modifier_kobo ?? 0) !== 0 && (
                             <span className="text-xs text-black-400 ml-2">
-                              +{formatKobo(choice.price_modifier_kobo ?? 0)} each
+                              {qty > 1
+                                ? `+${formatKobo((choice.price_modifier_kobo ?? 0) * qty)}`
+                                : `+${formatKobo(choice.price_modifier_kobo ?? 0)} each`}
                             </span>
                           )}
                         </div>

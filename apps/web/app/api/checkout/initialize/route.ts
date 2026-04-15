@@ -33,6 +33,7 @@ const InitializeSchema = z.object({
               choiceId: z.string(),
               choiceName: z.string(),
               priceModifierKobo: z.number().int(),
+              quantity: z.number().int().min(1).optional().default(1),
             })
           ),
         })
