@@ -2,7 +2,7 @@
  * Convenience type aliases derived from the generated Database type.
  *
  * This file is intentionally separate from types.ts so it survives
- * `npx supabase gen types typescript` regenerations.
+ * `npx supabase gen types typescript` regenerations without being wiped.
  */
 import type { Database } from "./types";
 
@@ -20,6 +20,14 @@ export type MenuCategory =
 export type Review =
   Database["public"]["Tables"]["reviews"]["Row"];
 
+export type Customer =
+  Database["public"]["Tables"]["customers"]["Row"];
+
+// ── Insert aliases ────────────────────────────────────────────────────────────
+
+export type ReviewInsert =
+  Database["public"]["Tables"]["reviews"]["Insert"];
+
 // ── Composite types ───────────────────────────────────────────────────────────
 
 export type MenuItemOptionChoice =
@@ -34,6 +42,21 @@ export type MenuItemWithOptions =
   Database["public"]["Tables"]["menu_items"]["Row"] & {
     options?: MenuItemOption[];
   };
+
+export type OrderWithItems = Order & {
+  items: Database["public"]["Tables"]["order_items"]["Row"][];
+  delivery_assignment?: Database["public"]["Tables"]["delivery_assignments"]["Row"] | null;
+};
+
+export type CustomerWithOrders = Customer & {
+  orders: Array<{
+    id: string;
+    order_number: string;
+    total_amount: number;
+    status: string;
+    created_at: string;
+  }>;
+};
 
 // ── Snapshot type (used in cart and order items) ──────────────────────────────
 

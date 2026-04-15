@@ -2,7 +2,7 @@
  * Order query helpers.
  */
 import type { TypedSupabaseClient } from "../client";
-import type { Order, OrderWithItems } from "../types";
+import type { Order, OrderWithItems } from "../custom-types";
 
 /**
  * Fetch a single order with its items and delivery assignment.

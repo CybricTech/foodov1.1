@@ -2,7 +2,7 @@
  * CRM customer query helpers.
  */
 import type { TypedSupabaseClient } from "../client";
-import type { Customer, CustomerWithOrders } from "../types";
+import type { Customer, CustomerWithOrders } from "../custom-types";
 
 /**
  * Look up a customer by phone number for a specific restaurant.

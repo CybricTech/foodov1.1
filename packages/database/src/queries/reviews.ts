@@ -1,5 +1,5 @@
 import type { TypedSupabaseClient } from "../client";
-import type { ReviewInsert } from "../types";
+import type { ReviewInsert } from "../custom-types";
 
 /**
  * Fetch approved reviews for a restaurant, newest first.

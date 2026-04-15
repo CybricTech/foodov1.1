@@ -3,7 +3,7 @@
  * All queries are typed against the canonical schema.
  */
 import type { TypedSupabaseClient } from "../client";
-import type { Restaurant } from "../types";
+import type { Restaurant } from "../custom-types";
 
 /**
  * Resolve a restaurant slug to its full record.
