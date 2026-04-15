@@ -265,40 +265,39 @@ export async function POST(request: NextRequest) {
     p_amount_kobo: restaurantCreditKobo,
   });
 
-  // 10. Trigger SMS notifications via Edge Function (fire-and-forget)
+  // 10. Trigger SMS + email notifications — awaited together so serverless doesn't
+  //     terminate before the dispatches complete.
   const edgeFnUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-sms`;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-  // Customer confirmation SMS
-  fetch(edgeFnUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${serviceKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      restaurantId,
-      phone: meta.customer_phone,
-      eventType: "order_confirmed",
-      orderId: order.id,
-      orderNumber: order.order_number,
-    }),
-  }).catch(console.error);
+  const smsRequests: Promise<unknown>[] = [
+    // Customer confirmation SMS
+    fetch(edgeFnUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurantId,
+        phone: meta.customer_phone,
+        eventType: "order_confirmed",
+        orderId: order.id,
+        orderNumber: order.order_number,
+      }),
+    }).catch(console.error),
 
-  // Merchant new order SMS
-  fetch(edgeFnUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${serviceKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      restaurantId,
-      eventType: "new_order_merchant",
-      orderId: order.id,
-      orderNumber: order.order_number,
-    }),
-  }).catch(console.error);
+    // Merchant new order SMS
+    fetch(edgeFnUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurantId,
+        eventType: "new_order_merchant",
+        orderId: order.id,
+        orderNumber: order.order_number,
+      }),
+    }).catch(console.error),
+  ];
+
+  await Promise.allSettled(smsRequests);
 
   // 11. Trigger email notifications via Edge Function (fire-and-forget)
   const edgeEmailUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-email`;
@@ -318,6 +317,35 @@ export async function POST(request: NextRequest) {
     merchantEmail = (ownerProfile as unknown as { email?: string | null } | null)?.email ?? null;
   }
 
+  // Map meta items to the shape the email template expects
+  const metaItems = (meta.items as Array<{
+    menuItemId: string;
+    name: string;
+    priceKobo: number;
+    quantity: number;
+    selectedOptions: Array<{
+      optionId: string;
+      optionName: string;
+      choices: Array<{ choiceId: string; choiceName: string; priceModifierKobo: number; quantity?: number }>;
+    }>;
+  }>) ?? [];
+
+  const emailItems = metaItems.map((item) => ({
+    name: item.name,
+    quantity: item.quantity,
+    price: item.priceKobo,
+    options: item.selectedOptions?.length
+      ? item.selectedOptions.map((opt) => ({
+          optionName: opt.optionName,
+          choices: opt.choices.map((c) => ({
+            choiceName: c.choiceName,
+            priceModifier: c.priceModifierKobo,
+            quantity: c.quantity,
+          })),
+        }))
+      : undefined,
+  }));
+
   const orderEmailProps = {
     restaurantName,
     orderNumber: order.order_number,
@@ -326,7 +354,7 @@ export async function POST(request: NextRequest) {
     fulfillmentType: meta.fulfillment_type as "delivery" | "pickup",
     deliveryAddress: (meta.delivery_address as string) ?? null,
     specialInstructions: (meta.special_instructions as string) ?? null,
-    items: meta.items,
+    items: emailItems,
     subtotalKobo: meta.subtotal_kobo as number,
     deliveryFeeKobo: meta.delivery_fee_kobo as number,
     vatKobo: (meta.vat_kobo as number) || 0,
@@ -339,35 +367,34 @@ export async function POST(request: NextRequest) {
     createdAt: new Date().toISOString(),
   };
 
+  // Await all notifications with allSettled so failures don't block each other
+  // and the webhook doesn't return before they're dispatched (fire-and-forget
+  // in serverless kills pending fetches when the response is returned).
+  const notificationRequests: Promise<unknown>[] = [];
+
   if (merchantEmail) {
-    fetch(edgeEmailUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        template: "new_order_merchant",
-        to: merchantEmail,
-        props: orderEmailProps,
-      }),
-    }).catch(console.error);
+    notificationRequests.push(
+      fetch(edgeEmailUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ template: "new_order_merchant", to: merchantEmail, props: orderEmailProps }),
+      }).then((r) => { if (!r.ok) console.error(`[webhook] merchant email failed: ${r.status}`); })
+       .catch((e) => console.error("[webhook] merchant email error:", e))
+    );
   }
 
   if (adminAlertEmail) {
-    fetch(edgeEmailUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        template: "new_order_admin",
-        to: adminAlertEmail,
-        props: orderEmailProps,
-      }),
-    }).catch(console.error);
+    notificationRequests.push(
+      fetch(edgeEmailUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ template: "new_order_admin", to: adminAlertEmail, props: orderEmailProps }),
+      }).then((r) => { if (!r.ok) console.error(`[webhook] admin email failed: ${r.status}`); })
+       .catch((e) => console.error("[webhook] admin email error:", e))
+    );
   }
+
+  await Promise.allSettled(notificationRequests);
 
   return NextResponse.json({ received: true });
 }
