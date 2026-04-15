@@ -1,5 +1,6 @@
 // Types
 export * from "./types";
+export * from "./custom-types";
 
 // Client factories
 export * from "./client";

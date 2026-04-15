@@ -5,7 +5,7 @@ import type { TypedSupabaseClient } from "../client";
 import type {
   MenuCategory,
   MenuItemWithOptions,
-} from "../types";
+} from "../custom-types";
 
 /**
  * Fetch all active menu categories for a restaurant, ordered for display.
