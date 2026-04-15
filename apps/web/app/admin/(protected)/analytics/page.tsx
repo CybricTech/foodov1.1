@@ -1,10 +1,17 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatKobo } from "@foodo/utils";
+import { DeliveryFilters } from "@/components/admin/delivery-filters";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminAnalyticsPage() {
+export default async function AdminAnalyticsPage({
+  searchParams,
+}: {
+  searchParams: { restaurant?: string; status?: string };
+}) {
   const supabase = createServiceClient();
+  const restaurantFilter = searchParams.restaurant ?? null;
+  const statusFilter = searchParams.status ?? null;
 
   const thirtyDaysAgo = new Date(
     Date.now() - 30 * 24 * 60 * 60 * 1000
@@ -39,15 +46,20 @@ export default async function AdminAnalyticsPage() {
       .select("id, name, slug")
       .eq("is_active", true),
 
-    // Delivery breakdown — all time, newest first, capped at 200
-    supabase
-      .from("orders")
-      .select(
-        "id, order_number, delivery_address, delivery_fee_kobo, delivery_distance_km, total_kobo, created_at, restaurant_id, status"
-      )
-      .eq("fulfillment_type", "delivery")
-      .order("created_at", { ascending: false })
-      .limit(200),
+    // Delivery breakdown — filtered, newest first, capped at 200
+    (() => {
+      let q = supabase
+        .from("orders")
+        .select(
+          "id, order_number, delivery_address, delivery_fee_kobo, delivery_distance_km, total_kobo, created_at, restaurant_id, status"
+        )
+        .eq("fulfillment_type", "delivery")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (restaurantFilter) q = q.eq("restaurant_id", restaurantFilter);
+      if (statusFilter) q = q.eq("status", statusFilter);
+      return q;
+    })(),
   ]);
 
   const allOrders = orders ?? [];
@@ -150,15 +162,14 @@ export default async function AdminAnalyticsPage() {
 
         {/* Delivery breakdown table */}
         <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-black-100 flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-black-900 text-sm">Delivery Breakdown</h3>
-              <p className="text-xs text-black-400 mt-0.5">Most recent 200 deliveries · all time</p>
-            </div>
-            <span className="text-xs font-semibold text-black-500 bg-black-50 px-2.5 py-1 rounded-full">
-              {allDeliveries.length} records
-            </span>
+          <div className="px-5 py-4 border-b border-black-100">
+            <h3 className="font-bold text-black-900 text-sm">Delivery Breakdown</h3>
+            <p className="text-xs text-black-400 mt-0.5">Most recent 200 · filtered server-side</p>
           </div>
+          <DeliveryFilters
+            restaurants={(restaurants ?? []).map((r) => ({ id: r.id, name: r.name }))}
+            totalCount={allDeliveries.length}
+          />
 
           {allDeliveries.length === 0 ? (
             <p className="text-black-400 text-sm px-5 py-10 text-center">No deliveries yet</p>
