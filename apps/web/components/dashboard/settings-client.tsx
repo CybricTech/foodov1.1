@@ -304,6 +304,7 @@ type RestaurantExtended = Restaurant & {
   twitter_url?: string | null;
   youtube_url?: string | null;
   whatsapp_number?: string | null;
+  notification_email?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   max_delivery_radius_km?: number | null;
@@ -333,6 +334,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   const [twitterUrl, setTwitterUrl] = useState(r.twitter_url ?? "");
   const [youtubeUrl, setYoutubeUrl] = useState(r.youtube_url ?? "");
   const [whatsappNumber, setWhatsappNumber] = useState(r.whatsapp_number ?? "");
+  const [notificationEmail, setNotificationEmail] = useState(r.notification_email ?? "");
   const [vatPercentage, setVatPercentage] = useState(
     r.vat_percentage != null ? r.vat_percentage.toString() : ""
   );
@@ -484,6 +486,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         twitter_url: twitterUrl || null,
         youtube_url: youtubeUrl || null,
         whatsapp_number: whatsappNumber || null,
+        notification_email: notificationEmail || null,
         logo_url: logoUrl || null,
         banner_url: bannerUrl || null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -705,7 +708,24 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
 
           {/* Notifications */}
           <Section title="Notifications">
-            <Field label="📱 WhatsApp Alert Number" hint="Order alerts will be sent to this WhatsApp number. Must be in international format (e.g. +2348012345678)">
+            <Field label="Order Alert Email" hint="New order alerts will be sent to this email address">
+              <input
+                value={notificationEmail}
+                onChange={(e) => setNotificationEmail(e.target.value)}
+                className={inputCls}
+                placeholder="orders@yourrestaurant.com"
+                type="email"
+              />
+              {notificationEmail ? (
+                <p className="text-xs text-viridian-500 font-medium mt-1.5 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-viridian-500" />
+                  ✓ Email alerts active
+                </p>
+              ) : (
+                <p className="text-xs text-black-400 mt-1.5">No notification email set</p>
+              )}
+            </Field>
+            <Field label="WhatsApp Alert Number" hint="Order alerts will be sent to this WhatsApp number. Must be in international format (e.g. +2348012345678)">
               <input
                 value={whatsappNumber}
                 onChange={(e) => setWhatsappNumber(e.target.value)}

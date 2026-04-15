@@ -176,11 +176,18 @@ export async function POST(request: NextRequest) {
     .update({ order_id: order.id })
     .eq("id", existingPayment.id);
 
-  // 9. Credit merchant wallet
-  const { data: settings } = await supabase
-    .from("platform_settings")
-    .select("service_charge_pct, service_charge_fixed_kobo, settlement_hold_hours")
-    .single();
+  // 9. Credit merchant wallet + fetch data needed for email notifications
+  const [{ data: settings }, { data: restaurantRow }] = await Promise.all([
+    supabase
+      .from("platform_settings")
+      .select("service_charge_pct, service_charge_fixed_kobo, settlement_hold_hours, admin_alert_email")
+      .single(),
+    supabase
+      .from("restaurants")
+      .select("name, notification_email")
+      .eq("id", restaurantId)
+      .single(),
+  ]);
 
   const pct = settings?.service_charge_pct ?? 0.03;
   const fixedFee = settings?.service_charge_fixed_kobo ?? 0;
@@ -292,6 +299,75 @@ export async function POST(request: NextRequest) {
       orderNumber: order.order_number,
     }),
   }).catch(console.error);
+
+  // 11. Trigger email notifications via Edge Function (fire-and-forget)
+  const edgeEmailUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-email`;
+  const restaurantName = (restaurantRow as unknown as { name?: string; notification_email?: string | null } | null)?.name ?? "Your Restaurant";
+  const adminAlertEmail = (settings as unknown as { admin_alert_email?: string | null } | null)?.admin_alert_email ?? null;
+
+  // Resolve merchant email: notification_email → merchant_owner profile → skip
+  const restaurantNotificationEmail = (restaurantRow as unknown as { name?: string; notification_email?: string | null } | null)?.notification_email ?? null;
+  let merchantEmail: string | null = restaurantNotificationEmail;
+  if (!merchantEmail) {
+    const { data: ownerProfile } = await supabase
+      .from("user_profiles")
+      .select("email")
+      .eq("restaurant_id", restaurantId)
+      .eq("role", "merchant_owner")
+      .single();
+    merchantEmail = (ownerProfile as unknown as { email?: string | null } | null)?.email ?? null;
+  }
+
+  const orderEmailProps = {
+    restaurantName,
+    orderNumber: order.order_number,
+    customerName: meta.customer_name as string,
+    customerPhone: meta.customer_phone as string,
+    fulfillmentType: meta.fulfillment_type as "delivery" | "pickup",
+    deliveryAddress: (meta.delivery_address as string) ?? null,
+    specialInstructions: (meta.special_instructions as string) ?? null,
+    items: meta.items,
+    subtotalKobo: meta.subtotal_kobo as number,
+    deliveryFeeKobo: meta.delivery_fee_kobo as number,
+    vatKobo: (meta.vat_kobo as number) || 0,
+    serviceFeeKobo: (meta.service_fee_kobo as number) || 0,
+    totalKobo:
+      (meta.subtotal_kobo as number) +
+      (meta.delivery_fee_kobo as number) +
+      ((meta.vat_kobo as number) || 0) +
+      ((meta.service_fee_kobo as number) || 0),
+    createdAt: new Date().toISOString(),
+  };
+
+  if (merchantEmail) {
+    fetch(edgeEmailUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        template: "new_order_merchant",
+        to: merchantEmail,
+        props: orderEmailProps,
+      }),
+    }).catch(console.error);
+  }
+
+  if (adminAlertEmail) {
+    fetch(edgeEmailUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        template: "new_order_admin",
+        to: adminAlertEmail,
+        props: orderEmailProps,
+      }),
+    }).catch(console.error);
+  }
 
   return NextResponse.json({ received: true });
 }

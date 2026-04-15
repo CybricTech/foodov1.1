@@ -35,6 +35,7 @@ type PlatformSettings = {
   delivery_max_radius_km?: number | null;
   delivery_max_fee_kobo?: number | null;
   admin_whatsapp_number?: string | null;
+  admin_alert_email?: string | null;
 } | null;
 
 interface SettlementsClientProps {
@@ -98,6 +99,14 @@ export function SettlementsClient({
   const [whatsappSaved, setWhatsappSaved] = useState(false);
   const [whatsappError, setWhatsappError] = useState("");
 
+  // Admin alert email state
+  const [adminAlertEmail, setAdminAlertEmail] = useState(
+    settings?.admin_alert_email ?? ""
+  );
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailSaved, setEmailSaved] = useState(false);
+  const [emailError, setEmailError] = useState("");
+
   const filtered = settlements.filter(
     (s) => statusFilter === "all" || s.status === statusFilter
   );
@@ -128,6 +137,31 @@ export function SettlementsClient({
       setDeliveryError("Network error");
     }
     setSavingDelivery(false);
+  }
+
+  async function saveAdminEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingEmail(true);
+    setEmailError("");
+    try {
+      const res = await fetch("/api/admin/platform-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          admin_alert_email: adminAlertEmail || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEmailError(data.error ?? "Failed to save");
+      } else {
+        setEmailSaved(true);
+        setTimeout(() => setEmailSaved(false), 3000);
+      }
+    } catch {
+      setEmailError("Network error");
+    }
+    setSavingEmail(false);
   }
 
   async function saveAdminWhatsapp(e: React.FormEvent) {
@@ -470,44 +504,80 @@ export function SettlementsClient({
         <div className="px-4 py-3 border-b border-black-200">
           <h2 className="font-bold text-black-900 text-sm">Admin Notifications</h2>
           <p className="text-xs text-black-400 mt-0.5">
-            Receive WhatsApp alerts for all new orders across all restaurants
+            Receive alerts for all new orders across all restaurants
           </p>
         </div>
-        <form onSubmit={saveAdminWhatsapp} className="px-4 py-4 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-black-500 mb-1">
-              📱 Admin WhatsApp Alert Number
-            </label>
-            <input
-              type="tel"
-              value={adminWhatsappNumber}
-              onChange={(e) => setAdminWhatsappNumber(e.target.value)}
-              placeholder="+2348012345678"
-              className={`w-full px-3 py-2.5 rounded-xl border text-sm text-black-900 focus:outline-none ${
-                adminWhatsappNumber && !/^\+[0-9]{9,14}$/.test(adminWhatsappNumber)
-                  ? "border-cinnabar-500 focus:border-cinnabar-500"
-                  : "border-black-200 focus:border-purple-500"
-              }`}
-            />
-            <p className="text-xs text-black-400 mt-1">
-              All new orders from all restaurants will be sent to this number
-            </p>
-            {adminWhatsappNumber && /^\+[0-9]{9,14}$/.test(adminWhatsappNumber) && (
-              <p className="text-xs text-viridian-500 font-medium mt-1.5 flex items-center gap-1">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-viridian-500" />
-                ✓ Active — receiving all order alerts
+        <div className="divide-y divide-black-100">
+          {/* WhatsApp */}
+          <form onSubmit={saveAdminWhatsapp} className="px-4 py-4 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">
+                Admin WhatsApp Alert Number
+              </label>
+              <input
+                type="tel"
+                value={adminWhatsappNumber}
+                onChange={(e) => setAdminWhatsappNumber(e.target.value)}
+                placeholder="+2348012345678"
+                className={`w-full px-3 py-2.5 rounded-xl border text-sm text-black-900 focus:outline-none ${
+                  adminWhatsappNumber && !/^\+[0-9]{9,14}$/.test(adminWhatsappNumber)
+                    ? "border-cinnabar-500 focus:border-cinnabar-500"
+                    : "border-black-200 focus:border-black-400"
+                }`}
+              />
+              <p className="text-xs text-black-400 mt-1">
+                All new orders from all restaurants will be sent to this number
               </p>
-            )}
-          </div>
-          {whatsappError && <p className="text-xs text-cinnabar-500">{whatsappError}</p>}
-          <button
-            type="submit"
-            disabled={savingWhatsapp}
-            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
-          >
-            {savingWhatsapp ? "Saving…" : whatsappSaved ? "✓ Saved!" : "Save notification settings"}
-          </button>
-        </form>
+              {adminWhatsappNumber && /^\+[0-9]{9,14}$/.test(adminWhatsappNumber) && (
+                <p className="text-xs text-viridian-500 font-medium mt-1.5 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-viridian-500" />
+                  ✓ Active — receiving all order alerts
+                </p>
+              )}
+            </div>
+            {whatsappError && <p className="text-xs text-cinnabar-500">{whatsappError}</p>}
+            <button
+              type="submit"
+              disabled={savingWhatsapp}
+              className="bg-black-900 hover:bg-black-700 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+            >
+              {savingWhatsapp ? "Saving…" : whatsappSaved ? "✓ Saved!" : "Save WhatsApp number"}
+            </button>
+          </form>
+
+          {/* Email */}
+          <form onSubmit={saveAdminEmail} className="px-4 py-4 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">
+                Admin Alert Email
+              </label>
+              <input
+                type="email"
+                value={adminAlertEmail}
+                onChange={(e) => setAdminAlertEmail(e.target.value)}
+                placeholder="admin@cybric.tech"
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 focus:border-black-400 text-sm text-black-900 focus:outline-none"
+              />
+              <p className="text-xs text-black-400 mt-1">
+                All new orders from all restaurants will be sent to this email
+              </p>
+              {adminAlertEmail && (
+                <p className="text-xs text-viridian-500 font-medium mt-1.5 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-viridian-500" />
+                  ✓ Active — receiving all order alerts
+                </p>
+              )}
+            </div>
+            {emailError && <p className="text-xs text-cinnabar-500">{emailError}</p>}
+            <button
+              type="submit"
+              disabled={savingEmail}
+              className="bg-black-900 hover:bg-black-700 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+            >
+              {savingEmail ? "Saving…" : emailSaved ? "✓ Saved!" : "Save email address"}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

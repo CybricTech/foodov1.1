@@ -55,6 +55,7 @@ export async function PATCH(request: NextRequest) {
     delivery_max_radius_km?: number;
     delivery_max_fee_kobo?: number;
     admin_whatsapp_number?: string | null;
+    admin_alert_email?: string | null;
   };
 
   // Only allow known fields
@@ -67,6 +68,7 @@ export async function PATCH(request: NextRequest) {
   if (updates.delivery_max_radius_km !== undefined) allowed.delivery_max_radius_km = updates.delivery_max_radius_km;
   if (updates.delivery_max_fee_kobo !== undefined) allowed.delivery_max_fee_kobo = updates.delivery_max_fee_kobo;
   if (updates.admin_whatsapp_number !== undefined) allowed.admin_whatsapp_number = updates.admin_whatsapp_number;
+  if (updates.admin_alert_email !== undefined) allowed.admin_alert_email = updates.admin_alert_email;
 
   if (Object.keys(allowed).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });

@@ -278,7 +278,7 @@ export type Database = {
         Row: {
           id: string
           is_required: boolean
-          max_selections: number
+          max_selections: number | null
           menu_item_id: string
           min_selections: number
           name: string
@@ -287,7 +287,7 @@ export type Database = {
         Insert: {
           id?: string
           is_required?: boolean
-          max_selections?: number
+          max_selections?: number | null
           menu_item_id: string
           min_selections?: number
           name: string
@@ -296,7 +296,7 @@ export type Database = {
         Update: {
           id?: string
           is_required?: boolean
-          max_selections?: number
+          max_selections?: number | null
           menu_item_id?: string
           min_selections?: number
           name?: string
@@ -477,6 +477,7 @@ export type Database = {
           payment_status: string
           restaurant_id: string
           rider_id: string | null
+          service_fee_kobo: number
           special_instructions: string | null
           status: string
           subtotal: number
@@ -484,6 +485,7 @@ export type Database = {
           total_amount: number
           total_kobo: number
           updated_at: string
+          vat_kobo: number
         }
         Insert: {
           cancellation_reason?: string | null
@@ -512,6 +514,7 @@ export type Database = {
           payment_status?: string
           restaurant_id: string
           rider_id?: string | null
+          service_fee_kobo?: number
           special_instructions?: string | null
           status?: string
           subtotal: number
@@ -519,6 +522,7 @@ export type Database = {
           total_amount: number
           total_kobo?: number
           updated_at?: string
+          vat_kobo?: number
         }
         Update: {
           cancellation_reason?: string | null
@@ -547,6 +551,7 @@ export type Database = {
           payment_status?: string
           restaurant_id?: string
           rider_id?: string | null
+          service_fee_kobo?: number
           special_instructions?: string | null
           status?: string
           subtotal?: number
@@ -554,6 +559,7 @@ export type Database = {
           total_amount?: number
           total_kobo?: number
           updated_at?: string
+          vat_kobo?: number
         }
         Relationships: [
           {
@@ -701,6 +707,7 @@ export type Database = {
       }
       platform_settings: {
         Row: {
+          admin_alert_email: string | null
           admin_whatsapp_number: string | null
           delivery_base_fee_kobo: number
           delivery_max_fee_kobo: number
@@ -714,6 +721,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          admin_alert_email?: string | null
           admin_whatsapp_number?: string | null
           delivery_base_fee_kobo?: number
           delivery_max_fee_kobo?: number
@@ -727,6 +735,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          admin_alert_email?: string | null
           admin_whatsapp_number?: string | null
           delivery_base_fee_kobo?: number
           delivery_max_fee_kobo?: number
@@ -807,6 +816,8 @@ export type Database = {
           max_delivery_radius_km: number | null
           min_order_amount: number | null
           name: string
+          notification_email: string | null
+          opening_hours: Json | null
           paystack_recipient_code: string | null
           phone: string | null
           primary_color: string | null
@@ -814,6 +825,7 @@ export type Database = {
           state: string | null
           twitter_url: string | null
           updated_at: string
+          vat_percentage: number | null
           whatsapp_number: string | null
           youtube_url: string | null
         }
@@ -841,6 +853,8 @@ export type Database = {
           max_delivery_radius_km?: number | null
           min_order_amount?: number | null
           name: string
+          notification_email?: string | null
+          opening_hours?: Json | null
           paystack_recipient_code?: string | null
           phone?: string | null
           primary_color?: string | null
@@ -848,6 +862,7 @@ export type Database = {
           state?: string | null
           twitter_url?: string | null
           updated_at?: string
+          vat_percentage?: number | null
           whatsapp_number?: string | null
           youtube_url?: string | null
         }
@@ -875,6 +890,8 @@ export type Database = {
           max_delivery_radius_km?: number | null
           min_order_amount?: number | null
           name?: string
+          notification_email?: string | null
+          opening_hours?: Json | null
           paystack_recipient_code?: string | null
           phone?: string | null
           primary_color?: string | null
@@ -882,6 +899,7 @@ export type Database = {
           state?: string | null
           twitter_url?: string | null
           updated_at?: string
+          vat_percentage?: number | null
           whatsapp_number?: string | null
           youtube_url?: string | null
         }
@@ -1337,55 +1355,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
-// ─── Helper type aliases ────────────────────────────────────────────────
-// Derived from the generated Database type for convenience across the app.
-// Keep these at the BOTTOM of this file so `supabase gen types` can overwrite
-// everything above without breaking downstream imports.
-
-export type PublicTables = Database["public"]["Tables"];
-
-export type Restaurant = PublicTables["restaurants"]["Row"];
-export type Order = PublicTables["orders"]["Row"];
-export type MenuCategory = PublicTables["menu_categories"]["Row"];
-export type MenuItem = PublicTables["menu_items"]["Row"];
-export type Review = PublicTables["reviews"]["Row"];
-
-export type MenuItemOption = PublicTables["menu_item_options"]["Row"];
-export type MenuItemOptionChoice = PublicTables["menu_item_option_choices"]["Row"];
-
-export interface MenuItemWithOptions extends MenuItem {
-  options: (MenuItemOption & { choices: MenuItemOptionChoice[] })[];
-}
-
-export interface SelectedOptionSnapshot {
-  optionId: string;
-  optionName: string;
-  choices: {
-    choiceId: string;
-    choiceName: string;
-    priceModifierKobo: number;
-    /** Quantity of this choice selected (default 1 when omitted) */
-    quantity?: number;
-  }[];
-}
-
-export type Customer = PublicTables["customers"]["Row"];
-export type OrderItem = PublicTables["order_items"]["Row"];
-export type ReviewInsert = PublicTables["reviews"]["Insert"];
-export type DeliveryAssignment = PublicTables["delivery_assignments"]["Row"];
-
-export interface CustomerWithOrders extends Customer {
-  orders: {
-    id: string;
-    order_number: number;
-    total_amount: number;
-    status: string;
-    created_at: string;
-  }[];
-}
-
-export interface OrderWithItems extends Order {
-  items: OrderItem[];
-  delivery_assignment: DeliveryAssignment | null;
-}
