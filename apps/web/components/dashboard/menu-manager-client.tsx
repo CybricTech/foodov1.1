@@ -336,7 +336,7 @@ function ItemFormModal({
 
   // Detect existing size group: a required, single-select option on an item with price_kobo=0
   const existingSizeGroup = item?.price_kobo === 0
-    ? item.options.find((o) => o.is_required && o.max_selections === 1)
+    ? item.options?.find((o) => o.is_required && o.max_selections === 1)
     : undefined;
 
   const [hasSizes, setHasSizes] = useState(!!existingSizeGroup);
