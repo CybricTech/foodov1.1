@@ -47,9 +47,30 @@ export async function middleware(request: NextRequest) {
 
   // IMPORTANT: Do NOT add logic between createServerClient and getUser().
   // Refer to: https://supabase.com/docs/guides/auth/server-side/nextjs
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  //
+  // Wrap in a 5s timeout so a Supabase connectivity issue never hangs the
+  // middleware indefinitely. On timeout we skip the auth redirect and let the
+  // request reach the Server Component — getDashboardUser() reads from the
+  // session cookie (no network) so it can still enforce auth without this call.
+  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"] = null;
+  let authCheckFailed = false;
+  try {
+    const result = await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("supabase_timeout")), 5000)
+      ),
+    ]);
+    user = result.data.user;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "supabase_timeout") {
+      console.warn("[middleware] Supabase unreachable — skipping auth redirect, Server Components will handle auth");
+      authCheckFailed = true;
+    } else {
+      console.error("[middleware] getUser error:", msg);
+    }
+  }
 
   const { pathname } = request.nextUrl;
   const hostname = request.headers.get("host") ?? "";
@@ -85,7 +106,10 @@ export async function middleware(request: NextRequest) {
 
   // ─── Merchant Dashboard guard ──────────────────────────────────────────────
   if (pathname.startsWith("/dashboard") && !pathname.startsWith("/dashboard/login")) {
-    if (!user) {
+    // Only redirect to login if we know for certain the user is unauthenticated.
+    // If getUser() timed out (authCheckFailed), let the Server Component handle
+    // auth via getSession() (cookie-based, no network needed).
+    if (!user && !authCheckFailed) {
       const loginUrl = new URL("/dashboard/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
       return NextResponse.redirect(loginUrl);
@@ -94,7 +118,7 @@ export async function middleware(request: NextRequest) {
 
   // ─── Super Admin guard ─────────────────────────────────────────────────────
   if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
-    if (!user) {
+    if (!user && !authCheckFailed) {
       const loginUrl = new URL("/admin/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
       return NextResponse.redirect(loginUrl);

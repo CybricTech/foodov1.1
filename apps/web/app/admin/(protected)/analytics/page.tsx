@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatKobo } from "@foodo/utils";
 import { DeliveryFilters } from "@/components/admin/delivery-filters";
@@ -7,11 +8,46 @@ export const dynamic = "force-dynamic";
 export default async function AdminAnalyticsPage({
   searchParams,
 }: {
-  searchParams: { restaurant?: string; status?: string };
+  searchParams: { restaurant?: string; status?: string; period?: string; from?: string; to?: string };
 }) {
   const supabase = createServiceClient();
   const restaurantFilter = searchParams.restaurant ?? null;
   const statusFilter = searchParams.status ?? null;
+  const period = searchParams.period ?? null;
+  const customFrom = searchParams.from ?? null;
+  const customTo = searchParams.to ?? null;
+
+  // Resolve date range from period param
+  function periodToRange(): { gte: string | null; lte: string | null } {
+    const now = new Date();
+    if (period === "today") {
+      const start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      return { gte: start.toISOString(), lte: null };
+    }
+    if (period === "week") {
+      const start = new Date(now);
+      const day = start.getDay();
+      const diff = day === 0 ? -6 : 1 - day; // Monday
+      start.setDate(start.getDate() + diff);
+      start.setHours(0, 0, 0, 0);
+      return { gte: start.toISOString(), lte: null };
+    }
+    if (period === "month") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { gte: start.toISOString(), lte: null };
+    }
+    if (period === "custom") {
+      const gte = customFrom ? new Date(customFrom).toISOString() : null;
+      const lte = customTo
+        ? new Date(new Date(customTo).setHours(23, 59, 59, 999)).toISOString()
+        : null;
+      return { gte, lte };
+    }
+    return { gte: null, lte: null }; // all time
+  }
+
+  const dateRange = periodToRange();
 
   const thirtyDaysAgo = new Date(
     Date.now() - 30 * 24 * 60 * 60 * 1000
@@ -58,6 +94,8 @@ export default async function AdminAnalyticsPage({
         .limit(200);
       if (restaurantFilter) q = q.eq("restaurant_id", restaurantFilter);
       if (statusFilter) q = q.eq("status", statusFilter);
+      if (dateRange.gte) q = q.gte("created_at", dateRange.gte);
+      if (dateRange.lte) q = q.lte("created_at", dateRange.lte);
       return q;
     })(),
   ]);
@@ -240,9 +278,10 @@ export default async function AdminAnalyticsPage({
           {topMerchants.map((m, i) => {
             const share = totalGmv > 0 ? (m.revenue / totalGmv) * 100 : 0;
             return (
-              <div
+              <Link
+                href={`/admin/merchants/${m.id}`}
                 key={m.id}
-                className="flex items-center gap-4 px-5 py-3 border-b border-black-100 last:border-0"
+                className="flex items-center gap-4 px-5 py-3 border-b border-black-100 last:border-0 hover:bg-purple-50 transition-colors cursor-pointer"
               >
                 <span className="text-sm font-bold text-purple-500 w-5 flex-shrink-0">
                   {i + 1}
@@ -265,7 +304,7 @@ export default async function AdminAnalyticsPage({
                   <p className="text-sm font-semibold text-black-900">{formatKobo(m.revenue)}</p>
                   <p className="text-xs text-black-400">{m.orders} orders</p>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>

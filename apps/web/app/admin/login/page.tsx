@@ -113,7 +113,10 @@ function AdminLoginForm() {
       return;
     }
 
-    router.replace(redirectTo);
+    // Use a full page navigation so the browser sends the new session
+    // cookies in a fresh HTTP request, bypassing Next.js's client-side
+    // router cache which can replay the pre-login redirect to /admin/login.
+    window.location.href = redirectTo;
   }
 
   return (

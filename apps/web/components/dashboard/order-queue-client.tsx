@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
@@ -189,6 +189,34 @@ export function OrderQueueClient({
 
   const filteredOrders = orders.filter((o) => TAB_STATUSES[activeTab].includes(o.status));
 
+  // Group completed orders by calendar date for the date-divider UI
+  const completedByDate = useMemo(() => {
+    if (activeTab !== "completed") return null;
+    const groups: { label: string; orders: typeof filteredOrders }[] = [];
+    const seen = new Map<string, number>();
+    const nowDate = new Date();
+    const todayKey = nowDate.toDateString();
+    const yesterdayKey = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 1).toDateString();
+    for (const o of filteredOrders) {
+      const d = new Date(o.created_at);
+      const key = d.toDateString();
+      let label: string;
+      if (key === todayKey) {
+        label = "Today";
+      } else if (key === yesterdayKey) {
+        label = "Yesterday";
+      } else {
+        label = d.toLocaleDateString("en-NG", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+      }
+      if (!seen.has(key)) {
+        seen.set(key, groups.length);
+        groups.push({ label, orders: [] });
+      }
+      groups[seen.get(key)!].orders.push(o);
+    }
+    return groups;
+  }, [activeTab, filteredOrders]);
+
   const counts = {
     new: orders.filter((o) => TAB_STATUSES.new.includes(o.status)).length,
     in_progress: orders.filter((o) => TAB_STATUSES.in_progress.includes(o.status)).length,
@@ -279,7 +307,7 @@ export function OrderQueueClient({
       )}
 
       {/* ── Order list ───────────────────────────────────────────────────── */}
-      <div className="px-4 md:px-6 py-4 space-y-3 max-w-2xl">
+      <div className="px-4 md:px-6 py-4 max-w-2xl">
         {filteredOrders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-black-300">
             <Inbox size={36} strokeWidth={1.5} className="mb-3" />
@@ -288,22 +316,45 @@ export function OrderQueueClient({
                 ? "No new orders yet"
                 : activeTab === "in_progress"
                 ? "Nothing in progress"
-                : "No completed orders today"}
+                : "No completed orders yet"}
             </p>
             <p className="text-xs text-black-300 mt-1">
               {activeTab === "new" ? "New orders will appear here in real time" : ""}
             </p>
           </div>
+        ) : completedByDate ? (
+          <div className="space-y-6">
+            {completedByDate.map((group) => (
+              <div key={group.label}>
+                <p className="text-xs font-semibold text-black-400 uppercase tracking-wide mb-3">
+                  {group.label}
+                </p>
+                <div className="space-y-3">
+                  {group.orders.map((order) => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                      onUpdateStatus={updateStatus}
+                      onCancel={cancelOrder}
+                      loading={actionLoading === order.id}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
-          filteredOrders.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              onUpdateStatus={updateStatus}
-              onCancel={cancelOrder}
-              loading={actionLoading === order.id}
-            />
-          ))
+          <div className="space-y-3">
+            {filteredOrders.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                onUpdateStatus={updateStatus}
+                onCancel={cancelOrder}
+                loading={actionLoading === order.id}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>

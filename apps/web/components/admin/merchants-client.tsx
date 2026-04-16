@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@foodo/ui";
 import { Store, ExternalLink, MapPin } from "lucide-react";
@@ -132,6 +133,12 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
               >
                 {toggling === r.id ? "…" : r.is_active ? "Pause" : "Activate"}
               </button>
+              <Link
+                href={`/admin/merchants/${r.id}`}
+                className="text-xs text-purple-500 hover:text-purple-400 px-3 py-1.5 rounded-lg border border-purple-200 hover:border-purple-400 transition-colors"
+              >
+                Details
+              </Link>
               <button
                 onClick={() => { setDeleteError(""); setConfirmDelete(r); }}
                 className="text-xs text-cinnabar-500 hover:text-cinnabar-500/80 px-3 py-1.5 rounded-lg border border-cinnabar-500/30 hover:border-cinnabar-500/60 transition-colors"

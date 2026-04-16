@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { createBrowserClient } from "@/lib/supabase/client";
 
@@ -14,7 +14,6 @@ export default function MerchantLoginPage() {
 }
 
 function MerchantLoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") ?? "/dashboard";
   const supabase = createBrowserClient();
@@ -40,7 +39,7 @@ function MerchantLoginForm() {
       return;
     }
 
-    router.replace(redirect);
+    window.location.href = redirect;
   }
 
   return (
