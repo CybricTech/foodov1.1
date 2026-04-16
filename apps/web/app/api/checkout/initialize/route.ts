@@ -88,11 +88,71 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Compute subtotal
-  const subtotalKobo = data.items.reduce(
-    (sum, item) => sum + item.priceKobo * item.quantity,
-    0
+  // ── Server-side price verification ─────────────────────────────────────────
+  // Fetch base prices from DB — never trust client-submitted priceKobo
+  const menuItemIds = data.items.map((i) => i.menuItemId);
+
+  const { data: menuItems } = await supabase
+    .from("menu_items")
+    .select("id, price_kobo")
+    .in("id", menuItemIds);
+
+  const menuItemPriceMap = new Map(
+    (menuItems ?? []).map((m) => [m.id, m.price_kobo])
   );
+
+  // Validate all submitted items exist in the menu
+  for (const item of data.items) {
+    if (!menuItemPriceMap.has(item.menuItemId)) {
+      return NextResponse.json(
+        { error: "One or more items are no longer available" },
+        { status: 422 }
+      );
+    }
+  }
+
+  // Fetch all choice modifier prices from DB
+  const allChoiceIds: string[] = [];
+  data.items.forEach((item) => {
+    item.selectedOptions?.forEach((opt) => {
+      opt.choices?.forEach((choice) => {
+        if (choice.choiceId) allChoiceIds.push(choice.choiceId);
+      });
+    });
+  });
+
+  let choicePriceMap = new Map<string, number>();
+
+  if (allChoiceIds.length > 0) {
+    const { data: choices } = await supabase
+      .from("menu_item_option_choices")
+      .select("id, price_modifier_kobo")
+      .in("id", allChoiceIds);
+
+    choicePriceMap = new Map(
+      (choices ?? []).map((c) => [c.id, c.price_modifier_kobo ?? 0])
+    );
+  }
+
+  // Recompute each item's true unit price from DB — client priceKobo is ignored
+  let subtotalKobo = 0;
+  const verifiedItems = data.items.map((item) => {
+    const basePrice = menuItemPriceMap.get(item.menuItemId) ?? 0;
+
+    let modifierTotal = 0;
+    item.selectedOptions?.forEach((opt) => {
+      opt.choices?.forEach((choice) => {
+        const qty = choice.quantity ?? 1;
+        const modifierPrice = choicePriceMap.get(choice.choiceId) ?? 0;
+        modifierTotal += modifierPrice * qty;
+      });
+    });
+
+    const verifiedUnitPrice = basePrice + modifierTotal;
+    subtotalKobo += verifiedUnitPrice * item.quantity;
+
+    return { ...item, priceKobo: verifiedUnitPrice };
+  });
 
   // Delivery fee — dynamic distance-based pricing
   let deliveryFeeKobo = 0;
@@ -141,14 +201,6 @@ export async function POST(request: NextRequest) {
             baseFeeKobo + Math.round(distanceKm * perKmRateKobo),
             maxFeeKobo
           );
-          const clientFee = data.deliveryFeeKobo ?? 0;
-          // Reject if client fee differs from server re-calc by more than 10%
-          if (Math.abs(clientFee - serverFee) / Math.max(serverFee, 1) > 0.10) {
-            return NextResponse.json(
-              { error: "Delivery fee mismatch — please refresh and try again." },
-              { status: 422 }
-            );
-          }
           deliveryFeeKobo = serverFee;
         } else {
           // Maps call failed — use client-submitted fee as fallback
@@ -214,7 +266,7 @@ export async function POST(request: NextRequest) {
         fulfillment_type: data.fulfillmentType,
         delivery_address: data.deliveryAddress || null,
         special_instructions: data.specialInstructions || null,
-        items: data.items as unknown as import("@foodo/database").Json,
+        items: verifiedItems as unknown as import("@foodo/database").Json,
         subtotal_kobo: subtotalKobo,
         delivery_fee_kobo: deliveryFeeKobo,
         vat_kobo: vatKobo,
