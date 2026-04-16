@@ -83,7 +83,19 @@
       "Bash(grep -n \"getRestaurantBySlug\" /Users/salihuaminu/Foodov1.1/packages/database/src/*.ts)",
       "Bash(python3 /Users/salihuaminu/Foodov1.1/.claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant dashboard order management minimal clean\" --design-system -p \"Foodo Merchant Dashboard\")",
       "Bash(lsof -ti:3000)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "Bash(pkill -f \"turbo dev\")",
+      "Bash(pkill -f \"turbo run dev\")",
+      "Bash(grep -r \"NEXT_PUBLIC_SUPABASE_ANON_KEY\" apps/web/.env*)",
+      "Bash(ls /Users/salihuaminu/Foodov1.1/apps/web/.env*)",
+      "Bash(curl -s http://localhost:3001/admin/login)",
+      "Bash(curl -v http://localhost:3001/admin/login)",
+      "Bash(curl -v http://localhost:3001/admin)",
+      "Bash(curl -sv http://localhost:3001/admin)",
+      "Bash(curl -s http://localhost:3001/admin)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/admin/login)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(git remote *)"
     ]
   }
 }
