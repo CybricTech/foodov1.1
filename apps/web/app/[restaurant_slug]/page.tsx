@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Star, Clock, ShoppingBag } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
 import {
   getRestaurantBySlug,
@@ -41,14 +42,20 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
   ]);
   const featured = items.filter((i) => i.is_featured);
 
+  const hasInfoChips =
+    ratingSummary.count > 0 ||
+    !!restaurant.estimated_delivery_minutes ||
+    !!restaurant.min_order_amount;
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-white">
       {/* ── Hero ── */}
-      <section className="relative w-full h-[65vh] min-h-[420px] max-h-[640px]">
+      <section className="relative w-full h-[72vh] min-h-[480px] max-h-[720px]">
+        {/* Background */}
         {restaurant.banner_url ? (
           <Image
             src={restaurant.banner_url}
-            alt={`${restaurant.name}`}
+            alt={restaurant.name}
             fill
             className="object-cover"
             sizes="100vw"
@@ -56,16 +63,16 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
             priority
           />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-primary to-primary/70" />
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/90 via-primary/70 to-black/80" />
         )}
 
-        {/* Dark gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 mt-20 to-transparent" />
+        {/* Gradient layers — bottom-heavy for text legibility */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-black/40" />
 
-        {/* Top Navbar overlay */}
-        <div className="absolute top-0 inset-x-0 z-20 flex justify-between items-center p-4 md:px-6 md:py-5 bg-gradient-to-b from-black/60 to-transparent">
+        {/* Top bar — logo */}
+        <div className="absolute top-0 inset-x-0 z-20 px-5 pt-5">
           {restaurant.logo_url ? (
-            <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-full overflow-hidden border-[3px] border-white shadow-xl bg-white flex-shrink-0">
+            <div className="relative w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/30 shadow-xl bg-white flex-shrink-0">
               <Image
                 src={restaurant.logo_url}
                 alt={`${restaurant.name} logo`}
@@ -74,47 +81,78 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
               />
             </div>
           ) : (
-            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-primary flex items-center justify-center border-[3px] border-white shadow-xl flex-shrink-0">
-              <span className="text-white font-bold text-2xl drop-shadow-sm">{restaurant.name.charAt(0)}</span>
+            <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center shadow-xl">
+              <span className="text-white font-bold text-xl">
+                {restaurant.name.charAt(0)}
+              </span>
             </div>
           )}
         </div>
 
-        {/* Hero text */}
-        <div className="absolute bottom-0 left-0 right-0 px-6 pb-8">
+        {/* Bottom content */}
+        <div className="absolute bottom-0 left-0 right-0 px-5 pb-8 space-y-4">
+          {/* Closed badge */}
+          {!restaurant.accepts_orders && (
+            <div className="inline-flex items-center gap-1.5 bg-cinnabar-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md">
+              <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
+              Currently closed
+            </div>
+          )}
+
+          {/* Description */}
           {restaurant.description && (
-            <p className="text-white/75 text-sm font-semibold mb-2 tracking-wide">
+            <p className="text-white/75 text-sm font-medium leading-relaxed line-clamp-2">
               {restaurant.description}
             </p>
           )}
-          <h1 className="text-white text-[2rem] font-extrabold leading-tight tracking-tight">
+
+          {/* Restaurant name */}
+          <h1 className="text-white text-[2.15rem] font-extrabold leading-tight tracking-tight">
             {restaurant.name}
           </h1>
 
-          {/* CTA buttons */}
-          <div className="mt-5 flex gap-3">
+          {/* Info chips */}
+          {hasInfoChips && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {ratingSummary.count > 0 && (
+                <span className="inline-flex items-center gap-1 bg-white/15 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1.5 rounded-full border border-white/20">
+                  <Star size={10} fill="currentColor" />
+                  {ratingSummary.average.toFixed(1)}
+                  <span className="text-white/60">({ratingSummary.count})</span>
+                </span>
+              )}
+              {restaurant.estimated_delivery_minutes && (
+                <span className="inline-flex items-center gap-1 bg-white/15 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1.5 rounded-full border border-white/20">
+                  <Clock size={10} />
+                  {restaurant.estimated_delivery_minutes} min
+                </span>
+              )}
+              {restaurant.min_order_amount && (
+                <span className="inline-flex items-center gap-1 bg-white/15 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1.5 rounded-full border border-white/20">
+                  <ShoppingBag size={10} />
+                  Min ₦{(restaurant.min_order_amount / 100).toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* CTAs */}
+          <div className="flex gap-2.5 pt-1">
             <Link
               href={`/${params.restaurant_slug}/menu`}
-              className="bg-primary text-white px-6 py-3 rounded-2xl font-semibold text-sm hover:opacity-90 transition-opacity"
+              className="flex-1 bg-primary text-white text-center py-3.5 rounded-2xl font-bold text-sm hover:opacity-90 transition-opacity cursor-pointer"
             >
-              Order now
+              {restaurant.accepts_orders ? "Order now" : "Browse menu"}
             </Link>
             <Link
               href={`/${params.restaurant_slug}/menu`}
-              className="bg-white/15 backdrop-blur-sm text-white px-6 py-3 rounded-2xl font-semibold text-sm border border-white/30 hover:bg-white/25 transition-colors"
+              className="flex-1 bg-white/15 backdrop-blur-sm text-white text-center py-3.5 rounded-2xl font-semibold text-sm border border-white/30 hover:bg-white/25 transition-colors cursor-pointer"
             >
               View menu
             </Link>
           </div>
         </div>
       </section>
-
-      {/* Closed banner */}
-      {!restaurant.accepts_orders && (
-        <div className="mx-4 mt-4 bg-cinnabar-100 text-cinnabar-500 text-sm font-medium px-4 py-3 rounded-xl text-center">
-          We&apos;re currently closed — check back soon!
-        </div>
-      )}
 
       {/* ── Featured / Best Sellers ── */}
       {featured.length > 0 && (

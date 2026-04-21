@@ -2,8 +2,8 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { CheckCircle, Loader2, Clock, ArrowLeft } from "lucide-react";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
-import { CheckCircle } from "lucide-react";
 
 function PendingOrderContent() {
   const searchParams = useSearchParams();
@@ -45,35 +45,35 @@ function PendingOrderContent() {
   }, [ref]);
 
   return (
-    <div className="min-h-screen bg-black-50 flex flex-col items-center justify-center px-4 text-center">
-      <div className="bg-white rounded-2xl border border-black-100 p-8 max-w-sm w-full space-y-5">
+    <div className="min-h-screen bg-black-50 flex flex-col items-center justify-center px-4">
+      <div className="bg-white rounded-2xl border border-black-100 p-8 max-w-sm w-full space-y-6 shadow-sm">
 
         {/* Success icon */}
         <div className="flex justify-center">
-          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-            <CheckCircle size={36} className="text-primary" />
+          <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+            <CheckCircle size={40} className="text-primary" strokeWidth={1.5} />
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 text-center">
           <h1 className="text-xl font-bold text-black-900">Payment successful!</h1>
-          <p className="text-sm text-black-500">
+          <p className="text-sm text-black-500 leading-relaxed">
             Your order has been received. We&apos;ll notify you as soon as the restaurant accepts it.
           </p>
         </div>
 
-        {/* Order status */}
-        <div className="bg-black-50 rounded-xl px-4 py-3 flex items-center gap-3">
+        {/* Polling status */}
+        <div className="bg-black-50 rounded-xl px-4 py-3.5 flex items-center gap-3">
           {timedOut ? (
             <>
-              <div className="w-2 h-2 rounded-full bg-dixie-500 flex-shrink-0" />
-              <p className="text-xs text-black-500 text-left">
+              <Clock size={16} className="text-dixie-500 flex-shrink-0" />
+              <p className="text-xs text-black-500 text-left leading-relaxed">
                 Taking a little longer than usual — you&apos;ll get an SMS confirmation shortly.
               </p>
             </>
           ) : (
             <>
-              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              <Loader2 size={16} className="animate-spin text-primary flex-shrink-0" />
               <p className="text-xs text-black-500 text-left">
                 Confirming your order with the restaurant…
               </p>
@@ -83,8 +83,9 @@ function PendingOrderContent() {
 
         <button
           onClick={() => router.replace(`/${restaurant.slug}`)}
-          className="w-full py-3 rounded-xl border border-black-200 text-sm font-medium text-black-600 hover:bg-black-50 transition-colors"
+          className="w-full py-3 rounded-xl border border-black-200 text-sm font-medium text-black-600 hover:bg-black-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
         >
+          <ArrowLeft size={14} />
           Back to menu
         </button>
       </div>

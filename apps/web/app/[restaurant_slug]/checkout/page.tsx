@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { useCartStore } from "@/lib/stores/cart";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
-import { normalizeToE164, formatKobo } from "@foodo/utils";
+import { normalizeToE164, formatKobo, isValidNigerianPhone } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 
 const CustomerSchema = z.object({
-  phone: z.string().min(10, "Enter a valid phone number"),
+  phone: z.string().refine(isValidNigerianPhone, "Enter a valid Nigerian number (e.g. 08012345678)"),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
@@ -26,10 +27,8 @@ export default function CheckoutPage() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // Fulfillment
   const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("delivery");
 
-  // Delivery address
   const [addressInput, setAddressInput] = useState("");
   const [selectedPlaceAddress, setSelectedPlaceAddress] = useState("");
   const [predictions, setPredictions] = useState<Array<{ description: string; place_id: string }>>([]);
@@ -43,11 +42,9 @@ export default function CheckoutPage() {
   const placesReadyRef = useRef(false);
   const predictionsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Optional delivery detail fields
   const [aptSuiteFloor, setAptSuiteFloor] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
 
-  // Platform service fee
   const [serviceChargePct, setServiceChargePct] = useState(0);
   const [serviceChargeFixedKobo, setServiceChargeFixedKobo] = useState(0);
 
@@ -61,13 +58,11 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, []);
 
-  // Customer info
   const [phone, setPhone] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
 
-  // Reset state when switching to pickup
   useEffect(() => {
     if (fulfillmentType === "pickup") {
       setAddressInput("");
@@ -83,7 +78,6 @@ export default function CheckoutPage() {
     }
   }, [fulfillmentType]);
 
-  // Load Google Maps script + Places library (new API) when delivery tab is active
   useEffect(() => {
     if (fulfillmentType !== "delivery") return;
     let cancelled = false;
@@ -97,7 +91,6 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Load the Maps bootstrap script if not already present
       if (!document.getElementById("google-maps-script")) {
         const script = document.createElement("script");
         script.id = "google-maps-script";
@@ -105,7 +98,6 @@ export default function CheckoutPage() {
         script.async = true;
         document.head.appendChild(script);
 
-        // Wait for the script to load
         await new Promise<void>((resolve, reject) => {
           script.onload = () => resolve();
           script.onerror = (e) => reject(e);
@@ -114,7 +106,6 @@ export default function CheckoutPage() {
 
       if (cancelled) return;
 
-      // Wait for google.maps.places to be available
       await new Promise<void>((resolve) => {
         if (window.google?.maps?.places) { resolve(); return; }
         const iv = setInterval(() => {
@@ -123,7 +114,6 @@ export default function CheckoutPage() {
       });
 
       placesReadyRef.current = true;
-      console.log("[Checkout] Google Places library loaded (new API)");
     }
 
     loadPlaces().catch((err) =>
@@ -138,10 +128,8 @@ export default function CheckoutPage() {
     setDeliveryFeeError("");
     try {
       const url = `/api/delivery/fee?restaurantId=${restaurant.id}&destinationAddress=${encodeURIComponent(address)}`;
-      console.log("[Checkout] Fetching delivery fee:", url);
       const res = await fetch(url);
       const text = await res.text();
-      console.log("[Checkout] Delivery fee response:", res.status, text.substring(0, 500));
       let data;
       try {
         data = JSON.parse(text);
@@ -158,25 +146,22 @@ export default function CheckoutPage() {
         setDistanceKm(data.distanceKm);
         setDurationMinutes(data.durationMinutes);
       }
-    } catch (err) {
-      console.error("[Checkout] Delivery fee fetch error:", err);
+    } catch {
       setDeliveryFeeError("Could not calculate delivery fee. Please try again.");
     } finally {
       setDeliveryFeeLoading(false);
     }
   }
 
-  // Redirect if cart is empty — but not while payment is processing
   useEffect(() => {
     if (items.length === 0 && !loading) router.replace(`/${restaurant.slug}`);
   }, [items.length, restaurant.slug, router, loading]);
 
   if (items.length === 0) return null;
 
-  // Pre-fill from CRM on phone blur
   async function handlePhoneBlur() {
+    if (!isValidNigerianPhone(phone)) return;
     const normalized = normalizeToE164(phone);
-    if (!normalized) return;
     try {
       const res = await fetch(
         `/api/customers/lookup?phone=${encodeURIComponent(normalized)}&restaurantId=${restaurant.id}`
@@ -191,7 +176,7 @@ export default function CheckoutPage() {
         if (data.email && !email) setEmail(data.email);
       }
     } catch {
-      // silent — pre-fill is best-effort
+      // silent
     }
   }
 
@@ -280,8 +265,7 @@ export default function CheckoutPage() {
     }
   }
 
-  const effectiveDeliveryFee =
-    fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0;
+  const effectiveDeliveryFee = fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const vatPct = (restaurant as any).vat_percentage ? Number((restaurant as any).vat_percentage) : 0;
   const vatKobo = vatPct > 0 ? Math.round(subtotal * vatPct / 100) : 0;
@@ -292,7 +276,6 @@ export default function CheckoutPage() {
   const total = subtotal + effectiveDeliveryFee + vatKobo + serviceFeeKobo;
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
-  // Pay button is disabled for delivery until a valid fee is calculated
   const payDisabled =
     loading ||
     (fulfillmentType === "delivery" &&
@@ -301,11 +284,18 @@ export default function CheckoutPage() {
   return (
     <div className="min-h-screen bg-black-50 pb-32">
       {/* Header */}
-      <div className="bg-white border-b border-black-100 px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-black-500 hover:text-black-900 text-lg">
-          ←
+      <div className="bg-white border-b border-black-100 px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
+        <button
+          onClick={() => router.back()}
+          className="w-9 h-9 flex items-center justify-center rounded-xl text-black-500 hover:bg-black-100 transition-colors cursor-pointer"
+          aria-label="Go back"
+        >
+          <ArrowLeft size={18} />
         </button>
-        <h1 className="font-bold text-black-900 text-lg">Checkout</h1>
+        <div className="flex-1">
+          <h1 className="font-bold text-black-900">Checkout</h1>
+          <p className="text-xs text-black-400">{restaurant.name}</p>
+        </div>
       </div>
 
       <div className="px-4 mt-5 space-y-5">
@@ -319,7 +309,7 @@ export default function CheckoutPage() {
                   key={type}
                   onClick={() => setFulfillmentType(type)}
                   className={cn(
-                    "flex-1 py-2.5 rounded-lg text-sm font-semibold capitalize transition-colors",
+                    "flex-1 py-2.5 rounded-lg text-sm font-semibold capitalize transition-colors cursor-pointer",
                     fulfillmentType === type
                       ? "bg-white text-black-900 shadow-sm"
                       : "text-black-400 hover:text-black-600"
@@ -331,12 +321,14 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Pickup info OR delivery address input */}
+          {/* Pickup info OR delivery address */}
           {fulfillmentType === "pickup" ? (
             <div className="px-4 py-4 flex items-start gap-3">
-              <span className="text-lg mt-0.5">🏪</span>
+              <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Store size={16} className="text-primary" />
+              </div>
               <div>
-                <p className="text-xs text-black-400 mb-0.5">Pick up from</p>
+                <p className="text-xs text-black-400 mb-0.5 font-medium">Pick up from</p>
                 <p className="text-sm font-semibold text-black-900">
                   {restaurant.address ?? restaurant.name}
                 </p>
@@ -348,95 +340,104 @@ export default function CheckoutPage() {
               </div>
             </div>
           ) : (
-            <div className="px-4 py-4 space-y-2">
-              <label className="block text-xs text-black-400">Delivery address</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Start typing your address…"
-                  value={addressInput}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setAddressInput(val);
-                    setSelectedPlaceAddress("");
-                    setDeliveryFeeKobo(null);
-                    setDeliveryFeeError("");
-                    setDistanceKm(null);
-                    setDurationMinutes(null);
+            <div className="px-4 py-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-black-700 mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <MapPin size={13} className="text-black-400" />
+                    Delivery address
+                  </span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Start typing your address…"
+                    value={addressInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAddressInput(val);
+                      setSelectedPlaceAddress("");
+                      setDeliveryFeeKobo(null);
+                      setDeliveryFeeError("");
+                      setDistanceKm(null);
+                      setDurationMinutes(null);
 
-                    if (predictionsDebounceRef.current) clearTimeout(predictionsDebounceRef.current);
+                      if (predictionsDebounceRef.current) clearTimeout(predictionsDebounceRef.current);
 
-                    if (val.trim().length < 3) {
-                      setPredictions([]);
-                      setShowPredictions(false);
-                      return;
-                    }
-
-                    predictionsDebounceRef.current = setTimeout(async () => {
-                      if (!placesReadyRef.current) {
-                        console.warn("[Checkout] Places library not ready — typed:", val);
-                        return;
-                      }
-                      try {
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const ACS = (google.maps.places as any).AutocompleteSuggestion;
-                        const { suggestions } = await ACS.fetchAutocompleteSuggestions({
-                          input: val,
-                          includedRegionCodes: ["ng"],
-                          locationBias: {
-                            center: { lat: 9.0579, lng: 7.4951 },
-                            radius: 50000,
-                          },
-                        });
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const mapped = (suggestions as any[]).filter((s: any) => s.placePrediction).map((s: any) => ({
-                          description: s.placePrediction.text?.text ?? s.placePrediction.description ?? "",
-                          place_id: s.placePrediction.placeId ?? "",
-                        }));
-                        setPredictions(mapped);
-                        setShowPredictions(mapped.length > 0);
-                      } catch (err) {
-                        console.error("[Checkout] Autocomplete error:", err);
+                      if (val.trim().length < 3) {
                         setPredictions([]);
                         setShowPredictions(false);
+                        return;
                       }
-                    }, 300);
-                  }}
-                  onBlur={() => setTimeout(() => setShowPredictions(false), 150)}
-                  onFocus={() => { if (predictions.length > 0) setShowPredictions(true); }}
-                  className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
-                  autoComplete="off"
-                />
-                {showPredictions && predictions.length > 0 && (
-                  <div className="absolute z-50 w-full bg-white border border-black-200 rounded-xl shadow-lg mt-1 overflow-hidden">
-                    {predictions.map((p) => (
-                      <button
-                        key={p.place_id}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          setAddressInput(p.description);
-                          setSelectedPlaceAddress(p.description);
+
+                      predictionsDebounceRef.current = setTimeout(async () => {
+                        if (!placesReadyRef.current) return;
+                        try {
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          const ACS = (google.maps.places as any).AutocompleteSuggestion;
+                          const { suggestions } = await ACS.fetchAutocompleteSuggestions({
+                            input: val,
+                            includedRegionCodes: ["ng"],
+                            locationBias: {
+                              center: { lat: 9.0579, lng: 7.4951 },
+                              radius: 50000,
+                            },
+                          });
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          const mapped = (suggestions as any[]).filter((s: any) => s.placePrediction).map((s: any) => ({
+                            description: s.placePrediction.text?.text ?? s.placePrediction.description ?? "",
+                            place_id: s.placePrediction.placeId ?? "",
+                          }));
+                          setPredictions(mapped);
+                          setShowPredictions(mapped.length > 0);
+                        } catch {
                           setPredictions([]);
                           setShowPredictions(false);
-                          calculateDeliveryFee(p.description);
-                        }}
-                        className="w-full text-left px-4 py-3 text-sm text-black-900 hover:bg-black-50 border-b border-black-100 last:border-0"
-                      >
-                        {p.description}
-                      </button>
-                    ))}
-                  </div>
+                        }
+                      }, 300);
+                    }}
+                    onBlur={() => setTimeout(() => setShowPredictions(false), 150)}
+                    onFocus={() => { if (predictions.length > 0) setShowPredictions(true); }}
+                    className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
+                    autoComplete="off"
+                  />
+                  {showPredictions && predictions.length > 0 && (
+                    <div className="absolute z-50 w-full bg-white border border-black-200 rounded-xl shadow-lg mt-1 overflow-hidden">
+                      {predictions.map((p) => (
+                        <button
+                          key={p.place_id}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setAddressInput(p.description);
+                            setSelectedPlaceAddress(p.description);
+                            setPredictions([]);
+                            setShowPredictions(false);
+                            calculateDeliveryFee(p.description);
+                          }}
+                          className="w-full text-left px-4 py-3 text-sm text-black-900 hover:bg-black-50 border-b border-black-50 last:border-0 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-start gap-2">
+                            <MapPin size={13} className="text-black-400 mt-0.5 flex-shrink-0" />
+                            {p.description}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {fieldErrors.deliveryAddress && (
+                  <p className="text-xs text-cinnabar-500 mt-1">{fieldErrors.deliveryAddress}</p>
+                )}
+                {deliveryFeeError && (
+                  <p className="text-xs text-cinnabar-500 mt-1">{deliveryFeeError}</p>
                 )}
               </div>
-              {fieldErrors.deliveryAddress && (
-                <p className="text-xs text-cinnabar-500">{fieldErrors.deliveryAddress}</p>
-              )}
-              {deliveryFeeError && (
-                <p className="text-xs text-cinnabar-500">{deliveryFeeError}</p>
-              )}
+
               <div>
-                <label className="block text-xs text-black-400 mb-1.5">Street / Apt / Floor <span className="text-black-300">(optional)</span></label>
+                <label className="block text-xs font-medium text-black-500 mb-1.5">
+                  Street / Apt / Floor <span className="text-black-300 font-normal">(optional)</span>
+                </label>
                 <input
                   type="text"
                   placeholder="Apt 4B, Suite 200, 3rd floor…"
@@ -445,8 +446,11 @@ export default function CheckoutPage() {
                   className={inputClass(false)}
                 />
               </div>
+
               <div>
-                <label className="block text-xs text-black-400 mb-1.5">Delivery instructions <span className="text-black-300">(optional)</span></label>
+                <label className="block text-xs font-medium text-black-500 mb-1.5">
+                  Delivery instructions <span className="text-black-300 font-normal">(optional)</span>
+                </label>
                 <textarea
                   placeholder="Leave at front door, don't ring the bell…"
                   value={deliveryInstructions}
@@ -458,20 +462,20 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          {/* Order totals */}
-          <div className="border-t border-black-100">
+          {/* Order summary */}
+          <div className="border-t border-black-100 divide-y divide-black-50">
             <div className="px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-black-500">
-                <span>🛒</span>
+                <ShoppingBag size={14} className="text-black-400" />
                 <span>{itemCount} {itemCount === 1 ? "item" : "items"}</span>
               </div>
               <span className="text-sm font-semibold text-black-900">{formatKobo(subtotal)}</span>
             </div>
 
             {fulfillmentType === "delivery" && (
-              <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
+              <div className="px-4 py-3 flex items-center justify-between">
                 <div className="text-sm text-black-500">
-                  <span>Delivery fee</span>
+                  Delivery fee
                   {distanceKm !== null && durationMinutes !== null && (
                     <span className="ml-1.5 text-xs text-black-400">
                       {distanceKm}km · ~{durationMinutes} min
@@ -481,7 +485,7 @@ export default function CheckoutPage() {
                 <span className="text-sm font-semibold text-black-900">
                   {deliveryFeeLoading ? (
                     <span className="inline-flex items-center gap-1 text-black-400 text-xs">
-                      <span className="w-3 h-3 border border-black-300 border-t-transparent rounded-full animate-spin" />
+                      <Loader2 size={12} className="animate-spin" />
                       Calculating…
                     </span>
                   ) : deliveryFeeKobo !== null ? (
@@ -493,19 +497,17 @@ export default function CheckoutPage() {
               </div>
             )}
 
-
-
             {vatKobo > 0 && (
-              <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
+              <div className="px-4 py-3 flex items-center justify-between">
                 <span className="text-sm text-black-500">VAT ({vatPct}%)</span>
                 <span className="text-sm font-semibold text-black-900">{formatKobo(vatKobo)}</span>
               </div>
             )}
 
             {serviceFeeKobo > 0 && (
-              <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
+              <div className="px-4 py-3 flex items-center justify-between">
                 <div className="text-sm text-black-500">
-                  <span>Service fee</span>
+                  Service fee
                   {serviceChargePct > 0 && (
                     <span className="ml-1.5 text-xs text-black-400">
                       ({(serviceChargePct * 100).toFixed(1)}%{serviceChargeFixedKobo > 0 ? ` + ${formatKobo(serviceChargeFixedKobo)}` : ""})
@@ -516,14 +518,14 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            <div className="px-4 py-3 flex items-center justify-between border-t border-black-100">
+            <div className="px-4 py-3 flex items-center justify-between bg-black-50/50">
               <span className="text-sm font-bold text-black-900">Total</span>
               <span className="text-sm font-bold text-black-900">{formatKobo(total)}</span>
             </div>
           </div>
         </div>
 
-        {/* Your information */}
+        {/* Customer info */}
         <div>
           <h2 className="text-base font-bold text-black-900 mb-3">Your information</h2>
           <div className="space-y-3">
@@ -564,7 +566,7 @@ export default function CheckoutPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder="you@example.com (optional)"
                 className={inputClass(!!fieldErrors.email)}
               />
             </Field>
@@ -572,20 +574,27 @@ export default function CheckoutPage() {
         </div>
 
         {error && (
-          <div className="bg-cinnabar-100 text-cinnabar-500 text-sm px-4 py-3 rounded-xl">
+          <div className="bg-cinnabar-50 border border-cinnabar-200 text-cinnabar-600 text-sm px-4 py-3 rounded-xl">
             {error}
           </div>
         )}
       </div>
 
-      {/* Pay now — fixed footer */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-black-100 px-4 py-4">
+      {/* Fixed pay footer */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-black-100 px-4 py-4 shadow-lg">
         <button
           onClick={handlePay}
           disabled={payDisabled}
-          className="w-full bg-primary hover:bg-primary/90 disabled:opacity-60 text-white font-bold py-4 rounded-xl transition-colors text-base"
+          className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-bold py-4 rounded-2xl transition-colors text-base flex items-center justify-center gap-2 cursor-pointer"
         >
-          {loading ? "Processing..." : `Pay now · ${formatKobo(total)}`}
+          {loading ? (
+            <>
+              <Loader2 size={18} className="animate-spin" />
+              Processing…
+            </>
+          ) : (
+            `Pay now · ${formatKobo(total)}`
+          )}
         </button>
       </div>
     </div>
@@ -603,7 +612,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-black-500 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-black-600 mb-1.5">{label}</label>
       {children}
       {error && <p className="mt-1 text-xs text-cinnabar-500">{error}</p>}
     </div>
@@ -613,9 +622,9 @@ function Field({
 function inputClass(hasError: boolean) {
   return cn(
     "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
-    "focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary",
-    "placeholder:text-black-300",
-    hasError ? "border-cinnabar-500" : "border-black-200"
+    "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
+    "placeholder:text-black-300 transition-colors",
+    hasError ? "border-cinnabar-400 bg-cinnabar-50/30" : "border-black-200"
   );
 }
 

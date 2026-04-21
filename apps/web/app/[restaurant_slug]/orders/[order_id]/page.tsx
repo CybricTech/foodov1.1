@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import {
+  Check, XCircle, PackageCheck, Bike, Package,
+  UtensilsCrossed, Clock, AlertCircle, MapPin,
+} from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { formatKobo } from "@foodo/utils";
@@ -19,6 +23,18 @@ interface OrderWithItems extends Order {
   }>;
 }
 
+function OrderStatusIcon({ status, size = 40 }: { status: string; size?: number }) {
+  const props = { size, strokeWidth: 1.5 };
+  switch (status) {
+    case "cancelled":   return <XCircle {...props} className="text-cinnabar-500" />;
+    case "delivered":   return <PackageCheck {...props} className="text-green-500" />;
+    case "in_transit":  return <Bike {...props} className="text-primary" />;
+    case "ready_for_pickup": return <Package {...props} className="text-green-500" />;
+    case "preparing":   return <UtensilsCrossed {...props} className="text-primary" />;
+    default:            return <Clock {...props} className="text-dixie-500" />;
+  }
+}
+
 export default function OrderTrackingPage() {
   const params = useParams<{ restaurant_slug: string; order_id: string }>();
   const { restaurant } = useRestaurant();
@@ -34,9 +50,7 @@ export default function OrderTrackingPage() {
     async function fetchOrder() {
       const { data, error: fetchError } = await supabase
         .from("orders")
-        .select(
-          `*, order_items (id, item_name, item_price_kobo, quantity, line_total_kobo)`
-        )
+        .select(`*, order_items (id, item_name, item_price_kobo, quantity, line_total_kobo)`)
         .eq("id", params.order_id)
         .single();
 
@@ -50,30 +64,20 @@ export default function OrderTrackingPage() {
 
     fetchOrder();
 
-    // Subscribe to real-time updates
     channel = supabase
       .channel(`order-${params.order_id}`)
       .on(
         "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "orders",
-          filter: `id=eq.${params.order_id}`,
-        },
+        { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${params.order_id}` },
         (payload) => {
           setOrder((prev) =>
-            prev
-              ? { ...prev, ...(payload.new as Partial<OrderWithItems>) }
-              : null
+            prev ? { ...prev, ...(payload.new as Partial<OrderWithItems>) } : null
           );
         }
       )
       .subscribe();
 
-    return () => {
-      channel?.unsubscribe();
-    };
+    return () => { channel?.unsubscribe(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.order_id]);
 
@@ -88,9 +92,11 @@ export default function OrderTrackingPage() {
   if (error || !order) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 text-center">
-        <div>
-          <p className="text-2xl mb-2">🙁</p>
-          <p className="text-black-500">{error || "Order not found"}</p>
+        <div className="space-y-3">
+          <div className="flex justify-center">
+            <AlertCircle size={48} className="text-black-300" strokeWidth={1.5} />
+          </div>
+          <p className="text-black-500 font-medium">{error || "Order not found"}</p>
         </div>
       </div>
     );
@@ -108,118 +114,116 @@ export default function OrderTrackingPage() {
   const isCancelled = order.status === "cancelled";
 
   return (
-    <div className="min-h-screen bg-black-50 pb-8">
+    <div className="min-h-screen bg-black-50 pb-10">
       {/* Header */}
       <div className="bg-white border-b border-black-100 px-4 py-4">
-        <h1 className="font-bold text-black-900">
+        <p className="text-xs text-black-400 font-medium">{restaurant.name}</p>
+        <h1 className="font-bold text-black-900 text-lg leading-tight">
           Order #{order.order_number}
         </h1>
-        <p className="text-sm text-black-400 mt-0.5">{restaurant.name}</p>
       </div>
 
       <div className="px-4 mt-4 space-y-4">
         {/* Status card */}
         <div
           className={cn(
-            "rounded-2xl p-5 text-center",
-            isCancelled ? "bg-cinnabar-100" : "bg-primary/5"
+            "rounded-2xl p-6 flex flex-col items-center text-center gap-3",
+            isCancelled ? "bg-cinnabar-50 border border-cinnabar-100" : "bg-primary/5 border border-primary/10"
           )}
         >
-          <div className="text-4xl mb-2">
-            {isCancelled
-              ? "❌"
-              : order.status === "delivered"
-              ? "✅"
-              : order.status === "in_transit"
-              ? "🛵"
-              : order.status === "ready_for_pickup"
-              ? "🍽️"
-              : "👨‍🍳"}
-          </div>
-          <p
-            className={cn(
+          <OrderStatusIcon status={order.status} size={44} />
+          <div>
+            <p className={cn(
               "text-lg font-bold",
-              isCancelled ? "text-cinnabar-500" : "text-primary"
-            )}
-          >
-            {statusLabel(order.status)}
-          </p>
-          {order.status === "cancelled" && order.cancellation_reason && (
-            <p className="text-sm text-black-400 mt-1">
-              {order.cancellation_reason}
+              isCancelled ? "text-cinnabar-600" : "text-primary"
+            )}>
+              {statusLabel(order.status)}
             </p>
-          )}
+            {order.status === "cancelled" && order.cancellation_reason && (
+              <p className="text-sm text-black-400 mt-1 leading-relaxed">
+                {order.cancellation_reason}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Progress stepper */}
         {!isCancelled && (
-          <div className="bg-white rounded-2xl border border-black-100 p-4">
-            {progressSteps.map((stepStatus, idx) => {
-              const isCompleted = idx <= currentStepIndex;
-              const isActive = idx === currentStepIndex;
-              return (
-                <div key={stepStatus} className="flex items-start gap-3">
-                  <div className="flex flex-col items-center">
-                    <div
-                      className={cn(
-                        "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-colors",
-                        isCompleted
-                          ? "bg-primary text-white"
-                          : "bg-black-100 text-black-300"
-                      )}
-                    >
-                      {isCompleted ? "✓" : idx + 1}
-                    </div>
-                    {idx < progressSteps.length - 1 && (
+          <div className="bg-white rounded-2xl border border-black-100 px-4 py-5">
+            <h2 className="text-sm font-bold text-black-700 mb-4">Order progress</h2>
+            <div className="space-y-0">
+              {progressSteps.map((stepStatus, idx) => {
+                const isCompleted = idx <= currentStepIndex;
+                const isActive = idx === currentStepIndex;
+                const isLast = idx === progressSteps.length - 1;
+
+                return (
+                  <div key={stepStatus} className="flex items-start gap-3">
+                    {/* Dot + line */}
+                    <div className="flex flex-col items-center flex-shrink-0">
                       <div
                         className={cn(
-                          "w-0.5 h-6 mt-1 transition-colors",
-                          isCompleted ? "bg-primary/40" : "bg-black-100"
+                          "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors duration-300",
+                          isCompleted ? "bg-primary" : "bg-black-100"
                         )}
-                      />
-                    )}
-                  </div>
-                  <div className="pt-1.5 pb-4">
-                    <p
-                      className={cn(
-                        "text-sm font-medium",
-                        isActive
-                          ? "text-primary"
-                          : isCompleted
-                          ? "text-black-900"
-                          : "text-black-300"
+                      >
+                        {isCompleted ? (
+                          <Check size={13} className="text-white" strokeWidth={2.5} />
+                        ) : (
+                          <span className="text-xs font-bold text-black-300">{idx + 1}</span>
+                        )}
+                      </div>
+                      {!isLast && (
+                        <div
+                          className={cn(
+                            "w-0.5 h-6 transition-colors duration-300",
+                            isCompleted ? "bg-primary/30" : "bg-black-100"
+                          )}
+                        />
                       )}
-                    >
-                      {statusLabel(stepStatus)}
-                    </p>
+                    </div>
+
+                    {/* Label */}
+                    <div className={cn("pt-1", !isLast && "pb-4")}>
+                      <p className={cn(
+                        "text-sm font-medium transition-colors",
+                        isActive ? "text-primary" : isCompleted ? "text-black-800" : "text-black-300"
+                      )}>
+                        {statusLabel(stepStatus)}
+                      </p>
+                      {isActive && (
+                        <p className="text-xs text-black-400 mt-0.5">In progress</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
 
         {/* Order items */}
         <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
           <div className="px-4 py-3 border-b border-black-100">
-            <h2 className="font-semibold text-black-900 text-sm">
-              Your order
-            </h2>
+            <h2 className="font-bold text-black-900 text-sm">Your order</h2>
           </div>
-          {order.order_items.map((item) => (
-            <div
-              key={item.id}
-              className="px-4 py-3 flex justify-between items-center border-b border-black-50 last:border-0"
-            >
-              <span className="text-sm text-black-900">
-                {item.quantity}× {item.item_name}
-              </span>
-              <span className="text-sm font-medium text-black-900">
-                {formatKobo(item.line_total_kobo)}
-              </span>
-            </div>
-          ))}
-          <div className="px-4 py-3 bg-black-50 flex justify-between">
+          <div className="divide-y divide-black-50">
+            {order.order_items.map((item) => (
+              <div
+                key={item.id}
+                className="px-4 py-3 flex justify-between items-center"
+              >
+                <span className="text-sm text-black-900">
+                  <span className="font-semibold text-black-500">{item.quantity}×</span>{" "}
+                  {item.item_name}
+                </span>
+                <span className="text-sm font-semibold text-black-900">
+                  {formatKobo(item.line_total_kobo)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="px-4 py-3 bg-black-50 flex justify-between border-t border-black-100">
             <span className="text-sm font-bold text-black-900">Total</span>
             <span className="text-sm font-bold text-black-900">
               {formatKobo(order.total_kobo)}
@@ -229,9 +233,12 @@ export default function OrderTrackingPage() {
 
         {/* Delivery address */}
         {order.fulfillment_type === "delivery" && order.delivery_address && (
-          <div className="bg-white rounded-2xl border border-black-100 px-4 py-3">
-            <p className="text-xs text-black-400 mb-1">Delivery to</p>
-            <p className="text-sm text-black-900">{order.delivery_address}</p>
+          <div className="bg-white rounded-2xl border border-black-100 px-4 py-4 flex items-start gap-3">
+            <MapPin size={15} className="text-black-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs text-black-400 font-medium mb-0.5">Delivery to</p>
+              <p className="text-sm text-black-900 leading-relaxed">{order.delivery_address}</p>
+            </div>
           </div>
         )}
       </div>

@@ -36,23 +36,21 @@ export function CategoryTabs({ categories }: CategoryTabsProps) {
   function scrollToCategory(id: string) {
     const section = document.getElementById(`cat-${id}`);
     if (section) {
-      const offset = 80; // height of sticky tabs bar
-      const top =
-        section.getBoundingClientRect().top + window.scrollY - offset;
+      const offset = 80;
+      const top = section.getBoundingClientRect().top + window.scrollY - offset;
       window.scrollTo({ top, behavior: "smooth" });
     }
     setActiveId(id);
 
-    // Scroll the active tab into view within the tabs container
     const tab = tabsRef.current?.querySelector(`[data-id="${id}"]`);
     tab?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   }
 
   return (
-    <div className="sticky top-0 z-20 bg-white border-b border-black-100 shadow-sm">
+    <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-black-100 shadow-sm">
       <div
         ref={tabsRef}
-        className="flex gap-1 overflow-x-auto scrollbar-hide px-4 py-2"
+        className="flex gap-1.5 overflow-x-auto scrollbar-hide px-4 py-2.5"
       >
         {categories.map((cat) => (
           <button
@@ -60,10 +58,10 @@ export function CategoryTabs({ categories }: CategoryTabsProps) {
             data-id={cat.id}
             onClick={() => scrollToCategory(cat.id)}
             className={cn(
-              "flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap",
+              "flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors duration-150 whitespace-nowrap cursor-pointer",
               activeId === cat.id
-                ? "bg-primary text-white"
-                : "bg-black-100 text-black-500 hover:bg-black-200"
+                ? "bg-primary text-white shadow-sm"
+                : "bg-black-100 text-black-500 hover:bg-black-200 hover:text-black-700"
             )}
           >
             {cat.name}

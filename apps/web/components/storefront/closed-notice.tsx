@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { X, Clock } from "lucide-react";
 import { useRestaurant } from "./restaurant-context";
 
 type DayHours = { enabled: boolean; open: string; close: string };
@@ -50,7 +51,6 @@ function getNextOpenTime(hours: OpeningHours): string | null {
   const todayIdx = now.getDay();
   const currentMins = now.getHours() * 60 + now.getMinutes();
 
-  // Check today first (might open later today), then next 6 days
   for (let offset = 0; offset < 7; offset++) {
     const idx = (todayIdx + offset) % 7;
     const key = DAY_KEYS[idx];
@@ -60,7 +60,6 @@ function getNextOpenTime(hours: OpeningHours): string | null {
     const openMins = parseTime(day.open);
 
     if (offset === 0) {
-      // Today — only show if opening time is still in the future
       if (openMins > currentMins) {
         return `Opens today at ${formatTime(day.open)}`;
       }
@@ -105,22 +104,22 @@ export function ClosedNotice() {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-sm shadow-2xl">
-        <div className="px-6 pt-8 pb-6">
+        <div className="px-6 pt-6 pb-6">
           {/* Close button */}
-          <div className="flex justify-end mb-2">
+          <div className="flex justify-end mb-3">
             <button
               onClick={() => setDismissed(true)}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-black-100 text-black-500 hover:bg-black-200 transition-colors text-lg leading-none"
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-black-100 text-black-500 hover:bg-black-200 transition-colors cursor-pointer"
               aria-label="Dismiss"
             >
-              ×
+              <X size={15} />
             </button>
           </div>
 
           {/* Icon */}
           <div className="flex justify-center mb-5">
-            <div className="w-20 h-20 bg-black-50 rounded-full flex items-center justify-center text-4xl">
-              🚫
+            <div className="w-20 h-20 bg-black-50 rounded-full flex items-center justify-center">
+              <Clock size={36} className="text-black-400" />
             </div>
           </div>
 
@@ -130,22 +129,23 @@ export function ClosedNotice() {
           </h2>
 
           {/* Subtitle */}
-          <p className="text-sm text-black-500 text-center mb-1">
+          <p className="text-sm text-black-500 text-center mb-1 leading-relaxed">
             {restaurant.name} isn&apos;t taking orders at the moment.
           </p>
 
           {/* Next open time */}
-          {nextOpen && (
+          {nextOpen ? (
             <p className="text-sm font-semibold text-black-900 text-center mb-6">
               {nextOpen}
             </p>
+          ) : (
+            <div className="mb-6" />
           )}
-          {!nextOpen && <div className="mb-6" />}
 
           {/* Browse button */}
           <button
             onClick={() => setDismissed(true)}
-            className="w-full bg-black-900 hover:bg-black-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm"
+            className="w-full bg-black-900 hover:bg-black-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm cursor-pointer"
           >
             Browse menu anyway
           </button>
