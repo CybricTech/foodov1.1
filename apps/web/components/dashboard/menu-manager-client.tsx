@@ -92,7 +92,52 @@ export function MenuManagerClient({
         </button>
       </div>
 
-      <div className="flex mt-0 md:mt-4">
+      {/* ── MOBILE: horizontal category pills ── */}
+      <div className="md:hidden bg-white border-b border-black-100">
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide px-4 py-3">
+          {categories.map((cat) => {
+            const isActive = activeCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={cn(
+                  "flex-shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap",
+                  isActive
+                    ? "bg-purple-500 text-white"
+                    : "bg-black-100 text-black-500 hover:bg-black-200"
+                )}
+              >
+                {cat.name}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setShowAddCategory(true)}
+            className="flex-shrink-0 flex items-center gap-1 px-3.5 py-1.5 rounded-full text-sm font-semibold text-black-400 border border-dashed border-black-200 hover:border-purple-300 hover:text-purple-500 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <Plus size={12} />
+            Category
+          </button>
+        </div>
+      </div>
+
+      {/* ── MOBILE: full-width items list ── */}
+      <div className="md:hidden bg-white mt-0">
+        <ItemsPanel
+          categoryItems={categoryItems}
+          categories={categories}
+          activeCategory={activeCategory}
+          onToggle={toggleAvailable}
+          onEdit={setEditingItem}
+          onDelete={deleteItem}
+          onAddItem={() => setShowAddItem(true)}
+          showCategoryHeader={false}
+        />
+      </div>
+
+      {/* ── DESKTOP: two-column sidebar layout ── */}
+      <div className="hidden md:flex mt-4">
         {/* Category sidebar */}
         <div className="w-44 flex-shrink-0 border-r border-black-100 bg-white md:rounded-l-2xl md:border md:border-r-0 overflow-hidden">
           <div className="py-2">
@@ -136,7 +181,6 @@ export function MenuManagerClient({
                 </div>
               );
             })}
-
             <button
               onClick={() => setShowAddCategory(true)}
               className="w-full flex items-center gap-2 px-3 py-3 text-sm text-black-400 hover:text-purple-500 hover:bg-black-50 transition-colors duration-200 cursor-pointer border-t border-black-50 mt-1"
@@ -147,158 +191,18 @@ export function MenuManagerClient({
           </div>
         </div>
 
-        {/* Items panel */}
+        {/* Desktop items panel */}
         <div className="flex-1 bg-white md:rounded-r-2xl md:border md:border-l-0 border-black-100 overflow-hidden min-h-64">
-          {/* Panel header */}
-          {activeCategory && categories.find((c) => c.id === activeCategory) && (
-            <div className="px-4 py-3 border-b border-black-50 flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-sm font-semibold text-black-700">
-                <ChevronRight size={14} className="text-black-300" />
-                {categories.find((c) => c.id === activeCategory)?.name}
-                <span className="ml-1 text-xs font-medium text-black-400 bg-black-50 px-1.5 py-0.5 rounded-full">
-                  {categoryItems.length}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Empty state */}
-          {categoryItems.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-              <div className="w-14 h-14 bg-purple-50 rounded-2xl flex items-center justify-center mb-3">
-                <UtensilsCrossed size={24} className="text-purple-400" />
-              </div>
-              <p className="text-sm font-medium text-black-700 mb-1">No items yet</p>
-              <p className="text-xs text-black-400 mb-4">Add your first item to this category</p>
-              <button
-                onClick={() => setShowAddItem(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-purple-500 border border-purple-200 bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-lg transition-colors duration-200 cursor-pointer"
-              >
-                <Plus size={13} />
-                Add item
-              </button>
-            </div>
-          )}
-
-          {/* Item rows */}
-          <div className="divide-y divide-black-50">
-            {categoryItems.map((item) => (
-              <div
-                key={item.id}
-                className={cn(
-                  "group flex items-center gap-3 px-4 py-3 transition-colors duration-150",
-                  item.is_available ? "hover:bg-black-50/60" : "hover:bg-black-50/40"
-                )}
-              >
-                {/* Thumbnail */}
-                <div className="flex-shrink-0">
-                  {item.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={item.image_url}
-                      alt={item.name}
-                      className={cn(
-                        "w-14 h-14 rounded-xl object-cover",
-                        !item.is_available && "opacity-50 grayscale"
-                      )}
-                    />
-                  ) : (
-                    <div
-                      className={cn(
-                        "w-14 h-14 rounded-xl bg-black-50 flex items-center justify-center",
-                        !item.is_available && "opacity-50"
-                      )}
-                    >
-                      <UtensilsCrossed size={18} className="text-black-200" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p
-                      className={cn(
-                        "text-sm font-semibold leading-tight",
-                        item.is_available ? "text-black-900" : "text-black-300"
-                      )}
-                    >
-                      {item.name}
-                    </p>
-                    {item.is_featured && (
-                      <span className="flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full">
-                        <Star size={9} fill="currentColor" />
-                        Featured
-                      </span>
-                    )}
-                    {!item.is_available && (
-                      <span className="text-[10px] font-semibold text-black-400 bg-black-100 px-1.5 py-0.5 rounded-full">
-                        Unavailable
-                      </span>
-                    )}
-                  </div>
-                  {item.description && (
-                    <p className="text-xs text-black-400 mt-0.5 truncate">{item.description}</p>
-                  )}
-                  <p
-                    className={cn(
-                      "text-xs font-bold mt-1",
-                      item.is_available ? "text-purple-600" : "text-black-300"
-                    )}
-                  >
-                    {item.price_kobo === 0
-                      ? "From " + formatKobo(
-                          item.options
-                            ?.find((o) => o.is_required && o.max_selections === 1)
-                            ?.choices?.[0]?.price_modifier_kobo ?? 0
-                        )
-                      : formatKobo(item.price_kobo)}
-                  </p>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {/* Availability toggle */}
-                  <button
-                    onClick={() => toggleAvailable(item.id, item.is_available)}
-                    title={item.is_available ? "Mark unavailable" : "Mark available"}
-                    aria-label={item.is_available ? "Mark unavailable" : "Mark available"}
-                    className={cn(
-                      "relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0 cursor-pointer",
-                      item.is_available ? "bg-purple-500" : "bg-black-200"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200",
-                        item.is_available ? "translate-x-[18px]" : "translate-x-0"
-                      )}
-                    />
-                  </button>
-
-                  {/* Edit */}
-                  <button
-                    onClick={() => setEditingItem(item)}
-                    title="Edit item"
-                    aria-label="Edit item"
-                    className="w-8 h-8 flex items-center justify-center rounded-lg text-black-400 hover:text-black-700 hover:bg-black-100 transition-colors duration-150 cursor-pointer"
-                  >
-                    <Pencil size={14} />
-                  </button>
-
-                  {/* Delete */}
-                  <button
-                    onClick={() => deleteItem(item.id)}
-                    title="Delete item"
-                    aria-label="Delete item"
-                    className="w-8 h-8 flex items-center justify-center rounded-lg text-black-300 hover:text-cinnabar-500 hover:bg-cinnabar-50 transition-colors duration-150 cursor-pointer"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+          <ItemsPanel
+            categoryItems={categoryItems}
+            categories={categories}
+            activeCategory={activeCategory}
+            onToggle={toggleAvailable}
+            onEdit={setEditingItem}
+            onDelete={deleteItem}
+            onAddItem={() => setShowAddItem(true)}
+            showCategoryHeader
+          />
         </div>
       </div>
 
@@ -341,6 +245,161 @@ export function MenuManagerClient({
         />
       )}
     </div>
+  );
+}
+
+interface ItemsPanelProps {
+  categoryItems: MenuItemWithOptions[];
+  categories: MenuCategory[];
+  activeCategory: string | null;
+  onToggle: (itemId: string, current: boolean) => void;
+  onEdit: (item: MenuItemWithOptions) => void;
+  onDelete: (itemId: string) => void;
+  onAddItem: () => void;
+  showCategoryHeader: boolean;
+}
+
+function ItemsPanel({
+  categoryItems,
+  categories,
+  activeCategory,
+  onToggle,
+  onEdit,
+  onDelete,
+  onAddItem,
+  showCategoryHeader,
+}: ItemsPanelProps) {
+  const activeCategoryName = categories.find((c) => c.id === activeCategory)?.name ?? "Items";
+
+  return (
+    <>
+      {showCategoryHeader && (
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-black-100">
+          <div>
+            <p className="text-xs text-black-400 font-medium uppercase tracking-wide">Category</p>
+            <p className="font-bold text-black-900 text-sm mt-0.5">{activeCategoryName}</p>
+          </div>
+          <button
+            onClick={onAddItem}
+            className="flex items-center gap-1.5 text-xs font-semibold text-purple-500 hover:text-purple-400 bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-lg transition-colors duration-150 cursor-pointer"
+          >
+            <Plus size={13} strokeWidth={2.5} />
+            Add item
+          </button>
+        </div>
+      )}
+
+      {categoryItems.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center px-4">
+          <div className="w-12 h-12 rounded-full bg-black-100 flex items-center justify-center">
+            <UtensilsCrossed size={22} className="text-black-400" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-black-600">No items yet</p>
+            <p className="text-xs text-black-400 mt-0.5">Add your first item to this category</p>
+          </div>
+          <button
+            onClick={onAddItem}
+            className="flex items-center gap-1.5 bg-purple-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg hover:bg-purple-400 transition-colors duration-200 cursor-pointer"
+          >
+            <Plus size={13} strokeWidth={2.5} />
+            Add item
+          </button>
+        </div>
+      ) : (
+        <div className="divide-y divide-black-50">
+          {categoryItems.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-3 px-4 py-3.5 hover:bg-black-50/50 transition-colors duration-150"
+            >
+              {/* Thumbnail */}
+              {item.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={item.image_url}
+                  alt={item.name}
+                  className={cn(
+                    "w-12 h-12 rounded-xl object-cover flex-shrink-0",
+                    !item.is_available && "grayscale opacity-60"
+                  )}
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-xl bg-black-100 flex items-center justify-center flex-shrink-0">
+                  <UtensilsCrossed size={18} className="text-black-300" />
+                </div>
+              )}
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className={cn(
+                    "text-sm font-semibold leading-tight truncate",
+                    item.is_available ? "text-black-900" : "text-black-400"
+                  )}>
+                    {item.name}
+                  </p>
+                  {item.is_featured && (
+                    <Star size={11} className="text-amber-400 fill-amber-400 flex-shrink-0" />
+                  )}
+                  {!item.is_available && (
+                    <span className="flex-shrink-0 text-[10px] font-semibold text-black-400 bg-black-100 px-1.5 py-0.5 rounded-full">
+                      Off
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-black-500 mt-0.5 font-medium">
+                  {item.price_kobo === 0
+                    ? "Multiple sizes"
+                    : formatKobo(item.price_kobo)}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {/* Availability toggle */}
+                <button
+                  onClick={() => onToggle(item.id, item.is_available)}
+                  className={cn(
+                    "relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer flex-shrink-0",
+                    item.is_available ? "bg-purple-500" : "bg-black-200"
+                  )}
+                  title={item.is_available ? "Mark unavailable" : "Mark available"}
+                  aria-label="Toggle availability"
+                >
+                  <span className={cn(
+                    "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200",
+                    item.is_available ? "translate-x-[16px]" : "translate-x-0"
+                  )} />
+                </button>
+
+                {/* Edit */}
+                <button
+                  onClick={() => onEdit(item)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-black-400 hover:text-purple-500 hover:bg-purple-50 transition-colors duration-150 cursor-pointer"
+                  title="Edit item"
+                  aria-label="Edit item"
+                >
+                  <Pencil size={13} />
+                </button>
+
+                {/* Delete */}
+                <button
+                  onClick={() => onDelete(item.id)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-black-300 hover:text-cinnabar-500 hover:bg-cinnabar-50 transition-colors duration-150 cursor-pointer"
+                  title="Delete item"
+                  aria-label="Delete item"
+                >
+                  <Trash2 size={13} />
+                </button>
+
+                <ChevronRight size={14} className="text-black-200 hidden md:block" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

@@ -99,7 +99,10 @@
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"food delivery restaurant merchant dashboard menu management\" --design-system -p \"Foodo Merchant Dashboard\")",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard menu management cards\" --stack nextjs)",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"food delivery restaurant storefront landing page customer mobile\" --design-system -p \"Foodo Storefront\")",
-      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant menu page food ordering mobile customer\" --design-system -p \"Foodo Menu Page\")"
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant menu page food ordering mobile customer\" --design-system -p \"Foodo Menu Page\")",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant merchant dashboard SaaS analytics orders revenue\" --design-system -p \"Kitchyn Dashboard\")",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard KPI cards orders status real-time mobile\" --domain ux -n 5)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard analytics nextjs\" --stack nextjs)"
     ]
   }
 }

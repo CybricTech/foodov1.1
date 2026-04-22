@@ -7,6 +7,7 @@ import { createBrowserClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { cn } from "@foodo/ui";
 import {
+  Home,
   ClipboardList,
   UtensilsCrossed,
   Users,
@@ -24,7 +25,8 @@ interface DashboardNavProps {
 }
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean }[] = [
-  { href: "/dashboard",           label: "Orders",     icon: ClipboardList,   exact: true  },
+  { href: "/dashboard",           label: "Home",       icon: Home,            exact: true  },
+  { href: "/dashboard/orders",    label: "Orders",     icon: ClipboardList,   exact: false },
   { href: "/dashboard/menu",      label: "Menu",       icon: UtensilsCrossed, exact: false },
   { href: "/dashboard/customers", label: "Customers",  icon: Users,           exact: false },
   { href: "/dashboard/analytics", label: "Analytics",  icon: BarChart3,       exact: false },

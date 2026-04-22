@@ -13,6 +13,8 @@ import {
   ChevronUp,
   Phone,
   Clock,
+  Radio,
+  UserCheck,
 } from "lucide-react";
 import type { Database } from "@foodo/database";
 
@@ -380,29 +382,36 @@ function OrderCard({
   const [cancelReason, setCancelReason] = useState("");
 
   const nextStatus: Record<string, string | null> = {
-    pending:          "confirmed",
-    confirmed:        "preparing",
-    preparing:        "ready_for_pickup",
-    ready_for_pickup: "in_transit",
-    in_transit:       "delivered",
-    delivered:        null,
-    cancelled:        null,
+    pending:           "confirmed",
+    confirmed:         "preparing",
+    preparing:         "ready_for_pickup",
+    // ready_for_pickup is handled by the delivery choice UI for delivery orders
+    ready_for_pickup:  "in_transit",
+    assigned_to_rider: "in_transit",
+    in_transit:        "delivered",
+    delivered:         null,
+    cancelled:         null,
   };
 
   const actionLabel: Record<string, string> = {
-    pending:          "Confirm Order",
-    confirmed:        "Start Preparing",
-    preparing:        "Mark Ready",
-    ready_for_pickup: "Out for Delivery",
-    in_transit:       "Mark Delivered",
+    pending:           "Confirm Order",
+    confirmed:         "Start Preparing",
+    preparing:         "Mark Ready",
+    ready_for_pickup:  "Customer Collected",   // only shown for pickup orders
+    assigned_to_rider: "Mark Delivered",
+    in_transit:        "Mark Delivered",
   };
 
   const next = nextStatus[order.status];
   const canCancel = ["pending", "confirmed"].includes(order.status);
+
+  // Show delivery method picker instead of the normal action button for delivery
+  // orders that are ready — merchant decides who handles the last mile.
+  const needsDeliveryChoice =
+    order.status === "ready_for_pickup" && order.fulfillment_type === "delivery";
+
   return (
-    <div
-      className="bg-white rounded-2xl border border-black-100 overflow-hidden shadow-card"
-    >
+    <div className="bg-white rounded-2xl border border-black-100 overflow-hidden shadow-card">
       {/* ── Card header ── */}
       <button
         onClick={() => setExpanded((e) => !e)}
@@ -461,7 +470,6 @@ function OrderCard({
                       {formatKobo(item.line_total_kobo)}
                     </span>
                   </div>
-                  {/* Add-ons / options */}
                   {opts.length > 0 && (
                     <div className="ml-7 mt-1 space-y-0.5">
                       {opts.map((opt) =>
@@ -542,8 +550,52 @@ function OrderCard({
             )}
           </div>
 
-          {/* Actions */}
-          {(next || canCancel) && !showCancel && (
+          {/* ── Delivery method picker ── */}
+          {needsDeliveryChoice && !showCancel && (
+            <div className="px-4 py-4 space-y-3">
+              <div>
+                <p className="text-sm font-bold text-black-900">Choose delivery method</p>
+                <p className="text-xs text-black-400 mt-0.5">How will this order reach the customer?</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* Platform rider */}
+                <button
+                  onClick={() => onUpdateStatus(order.id, "assigned_to_rider")}
+                  disabled={loading}
+                  className="flex flex-col items-start gap-2.5 p-3.5 rounded-2xl border-2 border-purple-200 bg-purple-50 hover:border-purple-400 hover:bg-purple-100 disabled:opacity-60 transition-all duration-150 cursor-pointer text-left group"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-purple-500 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-600 transition-colors duration-150">
+                    <Radio size={17} className="text-white" strokeWidth={2} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-purple-700 leading-tight">Platform Rider</p>
+                    <p className="text-[11px] text-purple-500 mt-0.5 leading-snug">Request a rider from the app</p>
+                  </div>
+                </button>
+
+                {/* In-house rider */}
+                <button
+                  onClick={() => onUpdateStatus(order.id, "in_transit")}
+                  disabled={loading}
+                  className="flex flex-col items-start gap-2.5 p-3.5 rounded-2xl border-2 border-black-200 bg-white hover:border-black-400 hover:bg-black-50 disabled:opacity-60 transition-all duration-150 cursor-pointer text-left group"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-black-900 flex items-center justify-center flex-shrink-0 group-hover:bg-black-700 transition-colors duration-150">
+                    <UserCheck size={17} className="text-white" strokeWidth={2} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-black-900 leading-tight">In-House</p>
+                    <p className="text-[11px] text-black-400 mt-0.5 leading-snug">Your own rider handles it</p>
+                  </div>
+                </button>
+              </div>
+              {loading && (
+                <p className="text-xs text-center text-black-400 animate-pulse">Updating…</p>
+              )}
+            </div>
+          )}
+
+          {/* ── Normal action buttons (non-delivery-choice states) ── */}
+          {!needsDeliveryChoice && (next || canCancel) && !showCancel && (
             <div className="px-4 py-3 flex gap-2">
               {next && (
                 <button

@@ -1,43 +1,40 @@
 import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServiceClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { OrderQueueClient } from "@/components/dashboard/order-queue-client";
+import { DashboardHomeClient } from "@/components/dashboard/dashboard-home-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardHomePage() {
   const session = await getDashboardUser();
   if (!session) redirect("/dashboard/login");
 
-  // Use service client so the fetch is never blocked by RLS —
-  // access control is already enforced by getDashboardUser() above.
   const supabase = createServiceClient();
   const { restaurantId } = session;
 
-  const { data: orders, error } = await supabase
+  const { data: restaurant } = await supabase
+    .from("restaurants")
+    .select("id, name, slug, accepts_orders")
+    .eq("id", restaurantId)
+    .single();
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: orders } = await supabase
     .from("orders")
     .select(
-      `
-      id, order_number, status, payment_status, fulfillment_type,
-      customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
-      vat_kobo, service_fee_kobo, total_kobo, created_at,
-      special_instructions, delivery_address,
-      order_items (id, item_name, quantity, line_total_kobo, selected_options)
-    `
+      "id, order_number, status, payment_status, fulfillment_type, customer_name, total_kobo, created_at"
     )
     .eq("restaurant_id", restaurantId)
-    .order("created_at", { ascending: false })
-    .limit(100);
-
-  if (error) {
-    console.error("[dashboard] orders fetch error:", error.message);
-  }
+    .neq("status", "cancelled")
+    .eq("payment_status", "paid")
+    .gte("created_at", thirtyDaysAgo)
+    .order("created_at", { ascending: false });
 
   return (
-    <OrderQueueClient
-      restaurantId={restaurantId}
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      initialOrders={(orders ?? []) as any}
+    <DashboardHomeClient
+      restaurant={restaurant}
+      initialOrders={orders ?? []}
     />
   );
 }
