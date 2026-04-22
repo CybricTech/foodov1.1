@@ -33,11 +33,11 @@ type TimeFilter =
 
 interface Order {
   id: string;
-  order_number: number;
+  order_number: string | number;
   status: string;
   payment_status: string;
   fulfillment_type: string;
-  customer_name: string;
+  customer_name: string | null;
   total_kobo: number;
   created_at: string;
 }
