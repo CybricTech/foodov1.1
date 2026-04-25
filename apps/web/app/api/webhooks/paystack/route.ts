@@ -115,7 +115,6 @@ export async function POST(request: NextRequest) {
         ((meta.service_fee_kobo as number) || 0),
       delivery_distance_km: (meta.delivery_distance_km as number) || null,
       delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
-      order_number: `ORD-${Date.now()}`,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     .select("id, order_number")
