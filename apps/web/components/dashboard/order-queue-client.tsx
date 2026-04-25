@@ -189,6 +189,45 @@ export function OrderQueueClient({
     setActionLoading(null);
   }
 
+  async function dispatchOrder(orderId: string, dispatchType: "platform_rider" | "own_rider") {
+    setActionLoading(orderId);
+    setActionError(null);
+    const expectedStatus = dispatchType === "platform_rider" ? "assigned_to_rider" : "in_transit";
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId ? { ...o, status: expectedStatus as OrderRow["status"] } : o
+      )
+    );
+    try {
+      const res = await fetch("/api/dashboard/orders/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: orderId, dispatch_type: dispatchType }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderId
+              ? { ...o, status: orders.find((x) => x.id === orderId)?.status ?? o.status }
+              : o
+          )
+        );
+        setActionError(data.error ?? "Failed to dispatch order.");
+      }
+    } catch {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? { ...o, status: orders.find((x) => x.id === orderId)?.status ?? o.status }
+            : o
+        )
+      );
+      setActionError("Network error");
+    }
+    setActionLoading(null);
+  }
+
   const filteredOrders = orders.filter((o) => TAB_STATUSES[activeTab].includes(o.status));
 
   // Group completed orders by calendar date for the date-divider UI
@@ -337,6 +376,7 @@ export function OrderQueueClient({
                       key={order.id}
                       order={order}
                       onUpdateStatus={updateStatus}
+                      onDispatch={dispatchOrder}
                       onCancel={cancelOrder}
                       loading={actionLoading === order.id}
                     />
@@ -352,6 +392,7 @@ export function OrderQueueClient({
                 key={order.id}
                 order={order}
                 onUpdateStatus={updateStatus}
+                onDispatch={dispatchOrder}
                 onCancel={cancelOrder}
                 loading={actionLoading === order.id}
               />
@@ -369,11 +410,13 @@ export function OrderQueueClient({
 function OrderCard({
   order,
   onUpdateStatus,
+  onDispatch,
   onCancel,
   loading,
 }: {
   order: OrderRow;
   onUpdateStatus: (id: string, status: string) => void;
+  onDispatch: (orderId: string, dispatchType: "platform_rider" | "own_rider") => void;
   onCancel: (id: string, reason: string) => void;
   loading: boolean;
 }) {
@@ -560,7 +603,7 @@ function OrderCard({
               <div className="grid grid-cols-2 gap-2.5">
                 {/* Platform rider */}
                 <button
-                  onClick={() => onUpdateStatus(order.id, "assigned_to_rider")}
+                  onClick={() => onDispatch(order.id, "platform_rider")}
                   disabled={loading}
                   className="flex flex-col items-start gap-2.5 p-3.5 rounded-2xl border-2 border-purple-200 bg-purple-50 hover:border-purple-400 hover:bg-purple-100 disabled:opacity-60 transition-all duration-150 cursor-pointer text-left group"
                 >
@@ -575,7 +618,7 @@ function OrderCard({
 
                 {/* In-house rider */}
                 <button
-                  onClick={() => onUpdateStatus(order.id, "in_transit")}
+                  onClick={() => onDispatch(order.id, "own_rider")}
                   disabled={loading}
                   className="flex flex-col items-start gap-2.5 p-3.5 rounded-2xl border-2 border-black-200 bg-white hover:border-black-400 hover:bg-black-50 disabled:opacity-60 transition-all duration-150 cursor-pointer text-left group"
                 >

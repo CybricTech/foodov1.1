@@ -1,13 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { formatKobo } from "@foodo/utils";
+import Link from "next/link";
+import { Download, ChevronDown, ChevronRight } from "lucide-react";
+
+/* ── Types ─────────────────────────────────────────────────────────────────── */
+
+type OrderRow = {
+  id: string;
+  order_number: string;
+  restaurant_id: string;
+  subtotal_kobo: number;
+  delivery_fee_kobo: number;
+  service_fee_kobo: number;
+  vat_kobo: number;
+  settlement_id: string | null;
+  dispatch_type: string | null;
+  fulfillment_type: string;
+  status: string;
+  created_at: string;
+  restaurants: { name: string } | null;
+};
 
 type SettlementRow = {
   id: string;
   restaurant_id: string;
   amount_kobo: number;
   status: string;
+  settlement_type: string;
+  bank_reference: string | null;
+  period_date: string | null;
+  order_count: number;
+  gross_total_kobo: number;
+  service_fee_total_kobo: number;
+  delivery_commission_kobo: number;
   paystack_transfer_code: string | null;
   paystack_transfer_ref: string | null;
   failure_reason: string | null;
@@ -17,31 +44,33 @@ type SettlementRow = {
   restaurants: { name: string; slug: string } | null;
 };
 
-type WalletRow = {
+type MerchantSummary = {
   restaurant_id: string;
+  restaurant_name: string;
+  restaurant_slug: string;
+  has_bank_account: boolean;
   pending_balance_kobo: number;
   available_balance_kobo: number;
   total_earned_kobo: number;
   total_withdrawn_kobo: number;
-  restaurants: { name: string; paystack_recipient_code: string | null } | null;
+  total_paid_kobo: number;
+  total_pending_settlement_kobo: number;
+  settlement_count: number;
 };
 
-type PlatformSettings = {
-  service_charge_pct: number;
-  service_charge_fixed_kobo: number;
-  settlement_hold_hours: number;
-  delivery_base_fee_kobo?: number | null;
-  delivery_per_km_rate_kobo?: number | null;
-  delivery_max_radius_km?: number | null;
-  delivery_max_fee_kobo?: number | null;
-  admin_whatsapp_number?: string | null;
-  admin_alert_email?: string | null;
-} | null;
-
 interface SettlementsClientProps {
+  orders: OrderRow[];
   settlements: SettlementRow[];
-  pendingWallets: WalletRow[];
-  settings: PlatformSettings;
+  merchantSummaries: MerchantSummary[];
+  platformSettings: { serviceFeeFixedKobo: number; deliveryCommissionPct: number };
+}
+
+/* ── Helpers ───────────────────────────────────────────────────────────────── */
+
+function toWATDate(iso: string): string {
+  const d = new Date(iso);
+  const wat = new Date(d.getTime() + 60 * 60 * 1000);
+  return wat.toISOString().slice(0, 10);
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -51,254 +80,317 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-cinnabar-100 text-cinnabar-500",
 };
 
+const TYPE_STYLES: Record<string, string> = {
+  manual: "bg-blue-100 text-blue-600",
+  automatic: "bg-black-100 text-black-500",
+};
+
+/* ── Component ─────────────────────────────────────────────────────────────── */
+
 export function SettlementsClient({
+  orders,
   settlements,
-  pendingWallets,
-  settings,
+  merchantSummaries,
+  platformSettings,
 }: SettlementsClientProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [triggering, setTriggering] = useState<string | null>(null);
-  const [triggerResult, setTriggerResult] = useState<Record<string, string>>({});
+  const [merchantSearch, setMerchantSearch] = useState("");
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [exportingDate, setExportingDate] = useState<string | null>(null);
 
-  // Service charge config form state
-  const [pct, setPct] = useState(
-    settings ? (Number(settings.service_charge_pct) * 100).toFixed(1) : "3.0"
-  );
-  const [fixedNgn, setFixedNgn] = useState(
-    settings ? (settings.service_charge_fixed_kobo / 100).toFixed(0) : "0"
-  );
-  const [holdHours, setHoldHours] = useState(
-    settings ? String(settings.settlement_hold_hours) : "24"
-  );
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [settingsSaved, setSettingsSaved] = useState(false);
-  const [settingsError, setSettingsError] = useState("");
+  const { serviceFeeFixedKobo, deliveryCommissionPct } = platformSettings;
 
-  // Delivery pricing form state
-  const [baseFeeNgn, setBaseFeeNgn] = useState(
-    settings?.delivery_base_fee_kobo ? String(Math.round(Number(settings.delivery_base_fee_kobo) / 100)) : "2300"
-  );
-  const [perKmNgn, setPerKmNgn] = useState(
-    settings?.delivery_per_km_rate_kobo ? String(Math.round(Number(settings.delivery_per_km_rate_kobo) / 100)) : "150"
-  );
-  const [maxRadius, setMaxRadius] = useState(
-    settings?.delivery_max_radius_km ? String(settings.delivery_max_radius_km) : "25"
-  );
-  const [maxFeeNgn, setMaxFeeNgn] = useState(
-    settings?.delivery_max_fee_kobo ? String(Math.round(Number(settings.delivery_max_fee_kobo) / 100)) : "15000"
-  );
-  const [savingDelivery, setSavingDelivery] = useState(false);
-  const [deliverySaved, setDeliverySaved] = useState(false);
-  const [deliveryError, setDeliveryError] = useState("");
+  /* ── Revenue aggregation ────────────────────────────────────────────────── */
 
-  // Admin WhatsApp number state
-  const [adminWhatsappNumber, setAdminWhatsappNumber] = useState(
-    settings?.admin_whatsapp_number ?? ""
+  const completedOrders = useMemo(
+    () => orders.filter((o) => o.status !== "cancelled" && o.status !== "pending"),
+    [orders]
   );
-  const [savingWhatsapp, setSavingWhatsapp] = useState(false);
-  const [whatsappSaved, setWhatsappSaved] = useState(false);
-  const [whatsappError, setWhatsappError] = useState("");
 
-  // Admin alert email state
-  const [adminAlertEmail, setAdminAlertEmail] = useState(
-    settings?.admin_alert_email ?? ""
-  );
-  const [savingEmail, setSavingEmail] = useState(false);
-  const [emailSaved, setEmailSaved] = useState(false);
-  const [emailError, setEmailError] = useState("");
+  const revenue = useMemo(() => {
+    let grossVolume = 0;
+    let totalDeliveryFees = 0;
 
-  const filtered = settlements.filter(
+    for (const o of completedOrders) {
+      grossVolume += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+      totalDeliveryFees += o.delivery_fee_kobo ?? 0;
+    }
+
+    const totalServiceFees = completedOrders.length * serviceFeeFixedKobo;
+    const totalCommissions = Math.round(totalDeliveryFees * deliveryCommissionPct);
+    const netSettled = settlements
+      .filter((s) => s.status === "paid")
+      .reduce((sum, s) => sum + s.amount_kobo, 0);
+
+    return { grossVolume, totalServiceFees, totalCommissions, netSettled };
+  }, [completedOrders, settlements, serviceFeeFixedKobo, deliveryCommissionPct]);
+
+  /* ── Daily grouped orders ───────────────────────────────────────────────── */
+
+  const dailyGroups = useMemo(() => {
+    const groups: Record<string, OrderRow[]> = {};
+    for (const o of completedOrders) {
+      const day = toWATDate(o.created_at);
+      if (!groups[day]) groups[day] = [];
+      groups[day].push(o);
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, dayOrders]) => {
+        let gross = 0;
+        let deliveryTotal = 0;
+        for (const o of dayOrders) {
+          gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+          deliveryTotal += o.delivery_fee_kobo ?? 0;
+        }
+        const serviceFees = dayOrders.length * serviceFeeFixedKobo;
+        const commission = Math.round(deliveryTotal * deliveryCommissionPct);
+        const net = gross - serviceFees - commission;
+        const allSettled = dayOrders.every((o) => o.settlement_id != null);
+
+        // Build merchant breakdown for expanded view
+        const merchantMap: Record<string, { name: string; orders: number; gross: number }> = {};
+        for (const o of dayOrders) {
+          const rid = o.restaurant_id;
+          if (!merchantMap[rid]) {
+            merchantMap[rid] = { name: o.restaurants?.name ?? "Unknown", orders: 0, gross: 0 };
+          }
+          merchantMap[rid].orders++;
+          merchantMap[rid].gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+        }
+
+        return {
+          date,
+          orderCount: dayOrders.length,
+          gross,
+          serviceFees,
+          commission,
+          net,
+          allSettled,
+          merchants: Object.values(merchantMap),
+        };
+      });
+  }, [completedOrders, serviceFeeFixedKobo, deliveryCommissionPct]);
+
+  /* ── Settlement history filter ──────────────────────────────────────────── */
+
+  const filteredSettlements = settlements.filter(
     (s) => statusFilter === "all" || s.status === statusFilter
   );
 
-  async function saveDeliverySettings(e: React.FormEvent) {
-    e.preventDefault();
-    setSavingDelivery(true);
-    setDeliveryError("");
+  /* ── Next settlement time ───────────────────────────────────────────────── */
+
+  const nextSettlement = useMemo(() => {
+    const now = new Date();
+    const next = new Date(now);
+    next.setUTCHours(8, 0, 0, 0); // 9 AM WAT
+    if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+    return next.toLocaleDateString("en-NG", {
+      weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+  }, []);
+
+  /* ── Export CSV ─────────────────────────────────────────────────────────── */
+
+  async function exportCSV(date: string) {
+    setExportingDate(date);
     try {
-      const res = await fetch("/api/admin/platform-settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          delivery_base_fee_kobo: Math.round(parseFloat(baseFeeNgn) * 100),
-          delivery_per_km_rate_kobo: Math.round(parseFloat(perKmNgn) * 100),
-          delivery_max_radius_km: parseInt(maxRadius),
-          delivery_max_fee_kobo: Math.round(parseFloat(maxFeeNgn) * 100),
-        }),
-      });
-      const data = await res.json();
+      const res = await fetch(`/api/admin/settlements/export?date=${date}`);
       if (!res.ok) {
-        setDeliveryError(data.error ?? "Failed to save");
-      } else {
-        setDeliverySaved(true);
-        setTimeout(() => setDeliverySaved(false), 3000);
+        const data = await res.json();
+        alert(data.error ?? "Export failed");
+        return;
       }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `foodo-payout-${date}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch {
-      setDeliveryError("Network error");
+      alert("Network error");
     }
-    setSavingDelivery(false);
+    setExportingDate(null);
   }
 
-  async function saveAdminEmail(e: React.FormEvent) {
-    e.preventDefault();
-    setSavingEmail(true);
-    setEmailError("");
-    try {
-      const res = await fetch("/api/admin/platform-settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          admin_alert_email: adminAlertEmail || null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setEmailError(data.error ?? "Failed to save");
-      } else {
-        setEmailSaved(true);
-        setTimeout(() => setEmailSaved(false), 3000);
-      }
-    } catch {
-      setEmailError("Network error");
-    }
-    setSavingEmail(false);
+  function toggleDay(date: string) {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
   }
 
-  async function saveAdminWhatsapp(e: React.FormEvent) {
-    e.preventDefault();
-    // Validate format if not clearing
-    if (adminWhatsappNumber && !/^\+[0-9]{9,14}$/.test(adminWhatsappNumber)) {
-      setWhatsappError("Invalid format — must start with + followed by 10-15 digits");
-      return;
-    }
-    setSavingWhatsapp(true);
-    setWhatsappError("");
-    try {
-      const res = await fetch("/api/admin/platform-settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          admin_whatsapp_number: adminWhatsappNumber || null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setWhatsappError(data.error ?? "Failed to save");
-      } else {
-        setWhatsappSaved(true);
-        setTimeout(() => setWhatsappSaved(false), 3000);
-      }
-    } catch {
-      setWhatsappError("Network error");
-    }
-    setSavingWhatsapp(false);
-  }
-
-  // Live formula preview at 3km, 7km, 15km
-  function previewFee(km: number): string {
-    const base = parseFloat(baseFeeNgn) || 0;
-    const rate = parseFloat(perKmNgn) || 0;
-    const cap = parseFloat(maxFeeNgn) || 999999;
-    const fee = Math.min(base + km * rate, cap);
-    return `₦${fee.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
-  }
-
-  async function triggerSettlement(restaurantId: string) {
-    setTriggering(restaurantId);
-    try {
-      const res = await fetch("/api/admin/settlements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ restaurant_id: restaurantId }),
-      });
-      const data = await res.json();
-      setTriggerResult((prev) => ({
-        ...prev,
-        [restaurantId]: res.ok ? "Settlement triggered" : (data.error ?? "Failed"),
-      }));
-    } catch {
-      setTriggerResult((prev) => ({ ...prev, [restaurantId]: "Network error" }));
-    }
-    setTriggering(null);
-  }
-
-  async function saveSettings(e: React.FormEvent) {
-    e.preventDefault();
-    setSavingSettings(true);
-    setSettingsError("");
-    try {
-      const res = await fetch("/api/admin/platform-settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          service_charge_pct: parseFloat(pct) / 100,
-          service_charge_fixed_kobo: Math.round(parseFloat(fixedNgn) * 100),
-          settlement_hold_hours: parseInt(holdHours),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setSettingsError(data.error ?? "Failed to save");
-      } else {
-        setSettingsSaved(true);
-        setTimeout(() => setSettingsSaved(false), 3000);
-      }
-    } catch {
-      setSettingsError("Network error");
-    }
-    setSavingSettings(false);
-  }
+  /* ── Render ──────────────────────────────────────────────────────────────── */
 
   return (
-    <div className="space-y-8">
-      {/* Wallets with available balance */}
-      {pendingWallets.length > 0 && (
-        <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-black-200">
-            <h2 className="font-bold text-black-900 text-sm">
-              Ready to Settle ({pendingWallets.length})
-            </h2>
-          </div>
-          <div className="divide-y divide-black-100">
-            {pendingWallets.map((w) => {
-              const name = w.restaurants?.name ?? "Unknown";
-              const hasRecipient = !!w.restaurants?.paystack_recipient_code;
-              const result = triggerResult[w.restaurant_id];
-              return (
-                <div
-                  key={w.restaurant_id}
-                  className="flex items-center gap-4 px-4 py-3"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-black-900 truncate">{name}</p>
-                    <p className="text-xs text-black-400 mt-0.5">
-                      Available: {formatKobo(w.available_balance_kobo)}
-                      {!hasRecipient && (
-                        <span className="ml-2 text-cinnabar-500">No bank account</span>
-                      )}
-                    </p>
-                    {result && (
-                      <p className="text-xs text-viridian-500 mt-0.5">{result}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => triggerSettlement(w.restaurant_id)}
-                    disabled={!hasRecipient || triggering === w.restaurant_id}
-                    className="text-sm bg-purple-500 hover:bg-purple-400 disabled:opacity-50 text-white font-medium px-4 py-1.5 rounded-xl transition-colors flex-shrink-0"
-                  >
-                    {triggering === w.restaurant_id ? "Processing…" : "Trigger"}
-                  </button>
-                </div>
-              );
-            })}
+    <div className="space-y-6">
+      {/* ── Summary Cards ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <SummaryCard label="Gross Volume" value={formatKobo(revenue.grossVolume)} sublabel="All completed orders" />
+        <SummaryCard label="Total Service Fees" value={formatKobo(revenue.totalServiceFees)} sublabel={`₦${(serviceFeeFixedKobo / 100).toFixed(0)} × ${completedOrders.length} orders`} />
+        <SummaryCard label="Total Commissions" value={formatKobo(revenue.totalCommissions)} sublabel={`${(deliveryCommissionPct * 100).toFixed(0)}% delivery commission`} />
+        <SummaryCard label="Net Settled Amount" value={formatKobo(revenue.netSettled)} sublabel="Paid to merchants" highlight="green" />
+        <div className="bg-white rounded-2xl border border-black-200 px-4 py-4 flex flex-col justify-between">
+          <p className="text-xs text-black-500 font-medium">Payout Window</p>
+          <p className="text-sm font-bold text-black-900 mt-1">9 AM – 12 PM WAT</p>
+          <p className="text-[10px] text-black-400 mt-0.5">Next: {nextSettlement}</p>
+        </div>
+      </div>
+
+      {/* ── Daily Payout Summary ──────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <h2 className="font-bold text-black-900 text-sm">Daily Payout Summary</h2>
+          <p className="text-xs text-black-400 mt-0.5">
+            {dailyGroups.length} days · Click to expand merchant breakdown
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-black-100 bg-black-50">
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500 w-8" />
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Service Fees</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Delivery Commission</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Net Payout</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Status</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black-50">
+              {dailyGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-black-400 text-sm">
+                    No completed orders found
+                  </td>
+                </tr>
+              ) : (
+                dailyGroups.map((day) => {
+                  const expanded = expandedDays.has(day.date);
+                  return (
+                    <DailyRow
+                      key={day.date}
+                      day={day}
+                      expanded={expanded}
+                      onToggle={() => toggleDay(day.date)}
+                      onExport={() => exportCSV(day.date)}
+                      exporting={exportingDate === day.date}
+                    />
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Merchant Settlements ──────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-black-900 text-sm">Merchant Settlements</h2>
+              <p className="text-xs text-black-400 mt-0.5">
+                {merchantSummaries.length} restaurants · Click to view details
+              </p>
+            </div>
+            <input
+              type="text"
+              value={merchantSearch}
+              onChange={(e) => setMerchantSearch(e.target.value)}
+              placeholder="Search restaurant…"
+              className="px-3 py-1.5 text-xs rounded-lg border border-black-200 text-black-900 focus:outline-none focus:border-purple-500 w-48"
+            />
           </div>
         </div>
-      )}
 
-      {/* Settlements history */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-black-100 bg-black-50">
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Restaurant</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Total Earned</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Total Paid</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Outstanding</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Bank</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Payouts</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black-50">
+              {merchantSummaries
+                .filter((m) =>
+                  !merchantSearch.trim() ||
+                  m.restaurant_name.toLowerCase().includes(merchantSearch.toLowerCase())
+                )
+                .map((m) => {
+                  const outstanding = m.available_balance_kobo + m.pending_balance_kobo;
+                  return (
+                    <tr key={m.restaurant_id} className="hover:bg-black-25 transition-colors group">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-black-900 truncate max-w-[200px]">
+                          {m.restaurant_name}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-black-700">
+                        {formatKobo(m.total_earned_kobo)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-viridian-600 font-medium">
+                        {formatKobo(m.total_paid_kobo)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-black-900">
+                        {formatKobo(outstanding)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`inline-block w-2 h-2 rounded-full ${
+                            m.has_bank_account ? "bg-viridian-500" : "bg-cinnabar-400"
+                          }`}
+                          title={m.has_bank_account ? "Bank account linked" : "No bank account"}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-center text-black-500 tabular-nums">
+                        {m.settlement_count}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <Link
+                          href={`/admin/settlements/${m.restaurant_id}`}
+                          className="text-xs text-purple-500 hover:text-purple-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          View →
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              {merchantSummaries.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-10 text-black-400 text-sm">
+                    No merchants found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Settlement History ────────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-black-200 flex flex-wrap gap-2 items-center justify-between">
-          <h2 className="font-bold text-black-900 text-sm">Settlement History</h2>
+          <div>
+            <h2 className="font-bold text-black-900 text-sm">Settlement History</h2>
+            <p className="text-xs text-black-400 mt-0.5">
+              Recorded payouts to restaurants
+            </p>
+          </div>
           <div className="flex gap-2 flex-wrap">
             {(["all", "pending", "processing", "paid", "failed"] as const).map((s) => (
               <button
@@ -316,22 +408,26 @@ export function SettlementsClient({
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {filteredSettlements.length === 0 ? (
           <p className="text-black-400 text-sm text-center py-10">No settlements found</p>
         ) : (
           <div className="divide-y divide-black-100">
-            {filtered.map((s) => (
+            {filteredSettlements.map((s) => (
               <div key={s.id} className="flex items-center gap-4 px-4 py-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-black-900 truncate">
-                    {s.restaurants?.name ?? "Unknown"}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-black-900 truncate">
+                      {s.restaurants?.name ?? "Unknown"}
+                    </p>
+                    <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${TYPE_STYLES[s.settlement_type] ?? TYPE_STYLES.automatic}`}>
+                      {s.settlement_type}
+                    </span>
+                  </div>
                   <p className="text-xs text-black-400 mt-0.5">
-                    {new Date(s.created_at).toLocaleDateString("en-NG", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
+                    {s.period_date ? `Period: ${s.period_date} · ` : ""}
+                    {s.order_count > 0 ? `${s.order_count} orders · ` : ""}
+                    {new Date(s.created_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
+                    {s.bank_reference ? ` · Ref: ${s.bank_reference}` : ""}
                     {s.paystack_transfer_ref ? ` · ${s.paystack_transfer_ref}` : ""}
                   </p>
                   {s.failure_reason && (
@@ -339,7 +435,7 @@ export function SettlementsClient({
                   )}
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="text-sm font-semibold text-black-900">
+                  <p className="text-sm font-semibold text-black-900 tabular-nums">
                     {formatKobo(s.amount_kobo)}
                   </p>
                   <span
@@ -355,230 +451,121 @@ export function SettlementsClient({
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      {/* Delivery pricing config */}
-      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-black-200">
-          <h2 className="font-bold text-black-900 text-sm">Delivery Pricing</h2>
-          <p className="text-xs text-black-400 mt-0.5">
-            Formula: Base fee + (distance × per-km rate), capped at max fee
-          </p>
-        </div>
-        <form onSubmit={saveDeliverySettings} className="px-4 py-4 space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">Base fee (₦)</label>
-              <input
-                type="number"
-                step="1"
-                min="0"
-                value={baseFeeNgn}
-                onChange={(e) => setBaseFeeNgn(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">Per km rate (₦/km)</label>
-              <input
-                type="number"
-                step="1"
-                min="0"
-                value={perKmNgn}
-                onChange={(e) => setPerKmNgn(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">Max radius (km)</label>
-              <input
-                type="number"
-                step="1"
-                min="1"
-                max="100"
-                value={maxRadius}
-                onChange={(e) => setMaxRadius(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">Max fee cap (₦)</label>
-              <input
-                type="number"
-                step="1"
-                min="0"
-                value={maxFeeNgn}
-                onChange={(e) => setMaxFeeNgn(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-          </div>
+/* ── Daily row subcomponent ────────────────────────────────────────────────── */
 
-          {/* Live formula preview */}
-          <div className="bg-black-50 rounded-xl px-4 py-3 text-xs text-black-500">
-            <span className="font-medium text-black-700">Preview: </span>
-            at 3km → {previewFee(3)} &nbsp;|&nbsp;
-            at 7km → {previewFee(7)} &nbsp;|&nbsp;
-            at 15km → {previewFee(15)}
-          </div>
+function DailyRow({
+  day,
+  expanded,
+  onToggle,
+  onExport,
+  exporting,
+}: {
+  day: {
+    date: string;
+    orderCount: number;
+    gross: number;
+    serviceFees: number;
+    commission: number;
+    net: number;
+    allSettled: boolean;
+    merchants: { name: string; orders: number; gross: number }[];
+  };
+  expanded: boolean;
+  onToggle: () => void;
+  onExport: () => void;
+  exporting: boolean;
+}) {
+  const dateLabel = new Date(day.date + "T12:00:00").toLocaleDateString("en-NG", {
+    weekday: "short", day: "numeric", month: "short",
+  });
 
-          {deliveryError && <p className="text-xs text-cinnabar-500">{deliveryError}</p>}
-          <button
-            type="submit"
-            disabled={savingDelivery}
-            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
-          >
-            {savingDelivery ? "Saving…" : deliverySaved ? "Saved!" : "Save delivery pricing"}
-          </button>
-        </form>
-      </div>
-
-      {/* Service charge config */}
-      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-black-200">
-          <h2 className="font-bold text-black-900 text-sm">Platform Fee Configuration</h2>
-          <p className="text-xs text-black-400 mt-0.5">
-            Changes apply to new orders only
-          </p>
-        </div>
-        <form onSubmit={saveSettings} className="px-4 py-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">
-                Service charge %
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={pct}
-                  onChange={(e) => setPct(e.target.value)}
-                  className="w-full px-4 py-2.5 pr-8 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-black-400">%</span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">
-                Fixed fee (₦)
-              </label>
-              <input
-                type="number"
-                step="1"
-                min="0"
-                value={fixedNgn}
-                onChange={(e) => setFixedNgn(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">
-                Hold period (hours)
-              </label>
-              <input
-                type="number"
-                step="1"
-                min="0"
-                value={holdHours}
-                onChange={(e) => setHoldHours(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-              />
-            </div>
-          </div>
-          {settingsError && (
-            <p className="text-xs text-cinnabar-500">{settingsError}</p>
+  return (
+    <>
+      <tr className="hover:bg-black-25 transition-colors cursor-pointer" onClick={onToggle}>
+        <td className="px-4 py-2.5">
+          {expanded ? (
+            <ChevronDown size={14} className="text-black-400" />
+          ) : (
+            <ChevronRight size={14} className="text-black-400" />
           )}
-          <button
-            type="submit"
-            disabled={savingSettings}
-            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+        </td>
+        <td className="px-4 py-2.5 font-medium text-black-900 whitespace-nowrap">{dateLabel}</td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{day.orderCount}</td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{formatKobo(day.gross)}</td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.serviceFees)}</td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.commission)}</td>
+        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-black-900">{formatKobo(day.net)}</td>
+        <td className="px-4 py-2.5 text-center">
+          <span
+            className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+              day.allSettled ? "bg-viridian-100 text-viridian-600" : "bg-dixie-100 text-dixie-600"
+            }`}
           >
-            {savingSettings ? "Saving…" : settingsSaved ? "✓ Saved!" : "Save configuration"}
-          </button>
-        </form>
-      </div>
-
-      {/* Admin notifications */}
-      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-black-200">
-          <h2 className="font-bold text-black-900 text-sm">Admin Notifications</h2>
-          <p className="text-xs text-black-400 mt-0.5">
-            Receive alerts for all new orders across all restaurants
-          </p>
-        </div>
-        <div className="divide-y divide-black-100">
-          {/* WhatsApp */}
-          <form onSubmit={saveAdminWhatsapp} className="px-4 py-4 space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">
-                Admin WhatsApp Alert Number
-              </label>
-              <input
-                type="tel"
-                value={adminWhatsappNumber}
-                onChange={(e) => setAdminWhatsappNumber(e.target.value)}
-                placeholder="+2348012345678"
-                className={`w-full px-3 py-2.5 rounded-xl border text-sm text-black-900 focus:outline-none ${
-                  adminWhatsappNumber && !/^\+[0-9]{9,14}$/.test(adminWhatsappNumber)
-                    ? "border-cinnabar-500 focus:border-cinnabar-500"
-                    : "border-black-200 focus:border-black-400"
-                }`}
-              />
-              <p className="text-xs text-black-400 mt-1">
-                All new orders from all restaurants will be sent to this number
-              </p>
-              {adminWhatsappNumber && /^\+[0-9]{9,14}$/.test(adminWhatsappNumber) && (
-                <p className="text-xs text-viridian-500 font-medium mt-1.5 flex items-center gap-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-viridian-500" />
-                  ✓ Active — receiving all order alerts
-                </p>
-              )}
-            </div>
-            {whatsappError && <p className="text-xs text-cinnabar-500">{whatsappError}</p>}
+            {day.allSettled ? "Settled" : "Pending"}
+          </span>
+        </td>
+        <td className="px-4 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+          {!day.allSettled && (
             <button
-              type="submit"
-              disabled={savingWhatsapp}
-              className="bg-black-900 hover:bg-black-700 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+              onClick={onExport}
+              disabled={exporting}
+              className="inline-flex items-center gap-1 text-xs text-purple-500 hover:text-purple-400 font-medium disabled:opacity-50"
             >
-              {savingWhatsapp ? "Saving…" : whatsappSaved ? "✓ Saved!" : "Save WhatsApp number"}
+              <Download size={12} />
+              {exporting ? "…" : "CSV"}
             </button>
-          </form>
-
-          {/* Email */}
-          <form onSubmit={saveAdminEmail} className="px-4 py-4 space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">
-                Admin Alert Email
-              </label>
-              <input
-                type="email"
-                value={adminAlertEmail}
-                onChange={(e) => setAdminAlertEmail(e.target.value)}
-                placeholder="admin@cybric.tech"
-                className="w-full px-3 py-2.5 rounded-xl border border-black-200 focus:border-black-400 text-sm text-black-900 focus:outline-none"
-              />
-              <p className="text-xs text-black-400 mt-1">
-                All new orders from all restaurants will be sent to this email
-              </p>
-              {adminAlertEmail && (
-                <p className="text-xs text-viridian-500 font-medium mt-1.5 flex items-center gap-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-viridian-500" />
-                  ✓ Active — receiving all order alerts
-                </p>
-              )}
+          )}
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={9} className="bg-black-25 px-8 py-3">
+            <div className="text-xs space-y-1">
+              <p className="font-semibold text-black-600 mb-1.5">Merchant Breakdown</p>
+              {day.merchants.map((m, i) => (
+                <div key={i} className="flex justify-between text-black-600">
+                  <span>{m.name} ({m.orders} orders)</span>
+                  <span className="tabular-nums">{formatKobo(m.gross)}</span>
+                </div>
+              ))}
             </div>
-            {emailError && <p className="text-xs text-cinnabar-500">{emailError}</p>}
-            <button
-              type="submit"
-              disabled={savingEmail}
-              className="bg-black-900 hover:bg-black-700 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
-            >
-              {savingEmail ? "Saving…" : emailSaved ? "✓ Saved!" : "Save email address"}
-            </button>
-          </form>
-        </div>
-      </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/* ── Summary card subcomponent ─────────────────────────────────────────────── */
+
+function SummaryCard({
+  label,
+  value,
+  sublabel,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  sublabel: string;
+  highlight?: "green";
+}) {
+  return (
+    <div
+      className={`rounded-2xl border px-4 py-4 ${
+        highlight === "green"
+          ? "border-viridian-200 bg-viridian-50"
+          : "bg-white border-black-200"
+      }`}
+    >
+      <p className="text-xs text-black-500 font-medium">{label}</p>
+      <p className={`text-lg font-bold mt-1 ${highlight === "green" ? "text-viridian-600" : "text-black-900"}`}>
+        {value}
+      </p>
+      <p className="text-[10px] text-black-400 mt-0.5">{sublabel}</p>
     </div>
   );
 }

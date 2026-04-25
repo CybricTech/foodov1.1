@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@foodo/ui";
-import { Store, ExternalLink, MapPin } from "lucide-react";
+import { Store, ExternalLink, MapPin, KeyRound } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
 
 type RestaurantWithLocation = Restaurant & {
@@ -23,6 +23,7 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
   const [confirmDelete, setConfirmDelete] = useState<Restaurant | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [resetTarget, setResetTarget] = useState<RestaurantWithLocation | null>(null);
 
   async function toggleActive(id: string, current: boolean) {
     setToggling(id);
@@ -133,6 +134,13 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
               >
                 {toggling === r.id ? "…" : r.is_active ? "Pause" : "Activate"}
               </button>
+              <button
+                onClick={() => setResetTarget(r)}
+                title="Reset password"
+                className="text-black-400 hover:text-black-900 transition-colors"
+              >
+                <KeyRound size={15} />
+              </button>
               <Link
                 href={`/admin/merchants/${r.id}`}
                 className="text-xs text-purple-500 hover:text-purple-400 px-3 py-1.5 rounded-lg border border-purple-200 hover:border-purple-400 transition-colors"
@@ -198,6 +206,13 @@ export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
             setRestaurants((prev) => [restaurant, ...prev]);
             setShowOnboard(false);
           }}
+        />
+      )}
+
+      {resetTarget && (
+        <ResetPasswordModal
+          restaurant={resetTarget}
+          onClose={() => setResetTarget(null)}
         />
       )}
     </div>
@@ -371,6 +386,154 @@ function OnboardModal({
           >
             {loading ? "Creating…" : "Onboard merchant"}
           </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordModal({
+  restaurant,
+  onClose,
+}: {
+  restaurant: RestaurantWithLocation;
+  onClose: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (password !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
+    setLoading(true);
+    setError("");
+
+    const res = await fetch("/api/admin/merchants/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ restaurantId: restaurant.id, newPassword: password }),
+    });
+
+    const data = await res.json();
+    setLoading(false);
+
+    if (!res.ok) {
+      setError(data.error ?? "Password reset failed");
+      return;
+    }
+
+    setSuccess(data.email);
+  }
+
+  if (success) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-900/40 px-4">
+        <div className="bg-white rounded-2xl border border-black-200 w-full max-w-sm">
+          <div className="px-5 py-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-viridian-100 flex items-center justify-center">
+                <KeyRound size={14} className="text-viridian-600" />
+              </div>
+              <h2 className="font-bold text-black-900">Password updated</h2>
+            </div>
+            <p className="text-sm text-black-500">
+              The password for <span className="text-black-900 font-medium">{success}</span> has
+              been reset. Share the new credentials securely with the merchant.
+            </p>
+            <button
+              onClick={onClose}
+              className="w-full bg-purple-500 hover:bg-purple-400 text-white font-semibold py-2.5 rounded-xl transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black-900/40 px-4">
+      <div className="bg-white rounded-2xl border border-black-200 w-full max-w-sm">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-black-200">
+          <div className="flex items-center gap-2">
+            <KeyRound size={16} className="text-black-400" />
+            <h2 className="font-bold text-black-900">Reset password</h2>
+          </div>
+          <button onClick={onClose} className="text-black-400 hover:text-black-900">
+            ✕
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="px-4 py-4 space-y-4">
+          <p className="text-sm text-black-500">
+            Set a new password for{" "}
+            <span className="text-black-900 font-medium">{restaurant.name}</span>.
+          </p>
+
+          <AdminField label="New password">
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+                className={cn(adminInputCls, "pr-16")}
+                placeholder="Min. 8 characters"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-black-400 hover:text-black-900"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+          </AdminField>
+
+          <AdminField label="Confirm password">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              minLength={8}
+              className={adminInputCls}
+              placeholder="Repeat password"
+              autoComplete="new-password"
+            />
+          </AdminField>
+
+          {error && (
+            <p className="text-sm text-cinnabar-500">{error}</p>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="flex-1 py-2.5 rounded-xl border border-black-200 text-sm text-black-500 hover:text-black-900 hover:border-black-400 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+            >
+              {loading ? "Resetting…" : "Reset password"}
+            </button>
+          </div>
         </form>
       </div>
     </div>

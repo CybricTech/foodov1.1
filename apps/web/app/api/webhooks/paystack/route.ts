@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
       .single(),
     supabase
       .from("restaurants")
-      .select("name, notification_email")
+      .select("name, notification_email, logistics_default")
       .eq("id", restaurantId)
       .single(),
   ]);
@@ -194,6 +194,7 @@ export async function POST(request: NextRequest) {
 
   const subtotalKobo = meta.subtotal_kobo as number;
   const deliveryFeeKobo = meta.delivery_fee_kobo as number;
+  const vatKobo = (meta.vat_kobo as number) || 0;
 
   // Determine who bears the service fee.
   // If service_fee_kobo is in metadata the customer already paid it at checkout —
@@ -206,11 +207,26 @@ export async function POST(request: NextRequest) {
     ? metaServiceFeeKobo
     : Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
 
-  // When customer paid: merchant credit = full subtotal (no deduction)
-  // When merchant pays: merchant credit = subtotal minus service charge
+  // Determine delivery dispatch type for this order
+  const restaurantLogisticsDefault = (restaurantRow as unknown as { logistics_default?: string } | null)?.logistics_default ?? 'own_rider';
+  const dispatchType = restaurantLogisticsDefault;
+  const foodoHandlesDelivery = dispatchType === 'platform_rider';
+
+  // Delivery fee split per revenue model:
+  // - Foodo delivers: Foodo keeps 100% → restaurant gets ₦0 of delivery fee
+  // - Restaurant delivers: Foodo keeps 10% → restaurant gets 90%
+  const foodoDeliveryCut = foodoHandlesDelivery
+    ? deliveryFeeKobo
+    : Math.round(deliveryFeeKobo * 0.1);
+  const restaurantDeliveryShare = deliveryFeeKobo - foodoDeliveryCut;
+
+  // Restaurant credit = subtotal + VAT + their share of delivery fee
+  // - VAT is collected on behalf of the restaurant (they remit to FIRS)
+  // - Service fee goes to Foodo (customer pays it directly, not deducted from restaurant)
+  // - When customer doesn't pay service fee (legacy): deduct from restaurant
   const restaurantCreditKobo = customerPaidServiceFee
-    ? subtotalKobo
-    : subtotalKobo - serviceChargeKobo;
+    ? subtotalKobo + vatKobo + restaurantDeliveryShare
+    : subtotalKobo + vatKobo + restaurantDeliveryShare - serviceChargeKobo;
 
   const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
 
@@ -219,7 +235,7 @@ export async function POST(request: NextRequest) {
     .from("restaurant_wallets")
     .upsert({ restaurant_id: restaurantId }, { onConflict: "restaurant_id" });
 
-  // Build wallet transaction rows — only debit service charge when merchant bears the fee
+  // Build wallet transaction rows
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const walletRows: any[] = [
     {
@@ -230,8 +246,9 @@ export async function POST(request: NextRequest) {
       amount_kobo: restaurantCreditKobo,
       status: "pending",
       available_at: availableAt,
-      description: `Order #${order.order_number} — net revenue`,
+      description: `Order #${order.order_number} — net revenue (subtotal${vatKobo > 0 ? ' + VAT' : ''}${restaurantDeliveryShare > 0 ? ' + delivery share' : ''})`,
     },
+    // Service charge debit (only when merchant bears the fee in legacy orders)
     ...(customerPaidServiceFee
       ? []
       : [
@@ -245,15 +262,20 @@ export async function POST(request: NextRequest) {
             description: `Platform fee (${(Number(pct) * 100).toFixed(1)}% + ₦${(Number(fixedFee) / 100).toFixed(0)} fixed) on Order #${order.order_number}`,
           },
         ]),
-    {
-      restaurant_id: restaurantId,
-      order_id: order.id,
-      type: "logistics_fee",
-      direction: "debit",
-      amount_kobo: deliveryFeeKobo,
-      status: "settled",
-      description: `Delivery fee — Order #${order.order_number}`,
-    },
+    // Foodo's delivery fee cut
+    ...(foodoDeliveryCut > 0
+      ? [
+          {
+            restaurant_id: restaurantId,
+            order_id: order.id,
+            type: "logistics_fee",
+            direction: "debit",
+            amount_kobo: foodoDeliveryCut,
+            status: "settled",
+            description: `Delivery fee${foodoHandlesDelivery ? '' : ' commission (10%)'} — Order #${order.order_number}`,
+          },
+        ]
+      : []),
   ];
 
   await supabase.from("wallet_transactions").insert(walletRows);

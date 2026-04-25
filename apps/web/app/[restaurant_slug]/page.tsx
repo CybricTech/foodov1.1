@@ -151,6 +151,12 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
               View menu
             </Link>
           </div>
+          <Link
+            href={`/${params.restaurant_slug}/orders/track`}
+            className="text-white/60 hover:text-white/90 text-xs font-medium text-center block transition-colors"
+          >
+            Have an order? Track it →
+          </Link>
         </div>
       </section>
 
