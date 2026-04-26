@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatKobo } from "@foodo/utils";
 import { DeliveryFilters } from "@/components/admin/delivery-filters";
@@ -87,7 +88,19 @@ export default async function AdminAnalyticsPage({
       let q = supabase
         .from("orders")
         .select(
-          "id, order_number, delivery_address, delivery_fee_kobo, delivery_distance_km, total_kobo, created_at, restaurant_id, status"
+          `
+          id,
+          order_number,
+          delivery_address,
+          delivery_fee_kobo,
+          delivery_distance_km,
+          total_kobo,
+          created_at,
+          restaurant_id,
+          status,
+          restaurants (logistics_default),
+          delivery_assignments (dispatch_type)
+          `
         )
         .eq("fulfillment_type", "delivery")
         .order("created_at", { ascending: false })
@@ -102,7 +115,7 @@ export default async function AdminAnalyticsPage({
 
   const allOrders = orders ?? [];
   const allPayments = payments ?? [];
-  const allDeliveries = (deliveries ?? []) as Array<{
+  type RawDelivery = {
     id: string;
     order_number: string;
     delivery_address: string | null;
@@ -112,7 +125,20 @@ export default async function AdminAnalyticsPage({
     created_at: string;
     restaurant_id: string;
     status: string;
-  }>;
+    restaurants?: { logistics_default: string } | null;
+    delivery_assignments?: Array<{ dispatch_type: string }> | null;
+  };
+
+  const rawDeliveries = (deliveries ?? []) as RawDelivery[];
+
+  // Normalize dispatch_type from delivery_assignments join or restaurant default
+  const allDeliveries = rawDeliveries.map((d) => {
+    const dispatch_type =
+      d.delivery_assignments && d.delivery_assignments.length > 0
+        ? d.delivery_assignments[0].dispatch_type
+        : d.restaurants?.logistics_default ?? null;
+    return { ...d, dispatch_type };
+  });
   const restaurantMap = new Map(
     (restaurants ?? []).map((r) => [r.id, r.name])
   );
@@ -204,10 +230,12 @@ export default async function AdminAnalyticsPage({
             <h3 className="font-bold text-black-900 text-sm">Delivery Breakdown</h3>
             <p className="text-xs text-black-400 mt-0.5">Most recent 200 · filtered server-side</p>
           </div>
-          <DeliveryFilters
-            restaurants={(restaurants ?? []).map((r) => ({ id: r.id, name: r.name }))}
-            totalCount={allDeliveries.length}
-          />
+          <Suspense>
+            <DeliveryFilters
+              restaurants={(restaurants ?? []).map((r) => ({ id: r.id, name: r.name }))}
+              totalCount={allDeliveries.length}
+            />
+          </Suspense>
 
           {allDeliveries.length === 0 ? (
             <p className="text-black-400 text-sm px-5 py-10 text-center">No deliveries yet</p>
@@ -221,6 +249,7 @@ export default async function AdminAnalyticsPage({
                     <th className="px-5 py-3 text-left text-xs font-semibold text-black-500 uppercase tracking-wide">Delivery address</th>
                     <th className="px-5 py-3 text-left text-xs font-semibold text-black-500 uppercase tracking-wide">Distance</th>
                     <th className="px-5 py-3 text-right text-xs font-semibold text-black-500 uppercase tracking-wide">Fee charged</th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold text-black-500 uppercase tracking-wide">Carrier</th>
                     <th className="px-5 py-3 text-left text-xs font-semibold text-black-500 uppercase tracking-wide">Status</th>
                     <th className="px-5 py-3 text-left text-xs font-semibold text-black-500 uppercase tracking-wide">Date</th>
                   </tr>
@@ -248,6 +277,9 @@ export default async function AdminAnalyticsPage({
                           ? formatKobo(d.delivery_fee_kobo)
                           : <span className="text-viridian-600 font-medium">Free</span>
                         }
+                      </td>
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <CarrierBadge dispatchType={d.dispatch_type} />
                       </td>
                       <td className="px-5 py-3 whitespace-nowrap">
                         <StatusBadge status={d.status} />
@@ -352,6 +384,31 @@ const STATUS_LABELS: Record<string, string> = {
   delivered:        "Delivered",
   cancelled:        "Cancelled",
 };
+
+const CARRIER_STYLES: Record<string, string> = {
+  platform_rider: "bg-purple-50 text-purple-700",
+  own_rider:      "bg-viridian-50 text-viridian-700",
+  third_party:    "bg-dixie-50 text-dixie-700",
+};
+
+const CARRIER_LABELS: Record<string, string> = {
+  platform_rider: "Platform",
+  own_rider:      "In-house",
+  third_party:    "3rd Party",
+};
+
+function CarrierBadge({ dispatchType }: { dispatchType: string | null }) {
+  const type = dispatchType ?? "own_rider";
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+        CARRIER_STYLES[type] ?? "bg-black-100 text-black-600"
+      }`}
+    >
+      {CARRIER_LABELS[type] ?? type}
+    </span>
+  );
+}
 
 function StatusBadge({ status }: { status: string }) {
   return (

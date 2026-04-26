@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { formatKobo } from "@foodo/utils";
 import Link from "next/link";
-import { ArrowLeft, Download, CheckCircle2, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, X } from "lucide-react";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -91,7 +91,7 @@ const TYPE_STYLES: Record<string, string> = {
 
 export function MerchantSettlementDetailClient({
   restaurant,
-  wallet,
+  wallet: _wallet,
   settlements,
   orders,
   platformSettings,
