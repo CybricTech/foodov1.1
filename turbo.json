@@ -5,7 +5,16 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"],
+      "env": [
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        "NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY",
+        "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "PAYSTACK_SECRET_KEY",
+        "GOOGLE_MAPS_API_KEY"
+      ]
     },
     "dev": {
       "persistent": true,
