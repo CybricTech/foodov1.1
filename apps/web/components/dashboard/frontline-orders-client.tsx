@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { useConnection } from "@/lib/connection-context";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import {
@@ -151,9 +152,41 @@ export function FrontlineOrdersClient({
   const [actionError, setActionError] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<Column>("new");
   const [, setTick] = useState(0);
   const audioRef = useRef<AudioContext | null>(null);
   const supabase = createBrowserClient();
+  const { reportRealtimeStatus, onReconnect } = useConnection();
+
+  // Refetch the full order list — used after a disconnect to fill in any
+  // events that were missed while the realtime channel was down.
+  const runCatchup = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(
+        `
+        id, order_number, status, payment_status, fulfillment_type,
+        customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
+        vat_kobo, service_fee_kobo, total_kobo, created_at,
+        special_instructions, delivery_address,
+        order_items (id, item_name, quantity, line_total_kobo, selected_options)
+      `
+      )
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      console.error("[frontline] catchup fetch error:", error.message);
+      return;
+    }
+    if (data) {
+      setOrders(data as unknown as OrderRow[]);
+    }
+  }, [restaurantId, supabase]);
+
+  useEffect(() => {
+    return onReconnect(runCatchup);
+  }, [onReconnect, runCatchup]);
 
   // Auto-refresh timestamps every 60 seconds
   useEffect(() => {
@@ -163,6 +196,7 @@ export function FrontlineOrdersClient({
 
   // Real-time subscription
   useEffect(() => {
+    let intentional = false;
     const channel = supabase
       .channel(`frontline-orders-${restaurantId}`)
       .on(
@@ -207,9 +241,23 @@ export function FrontlineOrdersClient({
           }
         }
       )
-      .subscribe();
+      .subscribe((channelStatus) => {
+        if (intentional) return;
+        if (channelStatus === "SUBSCRIBED") {
+          reportRealtimeStatus(true);
+        } else if (
+          channelStatus === "CHANNEL_ERROR" ||
+          channelStatus === "TIMED_OUT"
+        ) {
+          reportRealtimeStatus(false);
+        }
+      });
 
     return () => {
+      intentional = true;
+      // Reset to healthy on unmount — we no longer have an opinion about
+      // realtime status (e.g. user navigated away from /frontline/orders).
+      reportRealtimeStatus(true);
       channel.unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -390,9 +438,86 @@ export function FrontlineOrdersClient({
         </div>
       )}
 
-      {/* Kanban board */}
-      <div className="p-4 md:p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-5">
+      {/* Mobile tab view */}
+      <div className="lg:hidden">
+        {/* Tab bar */}
+        <div className="sticky top-0 z-10 bg-white border-b border-black-100">
+          <div className="flex overflow-x-auto scrollbar-none px-1 gap-0.5">
+            {(["new", "in_progress", "in_transit", "completed"] as Column[]).map((col) => {
+              const config = COLUMN_CONFIG[col];
+              const count = columns[col].length;
+              const isActive = activeTab === col;
+              return (
+                <button
+                  key={col}
+                  onClick={() => setActiveTab(col)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-3 text-xs font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer",
+                    isActive
+                      ? cn("border-current", config.accentText)
+                      : "border-transparent text-black-400 hover:text-black-600"
+                  )}
+                >
+                  {config.label}
+                  {count > 0 && (
+                    <span
+                      className={cn(
+                        "text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center",
+                        isActive
+                          ? cn(config.badgeBg, config.badgeText)
+                          : "bg-black-100 text-black-500"
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Tab content */}
+        <div className="p-4 space-y-3 pb-24">
+          {columns[activeTab].length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <Inbox size={28} strokeWidth={1.5} className="mb-2 text-black-300" />
+              <p className="text-sm font-medium text-black-400">
+                {activeTab === "new"
+                  ? "No new orders"
+                  : activeTab === "in_progress"
+                    ? "Nothing in progress"
+                    : activeTab === "in_transit"
+                      ? "Nothing in transit"
+                      : "No completed orders"}
+              </p>
+              {activeTab === "new" && (
+                <p className="text-xs text-black-300 mt-1">New orders appear here in real time</p>
+              )}
+            </div>
+          ) : (
+            columns[activeTab].map((order) => (
+              <div
+                key={order.id}
+                className="bg-white rounded-2xl border border-black-100 overflow-hidden"
+              >
+                <FrontlineOrderCard
+                  order={order}
+                  column={activeTab}
+                  isNew={newOrderIds.has(order.id)}
+                  onUpdateStatus={updateStatus}
+                  loading={actionLoading === order.id}
+                  alwaysExpanded
+                />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Desktop kanban */}
+      <div className="hidden lg:block p-6">
+        <div className="grid grid-cols-4 gap-5">
           {(["new", "in_progress", "in_transit", "completed"] as Column[]).map((col) => {
             const config = COLUMN_CONFIG[col];
             const colOrders = columns[col];
@@ -415,12 +540,7 @@ export function FrontlineOrdersClient({
                         col === "new" && colOrders.length > 0 && "animate-pulse"
                       )}
                     />
-                    <h2
-                      className={cn(
-                        "text-sm font-bold",
-                        config.accentText
-                      )}
-                    >
+                    <h2 className={cn("text-sm font-bold", config.accentText)}>
                       {config.label}
                     </h2>
                   </div>
@@ -447,11 +567,7 @@ export function FrontlineOrdersClient({
                 >
                   {colOrders.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-black-300">
-                      <Inbox
-                        size={28}
-                        strokeWidth={1.5}
-                        className="mb-2"
-                      />
+                      <Inbox size={28} strokeWidth={1.5} className="mb-2" />
                       <p className="text-xs font-medium text-black-400">
                         {col === "new"
                           ? "No new orders"
@@ -501,12 +617,14 @@ function FrontlineOrderCard({
   isNew,
   onUpdateStatus,
   loading,
+  alwaysExpanded = false,
 }: {
   order: OrderRow;
   column: Column;
   isNew: boolean;
   onUpdateStatus: (id: string, status: string) => void;
   loading: boolean;
+  alwaysExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const itemCount = getItemCount(order);
@@ -573,33 +691,35 @@ function FrontlineOrderCard({
             </button>
           )}
 
-          {/* View toggle */}
-          <button
-            onClick={() => setExpanded((e) => !e)}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer border",
-              expanded
-                ? "bg-purple-50 text-purple-600 border-purple-200"
-                : "bg-white text-black-500 border-black-200 hover:bg-black-50"
-            )}
-          >
-            {expanded ? (
-              <>
-                <ChevronUp size={12} />
-                Hide
-              </>
-            ) : (
-              <>
-                <ChevronDown size={12} />
-                View
-              </>
-            )}
-          </button>
+          {/* View toggle — hidden when always expanded */}
+          {!alwaysExpanded && (
+            <button
+              onClick={() => setExpanded((e) => !e)}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer border",
+                expanded
+                  ? "bg-purple-50 text-purple-600 border-purple-200"
+                  : "bg-white text-black-500 border-black-200 hover:bg-black-50"
+              )}
+            >
+              {expanded ? (
+                <>
+                  <ChevronUp size={12} />
+                  Hide
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={12} />
+                  View
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Expanded details */}
-      {expanded && (
+      {(expanded || alwaysExpanded) && (
         <div className="border-t border-black-100 bg-black-50/30">
           {/* Items list */}
           <div className="px-4 py-3 space-y-2.5">

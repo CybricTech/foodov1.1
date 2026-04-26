@@ -12,6 +12,7 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ interface FrontlineNavProps {
   userName: string;
   collapsed: boolean;
   onToggle: () => void;
+  role: string;
 }
 
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
@@ -42,6 +44,7 @@ export function FrontlineNav({
   userName,
   collapsed,
   onToggle,
+  role,
 }: FrontlineNavProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -117,6 +120,23 @@ export function FrontlineNav({
               </Link>
             );
           })}
+
+          {role === "merchant_owner" && (
+            <>
+              <div className={cn("my-2 border-t border-black-100", collapsed ? "mx-1" : "mx-0")} />
+              <Link
+                href="/dashboard"
+                className={cn(
+                  "group flex items-center rounded-xl text-sm font-medium transition-colors duration-150 cursor-pointer text-black-400 hover:bg-black-50 hover:text-black-700",
+                  collapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5"
+                )}
+                title={collapsed ? "Return to Dashboard" : undefined}
+              >
+                <LayoutDashboard size={17} strokeWidth={2} className="flex-shrink-0" />
+                {!collapsed && <span className="flex-1">Return to Dashboard</span>}
+              </Link>
+            </>
+          )}
         </div>
 
         {/* User profile + sign out */}
@@ -172,6 +192,15 @@ export function FrontlineNav({
             </Link>
           );
         })}
+        {role === "merchant_owner" && (
+          <Link
+            href="/dashboard"
+            className="flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors duration-150 text-black-400"
+          >
+            <LayoutDashboard size={20} strokeWidth={1.75} />
+            <span className="text-[10px] font-semibold">Dashboard</span>
+          </Link>
+        )}
       </nav>
     </>
   );

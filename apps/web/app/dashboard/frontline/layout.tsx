@@ -22,6 +22,7 @@ export default async function FrontlineLayout({
     <FrontlineShell
       restaurantId={session.restaurantId}
       userName={session.fullName || session.email}
+      role={session.role}
     >
       {children}
     </FrontlineShell>
