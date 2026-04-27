@@ -69,8 +69,8 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
         {/* Gradient layers — bottom-heavy for text legibility */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-black/40" />
 
-        {/* Top bar — logo */}
-        <div className="absolute top-0 inset-x-0 z-20 px-5 pt-5">
+        {/* Top bar — logo + track order */}
+        <div className="absolute top-0 inset-x-0 z-20 px-5 pt-5 flex items-center justify-between">
           {restaurant.logo_url ? (
             <div className="relative w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/30 shadow-xl bg-white flex-shrink-0">
               <Image
@@ -87,6 +87,12 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
               </span>
             </div>
           )}
+          <Link
+            href={`/${params.restaurant_slug}/orders/track`}
+            className="bg-white/15 backdrop-blur-sm text-white text-xs font-semibold px-3 py-2 rounded-full border border-white/30 hover:bg-white/25 transition-colors"
+          >
+            Track order
+          </Link>
         </div>
 
         {/* Bottom content */}
@@ -99,17 +105,17 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
             </div>
           )}
 
+          {/* Restaurant name */}
+          <h1 className="text-white text-[2.15rem] font-extrabold leading-tight tracking-tight">
+            {restaurant.name}
+          </h1>
+
           {/* Description */}
           {restaurant.description && (
             <p className="text-white/75 text-sm font-medium leading-relaxed line-clamp-2">
               {restaurant.description}
             </p>
           )}
-
-          {/* Restaurant name */}
-          <h1 className="text-white text-[2.15rem] font-extrabold leading-tight tracking-tight">
-            {restaurant.name}
-          </h1>
 
           {/* Info chips */}
           {hasInfoChips && (
@@ -151,12 +157,6 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
               View menu
             </Link>
           </div>
-          <Link
-            href={`/${params.restaurant_slug}/orders/track`}
-            className="text-white/60 hover:text-white/90 text-xs font-medium text-center block transition-colors"
-          >
-            Have an order? Track it →
-          </Link>
         </div>
       </section>
 
