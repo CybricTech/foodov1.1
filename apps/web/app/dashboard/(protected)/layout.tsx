@@ -17,6 +17,11 @@ export default async function DashboardLayout({
     redirect("/dashboard/login");
   }
 
+  // Staff users should use the frontline interface, not the owner dashboard
+  if (session.role === "merchant_staff") {
+    redirect("/dashboard/frontline/orders");
+  }
+
   return (
     <div className="min-h-screen bg-black-50">
       <DashboardNav

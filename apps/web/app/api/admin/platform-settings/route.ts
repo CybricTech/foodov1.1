@@ -54,6 +54,7 @@ export async function PATCH(request: NextRequest) {
     delivery_per_km_rate_kobo?: number;
     delivery_max_radius_km?: number;
     delivery_max_fee_kobo?: number;
+    delivery_commission_pct?: number;
     admin_whatsapp_number?: string | null;
     admin_alert_email?: string | null;
   };
@@ -67,6 +68,7 @@ export async function PATCH(request: NextRequest) {
   if (updates.delivery_per_km_rate_kobo !== undefined) allowed.delivery_per_km_rate_kobo = updates.delivery_per_km_rate_kobo;
   if (updates.delivery_max_radius_km !== undefined) allowed.delivery_max_radius_km = updates.delivery_max_radius_km;
   if (updates.delivery_max_fee_kobo !== undefined) allowed.delivery_max_fee_kobo = updates.delivery_max_fee_kobo;
+  if (updates.delivery_commission_pct !== undefined) allowed.delivery_commission_pct = updates.delivery_commission_pct;
   if (updates.admin_whatsapp_number !== undefined) allowed.admin_whatsapp_number = updates.admin_whatsapp_number;
   if (updates.admin_alert_email !== undefined) allowed.admin_alert_email = updates.admin_alert_email;
 

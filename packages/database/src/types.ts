@@ -468,6 +468,7 @@ export type Database = {
           delivery_lng: number | null
           delivery_status: string | null
           discount_amount: number
+          dispatch_type: string | null
           estimated_delivery_at: string | null
           fulfillment_type: string
           id: string
@@ -478,6 +479,7 @@ export type Database = {
           restaurant_id: string
           rider_id: string | null
           service_fee_kobo: number
+          settlement_id: string | null
           special_instructions: string | null
           status: string
           subtotal: number
@@ -505,6 +507,7 @@ export type Database = {
           delivery_lng?: number | null
           delivery_status?: string | null
           discount_amount?: number
+          dispatch_type?: string | null
           estimated_delivery_at?: string | null
           fulfillment_type: string
           id?: string
@@ -515,6 +518,7 @@ export type Database = {
           restaurant_id: string
           rider_id?: string | null
           service_fee_kobo?: number
+          settlement_id?: string | null
           special_instructions?: string | null
           status?: string
           subtotal: number
@@ -542,6 +546,7 @@ export type Database = {
           delivery_lng?: number | null
           delivery_status?: string | null
           discount_amount?: number
+          dispatch_type?: string | null
           estimated_delivery_at?: string | null
           fulfillment_type?: string
           id?: string
@@ -552,6 +557,7 @@ export type Database = {
           restaurant_id?: string
           rider_id?: string | null
           service_fee_kobo?: number
+          settlement_id?: string | null
           special_instructions?: string | null
           status?: string
           subtotal?: number
@@ -588,6 +594,13 @@ export type Database = {
             columns: ["rider_id"]
             isOneToOne: false
             referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_settlement_id_fkey"
+            columns: ["settlement_id"]
+            isOneToOne: false
+            referencedRelation: "settlements"
             referencedColumns: ["id"]
           },
         ]
@@ -710,6 +723,7 @@ export type Database = {
           admin_alert_email: string | null
           admin_whatsapp_number: string | null
           delivery_base_fee_kobo: number
+          delivery_commission_pct: number
           delivery_max_fee_kobo: number
           delivery_max_radius_km: number
           delivery_per_km_rate_kobo: number
@@ -724,6 +738,7 @@ export type Database = {
           admin_alert_email?: string | null
           admin_whatsapp_number?: string | null
           delivery_base_fee_kobo?: number
+          delivery_commission_pct?: number
           delivery_max_fee_kobo?: number
           delivery_max_radius_km?: number
           delivery_per_km_rate_kobo?: number
@@ -738,6 +753,7 @@ export type Database = {
           admin_alert_email?: string | null
           admin_whatsapp_number?: string | null
           delivery_base_fee_kobo?: number
+          delivery_commission_pct?: number
           delivery_max_fee_kobo?: number
           delivery_max_radius_km?: number
           delivery_per_km_rate_kobo?: number
@@ -969,38 +985,65 @@ export type Database = {
       settlements: {
         Row: {
           amount_kobo: number
+          bank_reference: string | null
           created_at: string
+          delivery_commission_kobo: number
           failure_reason: string | null
+          gross_total_kobo: number
           id: string
           initiated_at: string
+          order_count: number
           paid_at: string | null
           paystack_transfer_code: string | null
           paystack_transfer_ref: string | null
+          period_date: string | null
+          receipt_url: string | null
+          recorded_by: string | null
           restaurant_id: string
+          service_fee_total_kobo: number
+          settlement_type: string
           status: string
         }
         Insert: {
           amount_kobo: number
+          bank_reference?: string | null
           created_at?: string
+          delivery_commission_kobo?: number
           failure_reason?: string | null
+          gross_total_kobo?: number
           id?: string
           initiated_at?: string
+          order_count?: number
           paid_at?: string | null
           paystack_transfer_code?: string | null
           paystack_transfer_ref?: string | null
+          period_date?: string | null
+          receipt_url?: string | null
+          recorded_by?: string | null
           restaurant_id: string
+          service_fee_total_kobo?: number
+          settlement_type?: string
           status?: string
         }
         Update: {
           amount_kobo?: number
+          bank_reference?: string | null
           created_at?: string
+          delivery_commission_kobo?: number
           failure_reason?: string | null
+          gross_total_kobo?: number
           id?: string
           initiated_at?: string
+          order_count?: number
           paid_at?: string | null
           paystack_transfer_code?: string | null
           paystack_transfer_ref?: string | null
+          period_date?: string | null
+          receipt_url?: string | null
+          recorded_by?: string | null
           restaurant_id?: string
+          service_fee_total_kobo?: number
+          settlement_type?: string
           status?: string
         }
         Relationships: [

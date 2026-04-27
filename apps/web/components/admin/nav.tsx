@@ -12,6 +12,7 @@ import {
   Scale,
   MessageSquare,
   Banknote,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,6 +24,7 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean
   { href: "/admin/settlements",  label: "Settlements", icon: Banknote,        exact: false },
   { href: "/admin/disputes",     label: "Disputes",    icon: Scale,           exact: false },
   { href: "/admin/logs/sms",     label: "SMS Logs",    icon: MessageSquare,   exact: false },
+  { href: "/admin/settings",     label: "Settings",    icon: Settings,        exact: false },
 ];
 
 export function AdminNav({ userName }: { userName: string }) {
