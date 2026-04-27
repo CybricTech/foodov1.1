@@ -289,19 +289,6 @@ export function FrontlineOrdersClient({
     }
   }, []);
 
-  // Stop alerting once all new orders have been accepted
-  const newOrderCount = columns.new.length;
-  useEffect(() => {
-    if (newOrderCount === 0) setAlertActive(false);
-  }, [newOrderCount]);
-
-  // Loop the alert sound every 3 seconds while there are unaccepted orders
-  useEffect(() => {
-    if (!alertActive || !soundEnabled) return;
-    const interval = setInterval(playNewOrderSound, 3000);
-    return () => clearInterval(interval);
-  }, [alertActive, soundEnabled, playNewOrderSound]);
-
   const updateStatus = useCallback(
     async (orderId: string, newStatus: string) => {
       setActionLoading(orderId);
@@ -374,6 +361,19 @@ export function FrontlineOrdersClient({
 
     return result;
   }, [orders]);
+
+  // Stop alerting once all new orders have been accepted
+  const newOrderCount = columns.new.length;
+  useEffect(() => {
+    if (newOrderCount === 0) setAlertActive(false);
+  }, [newOrderCount]);
+
+  // Loop the alert sound every 3 seconds while there are unaccepted orders
+  useEffect(() => {
+    if (!alertActive || !soundEnabled) return;
+    const interval = setInterval(playNewOrderSound, 3000);
+    return () => clearInterval(interval);
+  }, [alertActive, soundEnabled, playNewOrderSound]);
 
   const totalActive = columns.new.length + columns.in_progress.length + columns.in_transit.length;
 
