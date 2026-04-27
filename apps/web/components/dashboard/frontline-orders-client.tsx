@@ -153,6 +153,7 @@ export function FrontlineOrdersClient({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<Column>("new");
+  const [alertActive, setAlertActive] = useState(false);
   const [, setTick] = useState(0);
   const audioRef = useRef<AudioContext | null>(null);
   const supabase = createBrowserClient();
@@ -220,6 +221,7 @@ export function FrontlineOrdersClient({
               const newOrder = data as unknown as OrderRow;
               setOrders((prev) => [newOrder, ...prev]);
               setNewOrderIds((prev) => new Set(prev).add(newOrder.id));
+              setAlertActive(true);
               if (soundEnabled) playNewOrderSound();
               // Clear the highlight after 8 seconds
               setTimeout(() => {
@@ -263,7 +265,7 @@ export function FrontlineOrdersClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId, soundEnabled]);
 
-  function playNewOrderSound() {
+  const playNewOrderSound = useCallback(() => {
     try {
       const ctx =
         audioRef.current ??
@@ -285,7 +287,20 @@ export function FrontlineOrdersClient({
     } catch {
       // Audio permission not granted
     }
-  }
+  }, []);
+
+  // Stop alerting once all new orders have been accepted
+  const newOrderCount = columns.new.length;
+  useEffect(() => {
+    if (newOrderCount === 0) setAlertActive(false);
+  }, [newOrderCount]);
+
+  // Loop the alert sound every 3 seconds while there are unaccepted orders
+  useEffect(() => {
+    if (!alertActive || !soundEnabled) return;
+    const interval = setInterval(playNewOrderSound, 3000);
+    return () => clearInterval(interval);
+  }, [alertActive, soundEnabled, playNewOrderSound]);
 
   const updateStatus = useCallback(
     async (orderId: string, newStatus: string) => {
