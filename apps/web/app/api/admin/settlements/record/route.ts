@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
 
   const { data: settings, error: settingsErr } = await auth.serviceClient
     .from("platform_settings")
-    .select("service_charge_fixed_kobo, delivery_commission_pct")
+    .select("merchant_charge_pct, delivery_commission_pct")
     .single();
 
   if (settingsErr || !settings) {
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
 
   const { data: unsettledOrders, error: ordersErr } = await auth.serviceClient
     .from("orders")
-    .select("id, subtotal_kobo, vat_kobo, delivery_fee_kobo")
+    .select("id, subtotal_kobo, vat_kobo, delivery_fee_kobo, service_fee_kobo, total_kobo")
     .eq("restaurant_id", restaurant_id)
     .is("settlement_id", null)
     .neq("status", "cancelled")
@@ -101,17 +101,22 @@ export async function POST(request: NextRequest) {
   }
 
   const orderCount = unsettledOrders.length;
+  const merchantChargePct = Number(settings.merchant_charge_pct ?? 0.01);
   let grossTotal = 0;
   let totalDeliveryFee = 0;
+  let merchantChargeTotal = 0;
 
   for (const o of unsettledOrders) {
+    const orderTotal = o.total_kobo ?? (
+      (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0)
+    );
     grossTotal += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
     totalDeliveryFee += o.delivery_fee_kobo ?? 0;
+    merchantChargeTotal += Math.round(orderTotal * merchantChargePct);
   }
 
-  const serviceFeeTotal = orderCount * settings.service_charge_fixed_kobo;
   const deliveryCommission = Math.round(totalDeliveryFee * settings.delivery_commission_pct);
-  const netPayout = grossTotal - serviceFeeTotal - deliveryCommission;
+  const netPayout = grossTotal - merchantChargeTotal - deliveryCommission;
 
   const now = new Date().toISOString();
 
@@ -128,7 +133,8 @@ export async function POST(request: NextRequest) {
       period_date,
       order_count: orderCount,
       gross_total_kobo: grossTotal,
-      service_fee_total_kobo: serviceFeeTotal,
+      service_fee_total_kobo: 0,
+      merchant_charge_total_kobo: merchantChargeTotal,
       delivery_commission_kobo: deliveryCommission,
       initiated_at: now,
       paid_at: now,
@@ -161,7 +167,7 @@ export async function POST(request: NextRequest) {
       bank_reference,
       order_count: orderCount,
       gross_total_kobo: grossTotal,
-      service_fee_total_kobo: serviceFeeTotal,
+      merchant_charge_total_kobo: merchantChargeTotal,
       delivery_commission_kobo: deliveryCommission,
       net_payout_kobo: netPayout,
     },
@@ -174,7 +180,7 @@ export async function POST(request: NextRequest) {
     bank_reference,
     order_count: orderCount,
     gross_total_kobo: grossTotal,
-    service_fee_total_kobo: serviceFeeTotal,
+    merchant_charge_total_kobo: merchantChargeTotal,
     delivery_commission_kobo: deliveryCommission,
     net_payout_kobo: netPayout,
   });

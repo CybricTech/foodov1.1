@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
   const { data: settings, error: settingsErr } = await auth.serviceClient
     .from("platform_settings")
-    .select("service_charge_fixed_kobo, delivery_commission_pct")
+    .select("merchant_charge_pct, delivery_commission_pct")
     .single();
 
   if (settingsErr || !settings) {
@@ -61,6 +61,8 @@ export async function GET(request: NextRequest) {
       subtotal_kobo,
       vat_kobo,
       delivery_fee_kobo,
+      service_fee_kobo,
+      total_kobo,
       restaurants (name, bank_account_name, bank_account_number, bank_code)
     `
     )
@@ -89,8 +91,12 @@ export async function GET(request: NextRequest) {
       orderCount: number;
       grossTotal: number;
       totalDeliveryFee: number;
+      merchantChargeTotal: number;
     }
   > = {};
+
+  const merchantChargePct = Number(settings.merchant_charge_pct ?? 0.01);
+  const commissionPct = settings.delivery_commission_pct;
 
   for (const o of orders) {
     const rid = o.restaurant_id;
@@ -110,17 +116,20 @@ export async function GET(request: NextRequest) {
         orderCount: 0,
         grossTotal: 0,
         totalDeliveryFee: 0,
+        merchantChargeTotal: 0,
       };
     }
+
+    const orderTotal = o.total_kobo ?? (
+      (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0)
+    );
 
     grouped[rid].orderCount++;
     grouped[rid].grossTotal +=
       (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
     grouped[rid].totalDeliveryFee += o.delivery_fee_kobo ?? 0;
+    grouped[rid].merchantChargeTotal += Math.round(orderTotal * merchantChargePct);
   }
-
-  const serviceFeePerOrder = settings.service_charge_fixed_kobo;
-  const commissionPct = settings.delivery_commission_pct;
 
   const header = [
     "Restaurant",
@@ -129,15 +138,14 @@ export async function GET(request: NextRequest) {
     "Bank Code",
     "Order Count",
     "Gross Total (NGN)",
-    "Service Fee (NGN)",
+    "Merchant Charge (NGN)",
     "Delivery Commission (NGN)",
     "Net Payout (NGN)",
   ].join(",");
 
   const rows = Object.values(grouped).map((g) => {
-    const serviceFee = g.orderCount * serviceFeePerOrder;
     const deliveryCommission = Math.round(g.totalDeliveryFee * commissionPct);
-    const netPayout = g.grossTotal - serviceFee - deliveryCommission;
+    const netPayout = g.grossTotal - g.merchantChargeTotal - deliveryCommission;
 
     return [
       escapeCSV(g.name),
@@ -146,7 +154,7 @@ export async function GET(request: NextRequest) {
       escapeCSV(g.bankCode),
       String(g.orderCount),
       (g.grossTotal / 100).toFixed(2),
-      (serviceFee / 100).toFixed(2),
+      (g.merchantChargeTotal / 100).toFixed(2),
       (deliveryCommission / 100).toFixed(2),
       (netPayout / 100).toFixed(2),
     ].join(",");

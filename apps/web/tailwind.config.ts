@@ -39,6 +39,12 @@ const config: Config = {
           100: "#FFF3E0",
           500: "#F4A261",
         },
+        gold: {
+          DEFAULT: "#FFC629",
+          50:      "#FFFBEB",
+          100:     "#FFF3CD",
+          600:     "#CC9800",
+        },
         black: {
           50:  "#F9F9F9",
           100: "#F2F2F2",
@@ -50,7 +56,9 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["Geist", "system-ui", "sans-serif"],
+        sans:     ["Geist", "system-ui", "sans-serif"],
+        epilogue: ["Epilogue", "system-ui", "sans-serif"],
+        jakarta:  ["Plus Jakarta Sans", "system-ui", "sans-serif"],
       },
       borderRadius: {
         xl:  "12px",
