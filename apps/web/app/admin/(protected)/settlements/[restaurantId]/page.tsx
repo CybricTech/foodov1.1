@@ -41,7 +41,8 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
       .select(
         `id, amount_kobo, status, settlement_type, bank_reference, receipt_url,
          period_date, order_count, gross_total_kobo, service_fee_total_kobo,
-         delivery_commission_kobo, paystack_transfer_code, paystack_transfer_ref,
+         merchant_charge_total_kobo, delivery_commission_kobo,
+         paystack_transfer_code, paystack_transfer_ref,
          failure_reason, initiated_at, paid_at, created_at`
       )
       .eq("restaurant_id", restaurantId)
@@ -74,7 +75,7 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
     // Platform settings for fee calculations
     supabase
       .from("platform_settings")
-      .select("service_charge_fixed_kobo, delivery_commission_pct")
+      .select("merchant_charge_pct, delivery_commission_pct")
       .single(),
   ]);
 
@@ -123,7 +124,7 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
         settlements={settlements ?? []}
         orders={normalizedOrders}
         platformSettings={{
-          serviceFeeFixedKobo: platformSettings?.service_charge_fixed_kobo ?? 20000,
+          merchantChargePct: platformSettings?.merchant_charge_pct ?? 0.01,
           deliveryCommissionPct: platformSettings?.delivery_commission_pct ?? 0.10,
         }}
       />

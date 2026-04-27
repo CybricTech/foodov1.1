@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
   const [{ data: settings }, { data: restaurantRow }] = await Promise.all([
     supabase
       .from("platform_settings")
-      .select("service_charge_pct, service_charge_fixed_kobo, settlement_hold_hours, admin_alert_email")
+      .select("service_charge_pct, service_charge_fixed_kobo, merchant_charge_pct, settlement_hold_hours, admin_alert_email")
       .single(),
     supabase
       .from("restaurants")
@@ -190,6 +190,7 @@ export async function POST(request: NextRequest) {
 
   const pct = settings?.service_charge_pct ?? 0.03;
   const fixedFee = settings?.service_charge_fixed_kobo ?? 0;
+  const merchantChargePct = Number(settings?.merchant_charge_pct ?? 0.01);
   const holdHours = settings?.settlement_hold_hours ?? 24;
 
   const subtotalKobo = meta.subtotal_kobo as number;
@@ -220,13 +221,22 @@ export async function POST(request: NextRequest) {
     : Math.round(deliveryFeeKobo * 0.1);
   const restaurantDeliveryShare = deliveryFeeKobo - foodoDeliveryCut;
 
-  // Restaurant credit = subtotal + VAT + their share of delivery fee
+  // Merchant charge: 1% of the total Paystack transaction amount
+  // This is the merchant's share of payment processing costs, deducted at settlement.
+  const orderTotalKobo =
+    subtotalKobo +
+    deliveryFeeKobo +
+    vatKobo +
+    (customerPaidServiceFee ? metaServiceFeeKobo : 0);
+  const merchantChargeKobo = Math.round(orderTotalKobo * merchantChargePct);
+
+  // Restaurant credit = subtotal + VAT + their share of delivery fee − merchant charge
   // - VAT is collected on behalf of the restaurant (they remit to FIRS)
-  // - Service fee goes to Foodo (customer pays it directly, not deducted from restaurant)
-  // - When customer doesn't pay service fee (legacy): deduct from restaurant
+  // - Customer service fee goes to Foodo directly; not deducted from restaurant
+  // - Legacy orders (no service_fee in meta): deduct service charge from restaurant instead
   const restaurantCreditKobo = customerPaidServiceFee
-    ? subtotalKobo + vatKobo + restaurantDeliveryShare
-    : subtotalKobo + vatKobo + restaurantDeliveryShare - serviceChargeKobo;
+    ? subtotalKobo + vatKobo + restaurantDeliveryShare - merchantChargeKobo
+    : subtotalKobo + vatKobo + restaurantDeliveryShare - serviceChargeKobo - merchantChargeKobo;
 
   const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
 
@@ -273,6 +283,20 @@ export async function POST(request: NextRequest) {
             amount_kobo: foodoDeliveryCut,
             status: "settled",
             description: `Delivery fee${foodoHandlesDelivery ? '' : ' commission (10%)'} — Order #${order.order_number}`,
+          },
+        ]
+      : []),
+    // Merchant's share of payment processing (% of total Paystack amount)
+    ...(merchantChargeKobo > 0
+      ? [
+          {
+            restaurant_id: restaurantId,
+            order_id: order.id,
+            type: "merchant_charge",
+            direction: "debit",
+            amount_kobo: merchantChargeKobo,
+            status: "settled",
+            description: `Merchant charge (${(merchantChargePct * 100).toFixed(1)}% of ₦${(orderTotalKobo / 100).toFixed(0)} total) — Order #${order.order_number}`,
           },
         ]
       : []),

@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "Kitchyn",
-  description: "Order directly from your favourite restaurants",
+  title: "Kitchyn — White-label Food Ordering Platform",
+  description: "Launch your own branded food ordering platform. Direct orders, zero commissions, full control.",
 };
 
 export default function RootLayout({
@@ -15,7 +15,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Preload Geist font — font-display: swap prevents FOIT */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
@@ -24,7 +23,7 @@ export default function RootLayout({
         />
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Epilogue:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
           rel="stylesheet"
         />
       </head>

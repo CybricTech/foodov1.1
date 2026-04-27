@@ -5,6 +5,7 @@ import { useState } from "react";
 type PlatformSettings = {
   service_charge_pct: number;
   service_charge_fixed_kobo: number;
+  merchant_charge_pct?: number | null;
   settlement_hold_hours: number;
   delivery_base_fee_kobo?: number | null;
   delivery_per_km_rate_kobo?: number | null;
@@ -26,6 +27,11 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
   );
   const [fixedNgn, setFixedNgn] = useState(
     settings ? (settings.service_charge_fixed_kobo / 100).toFixed(0) : "0"
+  );
+  const [merchantChargePct, setMerchantChargePct] = useState(
+    settings?.merchant_charge_pct != null
+      ? (Number(settings.merchant_charge_pct) * 100).toFixed(1)
+      : "1.0"
   );
   const [holdHours, setHoldHours] = useState(
     settings ? String(settings.settlement_hold_hours) : "24"
@@ -92,6 +98,7 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
         body: JSON.stringify({
           service_charge_pct: parseFloat(pct) / 100,
           service_charge_fixed_kobo: Math.round(parseFloat(fixedNgn) * 100),
+          merchant_charge_pct: parseFloat(merchantChargePct) / 100,
           settlement_hold_hours: parseInt(holdHours),
         }),
       });
@@ -283,10 +290,10 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
           </p>
         </div>
         <form onSubmit={saveSettings} className="px-4 py-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-medium text-black-500 mb-1">
-                Service charge %
+                Customer service charge %
               </label>
               <div className="relative">
                 <input
@@ -300,6 +307,7 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-black-400">%</span>
               </div>
+              <p className="text-[10px] text-black-400 mt-1">Charged to customer at checkout</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-black-500 mb-1">
@@ -313,6 +321,25 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
                 onChange={(e) => setFixedNgn(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
               />
+              <p className="text-[10px] text-black-400 mt-1">Flat fee added to customer total</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">
+                Merchant charge %
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={merchantChargePct}
+                  onChange={(e) => setMerchantChargePct(e.target.value)}
+                  className="w-full px-4 py-2.5 pr-8 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-black-400">%</span>
+              </div>
+              <p className="text-[10px] text-black-400 mt-1">Deducted from merchant settlement (% of order total)</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-black-500 mb-1">

@@ -49,6 +49,7 @@ export async function PATCH(request: NextRequest) {
   const updates = body as {
     service_charge_pct?: number;
     service_charge_fixed_kobo?: number;
+    merchant_charge_pct?: number;
     settlement_hold_hours?: number;
     delivery_base_fee_kobo?: number;
     delivery_per_km_rate_kobo?: number;
@@ -63,6 +64,7 @@ export async function PATCH(request: NextRequest) {
   const allowed: Record<string, unknown> = {};
   if (updates.service_charge_pct !== undefined) allowed.service_charge_pct = updates.service_charge_pct;
   if (updates.service_charge_fixed_kobo !== undefined) allowed.service_charge_fixed_kobo = updates.service_charge_fixed_kobo;
+  if (updates.merchant_charge_pct !== undefined) allowed.merchant_charge_pct = updates.merchant_charge_pct;
   if (updates.settlement_hold_hours !== undefined) allowed.settlement_hold_hours = updates.settlement_hold_hours;
   if (updates.delivery_base_fee_kobo !== undefined) allowed.delivery_base_fee_kobo = updates.delivery_base_fee_kobo;
   if (updates.delivery_per_km_rate_kobo !== undefined) allowed.delivery_per_km_rate_kobo = updates.delivery_per_km_rate_kobo;

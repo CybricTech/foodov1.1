@@ -728,6 +728,7 @@ export type Database = {
           delivery_max_radius_km: number
           delivery_per_km_rate_kobo: number
           id: string
+          merchant_charge_pct: number
           service_charge_fixed_kobo: number
           service_charge_pct: number
           settlement_hold_hours: number
@@ -743,6 +744,7 @@ export type Database = {
           delivery_max_radius_km?: number
           delivery_per_km_rate_kobo?: number
           id?: string
+          merchant_charge_pct?: number
           service_charge_fixed_kobo?: number
           service_charge_pct?: number
           settlement_hold_hours?: number
@@ -758,6 +760,7 @@ export type Database = {
           delivery_max_radius_km?: number
           delivery_per_km_rate_kobo?: number
           id?: string
+          merchant_charge_pct?: number
           service_charge_fixed_kobo?: number
           service_charge_pct?: number
           settlement_hold_hours?: number
@@ -992,6 +995,7 @@ export type Database = {
           gross_total_kobo: number
           id: string
           initiated_at: string
+          merchant_charge_total_kobo: number
           order_count: number
           paid_at: string | null
           paystack_transfer_code: string | null
@@ -1013,6 +1017,7 @@ export type Database = {
           gross_total_kobo?: number
           id?: string
           initiated_at?: string
+          merchant_charge_total_kobo?: number
           order_count?: number
           paid_at?: string | null
           paystack_transfer_code?: string | null
@@ -1034,6 +1039,7 @@ export type Database = {
           gross_total_kobo?: number
           id?: string
           initiated_at?: string
+          merchant_charge_total_kobo?: number
           order_count?: number
           paid_at?: string | null
           paystack_transfer_code?: string | null

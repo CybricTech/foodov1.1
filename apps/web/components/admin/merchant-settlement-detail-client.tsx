@@ -36,6 +36,7 @@ type Settlement = {
   order_count: number;
   gross_total_kobo: number;
   service_fee_total_kobo: number;
+  merchant_charge_total_kobo: number;
   delivery_commission_kobo: number;
   paystack_transfer_code: string | null;
   paystack_transfer_ref: string | null;
@@ -64,7 +65,7 @@ interface Props {
   wallet: Wallet;
   settlements: Settlement[];
   orders: OrderRow[];
-  platformSettings: { serviceFeeFixedKobo: number; deliveryCommissionPct: number };
+  platformSettings: { merchantChargePct: number; deliveryCommissionPct: number };
 }
 
 /* ── Helpers ───────────────────────────────────────────────────────────────── */
@@ -103,31 +104,33 @@ export function MerchantSettlementDetailClient({
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  const { serviceFeeFixedKobo, deliveryCommissionPct } = platformSettings;
+  const { merchantChargePct, deliveryCommissionPct } = platformSettings;
 
   /* ── Revenue aggregation ────────────────────────────────────────────────── */
 
   const totals = useMemo(() => {
     let grossRevenue = 0;
     let totalDeliveryFees = 0;
+    let totalMerchantCharge = 0;
     let unsettledCount = 0;
 
     for (const o of orders) {
+      const orderTotal = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0);
       grossRevenue += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
       totalDeliveryFees += o.delivery_fee_kobo ?? 0;
+      totalMerchantCharge += Math.round(orderTotal * merchantChargePct);
       if (!o.settlement_id) unsettledCount++;
     }
 
-    const totalServiceFees = orders.length * serviceFeeFixedKobo;
     const totalCommissions = Math.round(totalDeliveryFees * deliveryCommissionPct);
-    const totalFoodoFees = totalServiceFees + totalCommissions;
+    const totalFoodoFees = totalMerchantCharge + totalCommissions;
 
     const totalPaid = settlements
       .filter((s) => s.status === "paid")
       .reduce((sum, s) => sum + s.amount_kobo, 0);
 
     return { grossRevenue, totalFoodoFees, totalPaid, unsettledCount };
-  }, [orders, settlements, serviceFeeFixedKobo, deliveryCommissionPct]);
+  }, [orders, settlements, merchantChargePct, deliveryCommissionPct]);
 
   /* ── Daily grouped orders ───────────────────────────────────────────────── */
 
@@ -143,19 +146,21 @@ export function MerchantSettlementDetailClient({
       .map(([date, dayOrders]) => {
         let gross = 0;
         let deliveryTotal = 0;
+        let merchantCharge = 0;
         for (const o of dayOrders) {
+          const orderTotal = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0);
           gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
           deliveryTotal += o.delivery_fee_kobo ?? 0;
+          merchantCharge += Math.round(orderTotal * merchantChargePct);
         }
-        const serviceFees = dayOrders.length * serviceFeeFixedKobo;
         const commission = Math.round(deliveryTotal * deliveryCommissionPct);
-        const net = gross - serviceFees - commission;
+        const net = gross - merchantCharge - commission;
         const allSettled = dayOrders.every((o) => o.settlement_id != null);
         const hasUnsettled = dayOrders.some((o) => o.settlement_id == null);
 
-        return { date, orders: dayOrders, orderCount: dayOrders.length, gross, serviceFees, commission, net, allSettled, hasUnsettled };
+        return { date, orders: dayOrders, orderCount: dayOrders.length, gross, merchantCharge, commission, net, allSettled, hasUnsettled };
       });
-  }, [orders, serviceFeeFixedKobo, deliveryCommissionPct]);
+  }, [orders, merchantChargePct, deliveryCommissionPct]);
 
   /* ── Settlement history filter ──────────────────────────────────────────── */
 
@@ -271,7 +276,7 @@ export function MerchantSettlementDetailClient({
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Service Fees</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Merchant Charge</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Delivery Commission</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Net Payout</th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Status</th>
@@ -295,7 +300,7 @@ export function MerchantSettlementDetailClient({
                       <td className="px-4 py-2.5 font-medium text-black-900 whitespace-nowrap">{dateLabel}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{day.orderCount}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{formatKobo(day.gross)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.serviceFees)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.merchantCharge)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.commission)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-black-900">{formatKobo(day.net)}</td>
                       <td className="px-4 py-2.5 text-center">
@@ -379,7 +384,7 @@ export function MerchantSettlementDetailClient({
                   </p>
                   {s.gross_total_kobo > 0 && (
                     <p className="text-xs text-black-400 mt-0.5">
-                      Gross: {formatKobo(s.gross_total_kobo)} − Fees: {formatKobo(s.service_fee_total_kobo)} − Commission: {formatKobo(s.delivery_commission_kobo)}
+                      Gross: {formatKobo(s.gross_total_kobo)} − Merchant charge: {formatKobo(s.merchant_charge_total_kobo ?? s.service_fee_total_kobo)} − Commission: {formatKobo(s.delivery_commission_kobo)}
                     </p>
                   )}
                   {s.failure_reason && <p className="text-xs text-cinnabar-500 mt-0.5">{s.failure_reason}</p>}
@@ -415,8 +420,8 @@ export function MerchantSettlementDetailClient({
                   <span className="tabular-nums font-medium">{formatKobo(modalDay.gross)}</span>
                 </div>
                 <div className="flex justify-between text-purple-600">
-                  <span>− Service Fee</span>
-                  <span className="tabular-nums">({formatKobo(modalDay.serviceFees)})</span>
+                  <span>− Merchant Charge (1% of total)</span>
+                  <span className="tabular-nums">({formatKobo(modalDay.merchantCharge)})</span>
                 </div>
                 <div className="flex justify-between text-purple-600">
                   <span>− Delivery Commission</span>

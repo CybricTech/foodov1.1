@@ -8,7 +8,10 @@
   by injecting the restaurant's primary_color as an inline style.
 */
 :root {
-  --brand-color: #2D6A4F;   /* Viridian green — default / Foodo brand */
+  --brand-color: #3C096C;   /* Primary purple — Foodo brand */
+  --brand-secondary: #FFC629;
+  --brand-tertiary: #FF4900;
+  --brand-neutral: #231F20;
 
   /* Semantic colors */
   --color-success: #2D6A4F;
@@ -26,12 +29,18 @@
   }
 }
 
-/* Geist font loaded via <link rel="preload"> in layout.tsx */
+/* Body font: Plus Jakarta Sans per brand guidelines */
 body {
-  font-family: "Geist", system-ui, -apple-system, sans-serif;
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
   font-display: swap;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color: #231F20;
+}
+
+/* Headline font utility */
+.font-headline {
+  font-family: "Epilogue", system-ui, -apple-system, sans-serif;
 }
 
 /* Prevent layout shift on images */
