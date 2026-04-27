@@ -16,6 +16,8 @@ import {
   VolumeX,
   Package,
   RefreshCw,
+  Phone,
+  MapPin,
 } from "lucide-react";
 import type { Database } from "@foodo/database";
 
@@ -736,6 +738,30 @@ function FrontlineOrderCard({
       {/* Expanded details */}
       {(expanded || alwaysExpanded) && (
         <div className="border-t border-black-100 bg-black-50/30">
+
+          {/* Customer contact */}
+          <div className="px-4 pt-3 pb-2 flex items-center gap-3 flex-wrap">
+            {order.customer_phone && (
+              <a
+                href={`tel:${order.customer_phone}`}
+                className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 hover:text-purple-700 transition-colors"
+              >
+                <Phone size={12} className="flex-shrink-0" />
+                {order.customer_phone}
+              </a>
+            )}
+            <span
+              className={cn(
+                "text-[10px] font-semibold px-2 py-0.5 rounded-full",
+                order.payment_status === "paid"
+                  ? "bg-viridian-50 text-viridian-700"
+                  : "bg-dixie-50 text-dixie-600"
+              )}
+            >
+              {order.payment_status === "paid" ? "Paid" : order.payment_status ?? "Unpaid"}
+            </span>
+          </div>
+
           {/* Items list */}
           <div className="px-4 py-3 space-y-2.5">
             {order.order_items.map((item) => {
@@ -791,10 +817,7 @@ function FrontlineOrderCard({
           {order.special_instructions && (
             <div className="px-4 pb-3">
               <div className="flex items-start gap-2 bg-dixie-50 border border-dixie-100 text-dixie-600 text-xs px-3 py-2 rounded-lg">
-                <StickyNote
-                  size={12}
-                  className="flex-shrink-0 mt-0.5"
-                />
+                <StickyNote size={12} className="flex-shrink-0 mt-0.5" />
                 <span>{order.special_instructions}</span>
               </div>
             </div>
@@ -803,12 +826,43 @@ function FrontlineOrderCard({
           {/* Delivery address */}
           {order.fulfillment_type === "delivery" && order.delivery_address && (
             <div className="px-4 pb-3">
-              <p className="text-xs text-black-500 leading-relaxed">
-                <span className="font-medium text-black-600">Deliver to:</span>{" "}
-                {order.delivery_address}
-              </p>
+              <div className="flex items-start gap-1.5 text-xs text-black-500 leading-relaxed">
+                <MapPin size={12} className="flex-shrink-0 mt-0.5 text-black-400" />
+                <span>{order.delivery_address}</span>
+              </div>
             </div>
           )}
+
+          {/* Pricing breakdown */}
+          <div className="px-4 pt-2 pb-3 border-t border-black-100 space-y-1.5">
+            <div className="flex justify-between text-xs text-black-500">
+              <span>Subtotal</span>
+              <span>{formatKobo(order.subtotal_kobo)}</span>
+            </div>
+            {order.delivery_fee_kobo > 0 && (
+              <div className="flex justify-between text-xs text-black-500">
+                <span>Delivery fee</span>
+                <span>{formatKobo(order.delivery_fee_kobo)}</span>
+              </div>
+            )}
+            {order.vat_kobo > 0 && (
+              <div className="flex justify-between text-xs text-black-500">
+                <span>VAT</span>
+                <span>{formatKobo(order.vat_kobo)}</span>
+              </div>
+            )}
+            {order.service_fee_kobo > 0 && (
+              <div className="flex justify-between text-xs text-black-500">
+                <span>Service fee</span>
+                <span>{formatKobo(order.service_fee_kobo)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm font-bold text-black-900 pt-1.5 border-t border-black-100">
+              <span>Total</span>
+              <span>{formatKobo(order.total_kobo)}</span>
+            </div>
+          </div>
+
         </div>
       )}
     </div>
