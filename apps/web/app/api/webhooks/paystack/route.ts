@@ -83,6 +83,25 @@ export async function POST(request: NextRequest) {
       .eq("id", existingPayment.id);
   }
 
+  // 4.5 Re-verify restaurant is still accepting orders at payment time.
+  // Covers the race condition where a merchant closes the store after the
+  // customer reached checkout but before Paystack fires this webhook.
+  // We still create the order (payment was already collected) but log it
+  // prominently so the team can follow up if needed.
+  const { data: restStatus } = await supabase
+    .from("restaurants")
+    .select("is_active, accepts_orders")
+    .eq("id", restaurantId)
+    .single();
+
+  if (!restStatus?.is_active || !restStatus?.accepts_orders) {
+    console.warn(
+      `[webhook] STORE_CLOSED_AT_PAYMENT: restaurant=${restaurantId} ` +
+      `is_active=${restStatus?.is_active} accepts_orders=${restStatus?.accepts_orders} ` +
+      `ref=${paystackRef} — order will still be created since payment was collected`
+    );
+  }
+
   // 5. Create the order
   const { data: order, error: orderError } = await supabase
     .from("orders")
