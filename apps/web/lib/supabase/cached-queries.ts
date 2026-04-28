@@ -2,12 +2,13 @@
  * Request-scoped cached auth queries for Server Components.
  *
  * Performance notes:
- * - `getSession()` reads from the cookie (no network call), unlike `getUser()`
- *   which validates the JWT against the Supabase Auth server on every request.
+ * - `getUser()` validates the JWT against the Supabase Auth server, which is
+ *   the secure approach for server-side usage. `getSession()` only reads from
+ *   the cookie and cannot be trusted on the server.
  * - The profile query is wrapped in `unstable_cache` so it's fetched at most
  *   once per minute instead of on every page navigation.
  * - React `cache()` deduplicates calls within a single render pass — layout
- *   and page both calling this only hits the session cookie once.
+ *   and page both calling this only hits the Auth server once.
  * - `unstable_cache` cannot call cookies() internally, so we use the service
  *   client (no cookie dependency) for the cached profile lookup.
  */
@@ -33,21 +34,21 @@ const getCachedProfile = unstable_cache(
 export const getDashboardUser = cache(async () => {
   const supabase = await createServerClient();
 
-  // getSession reads from cookie — no network round-trip to Auth server
+  // getUser() authenticates against the Supabase Auth server — secure for server use
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!session?.user) return null;
+  if (!user) return null;
 
-  const profile = await getCachedProfile(session.user.id);
+  const profile = await getCachedProfile(user.id);
 
   if (!profile) return null;
   if (!profile.restaurant_id) return null;
 
   return {
-    userId: session.user.id,
-    email: session.user.email ?? "",
+    userId: user.id,
+    email: user.email ?? "",
     restaurantId: profile.restaurant_id as string,
     fullName: profile.full_name ?? "",
     role: profile.role as "merchant_owner" | "merchant_staff",

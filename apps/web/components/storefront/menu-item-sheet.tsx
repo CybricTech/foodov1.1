@@ -191,6 +191,7 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
               src={item.image_url}
               alt={item.name}
               fill
+              unoptimized
               className="object-cover rounded-t-2xl"
               sizes="100vw"
               priority

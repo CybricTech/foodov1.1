@@ -79,6 +79,7 @@ export function LandingFeatured({
                       src={item.image_url}
                       alt={item.name}
                       fill
+                      unoptimized
                       className={`object-cover transition-transform duration-300 ${
                         canTap ? "group-hover:scale-105" : "grayscale"
                       }`}
