@@ -51,6 +51,7 @@ export default async function MenuPage({ params }: MenuPageProps) {
               className="object-cover"
               sizes="100vw"
               priority
+              unoptimized
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-black/10" />
           </div>
@@ -81,6 +82,7 @@ export default async function MenuPage({ params }: MenuPageProps) {
                 fill
                 className="object-cover"
                 sizes="56px"
+                unoptimized
               />
             </div>
           )}
