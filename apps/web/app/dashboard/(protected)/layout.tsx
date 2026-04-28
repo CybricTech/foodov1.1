@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { DashboardNav } from "@/components/dashboard/nav";
+import { ConnectionProvider } from "@/lib/connection-context";
+import { ConnectionBanner } from "@/components/dashboard/connection-banner";
+import { RouterAutoRefresh } from "@/components/shared/router-auto-refresh";
 
 export default async function DashboardLayout({
   children,
@@ -23,13 +26,17 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-black-50">
-      <DashboardNav
-        restaurantId={session.restaurantId}
-        userName={session.fullName || session.email}
-        role={session.role}
-      />
-      <main className="md:ml-60 min-h-screen pb-20 md:pb-0">{children}</main>
-    </div>
+    <ConnectionProvider>
+      <ConnectionBanner />
+      <RouterAutoRefresh />
+      <div className="min-h-screen bg-black-50">
+        <DashboardNav
+          restaurantId={session.restaurantId}
+          userName={session.fullName || session.email}
+          role={session.role}
+        />
+        <main className="md:ml-60 min-h-screen pb-20 md:pb-0">{children}</main>
+      </div>
+    </ConnectionProvider>
   );
 }

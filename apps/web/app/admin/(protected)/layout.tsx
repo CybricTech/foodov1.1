@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { AdminNav } from "@/components/admin/nav";
+import { ConnectionProvider } from "@/lib/connection-context";
+import { ConnectionBanner } from "@/components/dashboard/connection-banner";
+import { RouterAutoRefresh } from "@/components/shared/router-auto-refresh";
 
 export default async function AdminLayout({
   children,
@@ -30,9 +33,13 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen bg-black-50">
-      <AdminNav userName={profile.full_name ?? user.email ?? ""} />
-      <main className="md:ml-60 min-h-screen text-black-900">{children}</main>
-    </div>
+    <ConnectionProvider>
+      <ConnectionBanner />
+      <RouterAutoRefresh />
+      <div className="min-h-screen bg-black-50">
+        <AdminNav userName={profile.full_name ?? user.email ?? ""} />
+        <main className="md:ml-60 min-h-screen text-black-900">{children}</main>
+      </div>
+    </ConnectionProvider>
   );
 }
