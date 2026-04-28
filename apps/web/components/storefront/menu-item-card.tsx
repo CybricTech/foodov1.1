@@ -73,6 +73,7 @@ export function MenuItemCard({ item, onSelect }: MenuItemCardProps) {
             src={item.image_url}
             alt={item.name}
             fill
+            unoptimized
             className={cn(
               "object-cover transition-transform duration-300",
               unavailable ? "grayscale" : "group-hover:scale-105"
