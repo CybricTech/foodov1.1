@@ -10,6 +10,10 @@ import {
   Star,
   ImagePlus,
   ChevronRight,
+  Upload,
+  Download,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 
 import { createBrowserClient } from "@/lib/supabase/client";
@@ -35,6 +39,7 @@ export function MenuManagerClient({
   const [editingItem, setEditingItem] = useState<MenuItemWithOptions | null>(null);
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(
     initialCategories[0]?.id ?? null
   );
@@ -83,13 +88,22 @@ export function MenuManagerClient({
             {items.length} item{items.length !== 1 ? "s" : ""} &middot; {categories.length} categor{categories.length !== 1 ? "ies" : "y"}
           </p>
         </div>
-        <button
-          onClick={() => setShowAddItem(true)}
-          className="flex items-center gap-1.5 bg-purple-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-purple-400 transition-colors duration-200 cursor-pointer"
-        >
-          <Plus size={15} strokeWidth={2.5} />
-          Add item
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCsvImport(true)}
+            className="flex items-center gap-1.5 bg-black-100 text-black-600 text-sm font-semibold px-3.5 py-2.5 rounded-xl hover:bg-black-200 transition-colors duration-200 cursor-pointer"
+          >
+            <Upload size={15} strokeWidth={2.5} />
+            <span className="hidden sm:inline">Import CSV</span>
+          </button>
+          <button
+            onClick={() => setShowAddItem(true)}
+            className="flex items-center gap-1.5 bg-purple-500 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-purple-400 transition-colors duration-200 cursor-pointer"
+          >
+            <Plus size={15} strokeWidth={2.5} />
+            Add item
+          </button>
+        </div>
       </div>
 
       {/* ── MOBILE: horizontal category pills ── */}
@@ -241,6 +255,23 @@ export function MenuManagerClient({
             setCategories((prev) => [...prev, newCat]);
             setActiveCategory(newCat.id);
             setShowAddCategory(false);
+          }}
+        />
+      )}
+
+      {/* CSV import modal */}
+      {showCsvImport && (
+        <CsvImportModal
+          restaurantId={restaurantId}
+          categories={categories}
+          onClose={() => setShowCsvImport(false)}
+          onImported={(newCats, newItems) => {
+            setCategories((prev) => {
+              const existingIds = new Set(prev.map((c) => c.id));
+              return [...prev, ...newCats.filter((c) => !existingIds.has(c.id))];
+            });
+            setItems((prev) => [...prev, ...newItems]);
+            setShowCsvImport(false);
           }}
         />
       )}
@@ -1095,6 +1126,362 @@ function ItemFormModal({
             className="w-full bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors duration-200 cursor-pointer"
           >
             {saving ? "Saving…" : item ? "Save changes" : "Add item"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── CSV helpers ─────────────────────────────────────────────────────────────
+
+interface CsvRow {
+  name: string;
+  description: string;
+  price: string;
+  category: string;
+  is_featured: string;
+  prep_time_minutes: string;
+}
+
+interface ParsedRow extends CsvRow {
+  _line: number;
+  _errors: string[];
+  _priceKobo: number;
+}
+
+const CSV_TEMPLATE =
+  "name,description,price,category,is_featured,prep_time_minutes\n" +
+  "Jollof Rice,Smoky party jollof with fried plantain,2500,Main Course,false,20\n" +
+  "Chicken Suya,Spiced grilled chicken skewers,1800,Starters,false,15\n" +
+  "Chapman,Classic Nigerian cocktail mocktail,1200,Drinks,false,5\n";
+
+function parseCSV(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+  const requiredHeaders = ["name", "price"];
+  const missingHeaders = requiredHeaders.filter((h) => !headers.includes(h));
+  if (missingHeaders.length > 0) {
+    return [{
+      name: "", description: "", price: "", category: "",
+      is_featured: "", prep_time_minutes: "",
+      _line: 1,
+      _errors: [`Missing required column(s): ${missingHeaders.join(", ")}`],
+      _priceKobo: 0,
+    }];
+  }
+
+  const rows: ParsedRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = splitCsvLine(lines[i]);
+    const obj: Record<string, string> = {};
+    headers.forEach((h, idx) => { obj[h] = (values[idx] ?? "").trim(); });
+
+    const row: ParsedRow = {
+      name: obj["name"] ?? "",
+      description: obj["description"] ?? "",
+      price: obj["price"] ?? "",
+      category: obj["category"] ?? "",
+      is_featured: obj["is_featured"] ?? "false",
+      prep_time_minutes: obj["prep_time_minutes"] ?? "",
+      _line: i + 1,
+      _errors: [],
+      _priceKobo: 0,
+    };
+
+    if (!row.name.trim()) row._errors.push("Name is required");
+    const priceNum = parseFloat(row.price);
+    if (!row.price || isNaN(priceNum) || priceNum < 0) {
+      row._errors.push("Price must be a positive number");
+    } else {
+      row._priceKobo = Math.round(priceNum * 100);
+    }
+
+    rows.push(row);
+  }
+  return rows;
+}
+
+function splitCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (ch === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function downloadTemplate() {
+  const blob = new Blob([CSV_TEMPLATE], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "foodo-menu-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── CsvImportModal ───────────────────────────────────────────────────────────
+
+interface CsvImportModalProps {
+  restaurantId: string;
+  categories: MenuCategory[];
+  onClose: () => void;
+  onImported: (newCategories: MenuCategory[], newItems: MenuItemWithOptions[]) => void;
+}
+
+function CsvImportModal({ restaurantId, categories, onClose, onImported }: CsvImportModalProps) {
+  const supabase = createBrowserClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [importDone, setImportDone] = useState(false);
+
+  const validRows = rows.filter((r) => r._errors.length === 0);
+  const errorRows = rows.filter((r) => r._errors.length > 0);
+  const hasHeaderError = rows.length === 1 && rows[0]._line === 1 && rows[0]._errors.length > 0;
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setImportDone(false);
+    setImportError("");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setRows(parseCSV(text));
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleImport() {
+    if (validRows.length === 0) return;
+    setImporting(true);
+    setImportError("");
+
+    try {
+      // Resolve / create categories
+      const categoryMap = new Map<string, string>(categories.map((c) => [c.name.toLowerCase(), c.id]));
+      const newCategories: MenuCategory[] = [];
+
+      const uniqueCatNames = [...new Set(validRows.map((r) => r.category.trim()).filter(Boolean))];
+      for (const catName of uniqueCatNames) {
+        if (!categoryMap.has(catName.toLowerCase())) {
+          const { data, error } = await supabase
+            .from("menu_categories")
+            .insert({ restaurant_id: restaurantId, name: catName, display_order: categories.length + newCategories.length })
+            .select("*")
+            .single();
+          if (error) throw error;
+          categoryMap.set(catName.toLowerCase(), data.id);
+          newCategories.push(data as MenuCategory);
+        }
+      }
+
+      // Bulk insert items
+      const insertPayloads = validRows.map((row) => ({
+        restaurant_id: restaurantId,
+        name: row.name.trim(),
+        description: row.description.trim() || null,
+        price_kobo: row._priceKobo,
+        price: row._priceKobo,
+        category_id: row.category.trim() ? (categoryMap.get(row.category.trim().toLowerCase()) ?? null) : null,
+        is_featured: row.is_featured.toLowerCase() === "true",
+        prep_time_minutes: row.prep_time_minutes ? parseInt(row.prep_time_minutes, 10) || null : null,
+        is_available: true,
+        display_order: 0,
+      }));
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("menu_items")
+        .insert(insertPayloads)
+        .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))");
+      if (insertError) throw insertError;
+
+      setImportDone(true);
+      onImported(newCategories, inserted as unknown as MenuItemWithOptions[]);
+    } catch (e: unknown) {
+      setImportError((e as Error).message ?? "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black-900/50 backdrop-blur-sm">
+      <div className="bg-white w-full max-w-2xl md:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-black-100">
+          <div>
+            <h2 className="font-bold text-black-900">Import menu from CSV</h2>
+            <p className="text-xs text-black-400 mt-0.5">
+              Upload a CSV to bulk-add items. Images are added manually afterward.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-black-400 hover:text-black-700 hover:bg-black-100 transition-colors duration-150 cursor-pointer"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+          {/* Template download */}
+          <div className="bg-purple-50 border border-purple-100 rounded-xl px-4 py-3 flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-purple-700">Step 1 — Get the template</p>
+              <p className="text-xs text-purple-500 mt-0.5">
+                Download the CSV template and feed it to an AI with your menu. The AI fills in the rows.
+              </p>
+              <p className="text-xs text-black-400 mt-1 font-mono">
+                name, description, price, category, is_featured, prep_time_minutes
+              </p>
+            </div>
+            <button
+              onClick={downloadTemplate}
+              className="flex-shrink-0 flex items-center gap-1.5 bg-purple-500 text-white text-xs font-semibold px-3 py-2 rounded-lg hover:bg-purple-400 transition-colors cursor-pointer"
+            >
+              <Download size={13} />
+              Template
+            </button>
+          </div>
+
+          {/* File upload */}
+          <div>
+            <p className="text-sm font-semibold text-black-700 mb-2">Step 2 — Upload your CSV</p>
+            <div
+              onClick={() => fileRef.current?.click()}
+              className="border-2 border-dashed border-black-200 hover:border-purple-400 rounded-xl px-5 py-8 flex flex-col items-center gap-2 cursor-pointer transition-colors duration-150 group"
+            >
+              <Upload size={22} className="text-black-300 group-hover:text-purple-400 transition-colors" />
+              {fileName ? (
+                <p className="text-sm font-medium text-black-700">{fileName}</p>
+              ) : (
+                <p className="text-sm text-black-400">Click to select a <span className="font-semibold">.csv</span> file</p>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFile}
+                className="hidden"
+              />
+            </div>
+          </div>
+
+          {/* Preview table */}
+          {rows.length > 0 && !hasHeaderError && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-sm font-semibold text-black-700">Preview</p>
+                <span className="text-xs bg-green-50 text-green-600 font-semibold px-2 py-0.5 rounded-full">
+                  {validRows.length} valid
+                </span>
+                {errorRows.length > 0 && (
+                  <span className="text-xs bg-cinnabar-50 text-cinnabar-600 font-semibold px-2 py-0.5 rounded-full">
+                    {errorRows.length} errors
+                  </span>
+                )}
+              </div>
+              <div className="border border-black-100 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-black-50 border-b border-black-100">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-black-500 font-semibold">Name</th>
+                        <th className="text-left px-3 py-2 text-black-500 font-semibold">Category</th>
+                        <th className="text-right px-3 py-2 text-black-500 font-semibold">Price (₦)</th>
+                        <th className="text-left px-3 py-2 text-black-500 font-semibold hidden sm:table-cell">Description</th>
+                        <th className="px-3 py-2 text-black-500 font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black-50">
+                      {rows.map((row) => (
+                        <tr key={row._line} className={row._errors.length > 0 ? "bg-cinnabar-50/40" : ""}>
+                          <td className="px-3 py-2 text-black-800 font-medium max-w-[120px] truncate">
+                            {row.name || <span className="text-cinnabar-400 italic">empty</span>}
+                          </td>
+                          <td className="px-3 py-2 text-black-500 max-w-[100px] truncate">{row.category || "—"}</td>
+                          <td className="px-3 py-2 text-black-800 text-right font-mono">
+                            {row._priceKobo > 0 ? `₦${(row._priceKobo / 100).toLocaleString()}` : <span className="text-cinnabar-400">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-black-400 max-w-[180px] truncate hidden sm:table-cell">
+                            {row.description || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {row._errors.length === 0 ? (
+                              <CheckCircle2 size={14} className="text-green-500 mx-auto" />
+                            ) : (
+                              <span title={row._errors.join("; ")}>
+                                <AlertCircle size={14} className="text-cinnabar-500 mx-auto" />
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {errorRows.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {errorRows.map((row) => (
+                    <p key={row._line} className="text-xs text-cinnabar-500">
+                      Row {row._line}: {row._errors.join(", ")}
+                    </p>
+                  ))}
+                  <p className="text-xs text-black-400">Only valid rows will be imported.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {hasHeaderError && (
+            <div className="bg-cinnabar-50 border border-cinnabar-200 rounded-xl px-4 py-3 text-sm text-cinnabar-600">
+              {rows[0]._errors[0]}
+            </div>
+          )}
+
+          {importError && (
+            <div className="bg-cinnabar-50 border border-cinnabar-200 rounded-xl px-4 py-3 text-sm text-cinnabar-600">
+              {importError}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-black-100 bg-white md:rounded-b-2xl">
+          <button
+            onClick={handleImport}
+            disabled={validRows.length === 0 || importing || importDone}
+            className="w-full bg-purple-500 hover:bg-purple-400 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-colors duration-200 cursor-pointer"
+          >
+            {importing
+              ? "Importing…"
+              : importDone
+              ? `Imported ${validRows.length} item${validRows.length !== 1 ? "s" : ""}`
+              : validRows.length > 0
+              ? `Import ${validRows.length} item${validRows.length !== 1 ? "s" : ""}`
+              : "Select a CSV file first"}
           </button>
         </div>
       </div>
