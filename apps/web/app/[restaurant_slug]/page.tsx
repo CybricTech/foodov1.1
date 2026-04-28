@@ -59,8 +59,8 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
             fill
             className="object-cover"
             sizes="100vw"
-            quality={90}
             priority
+            unoptimized
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-primary/90 via-primary/70 to-black/80" />
@@ -78,6 +78,7 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
                 alt={`${restaurant.name} logo`}
                 fill
                 className="object-cover"
+                unoptimized
               />
             </div>
           ) : (
