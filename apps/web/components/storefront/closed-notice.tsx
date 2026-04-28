@@ -76,20 +76,25 @@ export function ClosedNotice() {
   const { restaurant } = useRestaurant();
   const hours = (restaurant as unknown as { opening_hours?: OpeningHours | null }).opening_hours;
 
-  const [closed, setClosed] = useState(false);
+  // hardClosed = merchant manually toggled "Accept orders" off
+  // scheduleClosed = within operating hours but not the right time
+  const [hardClosed, setHardClosed] = useState(false);
+  const [scheduleClosed, setScheduleClosed] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [nextOpen, setNextOpen] = useState<string | null>(null);
 
   useEffect(() => {
     function check() {
       if (!restaurant.accepts_orders) {
-        setClosed(true);
+        setHardClosed(true);
+        setScheduleClosed(false);
         setNextOpen(hours ? getNextOpenTime(hours) : null);
         return;
       }
+      setHardClosed(false);
       if (hours && Object.keys(hours).length > 0) {
         const open = isCurrentlyOpen(hours);
-        setClosed(!open);
+        setScheduleClosed(!open);
         if (!open) setNextOpen(getNextOpenTime(hours));
       }
     }
@@ -99,25 +104,31 @@ export function ClosedNotice() {
     return () => clearInterval(id);
   }, [restaurant.accepts_orders, hours]);
 
-  if (!closed || dismissed) return null;
+  const closed = hardClosed || scheduleClosed;
+  // Hard-closed modals cannot be dismissed — only schedule-based ones can
+  const canDismiss = !hardClosed;
+
+  if (!closed || (dismissed && canDismiss)) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-sm shadow-2xl">
         <div className="px-6 pt-6 pb-6">
-          {/* Close button */}
-          <div className="flex justify-end mb-3">
-            <button
-              onClick={() => setDismissed(true)}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-black-100 text-black-500 hover:bg-black-200 transition-colors cursor-pointer"
-              aria-label="Dismiss"
-            >
-              <X size={15} />
-            </button>
-          </div>
+          {/* Close button — only shown for schedule-based closures */}
+          {canDismiss && (
+            <div className="flex justify-end mb-3">
+              <button
+                onClick={() => setDismissed(true)}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-black-100 text-black-500 hover:bg-black-200 transition-colors cursor-pointer"
+                aria-label="Dismiss"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
 
           {/* Icon */}
-          <div className="flex justify-center mb-5">
+          <div className={`flex justify-center mb-5 ${canDismiss ? "" : "mt-3"}`}>
             <div className="w-20 h-20 bg-black-50 rounded-full flex items-center justify-center">
               <Clock size={36} className="text-black-400" />
             </div>
@@ -142,13 +153,15 @@ export function ClosedNotice() {
             <div className="mb-6" />
           )}
 
-          {/* Browse button */}
-          <button
-            onClick={() => setDismissed(true)}
-            className="w-full bg-black-900 hover:bg-black-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm cursor-pointer"
-          >
-            Browse menu anyway
-          </button>
+          {/* Browse button — only shown for schedule-based closures */}
+          {canDismiss && (
+            <button
+              onClick={() => setDismissed(true)}
+              className="w-full bg-black-900 hover:bg-black-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm cursor-pointer"
+            >
+              Browse menu anyway
+            </button>
+          )}
         </div>
       </div>
     </div>

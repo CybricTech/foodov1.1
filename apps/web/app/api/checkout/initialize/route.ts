@@ -8,6 +8,23 @@ import {
   DELIVERY_MAX_FEE_KOBO,
 } from "@foodo/utils";
 
+type DayHours = { enabled: boolean; open: string; close: string };
+type OpeningHours = Record<string, DayHours>;
+
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+function isWithinOpeningHours(hours: OpeningHours): boolean {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }));
+  const day = hours[DAY_KEYS[now.getDay()]];
+  if (!day?.enabled) return false;
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const [oh, om] = day.open.split(":").map(Number);
+  const [ch, cm] = day.close.split(":").map(Number);
+  const open = oh * 60 + om;
+  const close = ch * 60 + cm;
+  return close <= open ? cur >= open || cur < close : cur >= open && cur < close;
+}
+
 const InitializeSchema = z.object({
   restaurantId: z.string().uuid(),
   customerName: z.string().min(2).max(100),
@@ -69,13 +86,14 @@ export async function POST(request: NextRequest) {
     .eq("is_active", true)
     .single();
 
-  // Fetch vat_percentage separately (column added after type generation)
-  const { data: vatRow } = await supabase
+  // Fetch vat_percentage + opening_hours separately (columns added after type generation)
+  const { data: extraRow } = await supabase
     .from("restaurants")
-    .select("vat_percentage")
+    .select("vat_percentage, opening_hours")
     .eq("id", data.restaurantId)
     .single();
-  const vatPercentageRaw = vatRow ? (vatRow as unknown as Record<string, unknown>)["vat_percentage"] : null;
+  const vatPercentageRaw = extraRow ? (extraRow as unknown as Record<string, unknown>)["vat_percentage"] : null;
+  const openingHoursRaw = extraRow ? (extraRow as unknown as Record<string, unknown>)["opening_hours"] : null;
 
   if (restError || !restaurant) {
     return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
@@ -86,6 +104,16 @@ export async function POST(request: NextRequest) {
       { error: "This restaurant is currently closed" },
       { status: 409 }
     );
+  }
+
+  // If the restaurant has operating hours configured, enforce them server-side
+  if (openingHoursRaw && typeof openingHoursRaw === "object" && Object.keys(openingHoursRaw).length > 0) {
+    if (!isWithinOpeningHours(openingHoursRaw as OpeningHours)) {
+      return NextResponse.json(
+        { error: "This restaurant is currently closed" },
+        { status: 409 }
+      );
+    }
   }
 
   // ── Server-side price verification ─────────────────────────────────────────

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { X, UtensilsCrossed, ArrowRight, Minus, Plus } from "lucide-react";
 import { formatKobo } from "@foodo/utils";
 import { useCartStore } from "@/lib/stores/cart";
+import { useRestaurant } from "./restaurant-context";
 
 interface CartSheetProps {
   open: boolean;
@@ -13,10 +14,12 @@ interface CartSheetProps {
 
 export function CartSheet({ open, onClose }: CartSheetProps) {
   const router = useRouter();
+  const { restaurant } = useRestaurant();
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore((s) => s.subtotalKobo)();
   const slug = useCartStore((s) => s.restaurantSlug);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
+  const isOpen = restaurant.accepts_orders;
 
   useEffect(() => {
     if (open) document.body.style.overflow = "hidden";
@@ -146,9 +149,15 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
             <span className="text-base font-semibold text-black-600">Subtotal</span>
             <span className="text-base font-bold text-black-900">{formatKobo(subtotal)}</span>
           </div>
+          {!isOpen && (
+            <p className="text-xs text-center text-cinnabar-500 font-medium -mb-1">
+              This restaurant is currently closed
+            </p>
+          )}
           <button
             onClick={handleCheckout}
-            className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            disabled={!isOpen}
+            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
             Go to checkout
             <ArrowRight size={16} />
