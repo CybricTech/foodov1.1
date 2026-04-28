@@ -276,8 +276,11 @@ export default function CheckoutPage() {
   const total = subtotal + effectiveDeliveryFee + vatKobo + serviceFeeKobo;
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
+  const storeClosed = !restaurant.accepts_orders;
+
   const payDisabled =
     loading ||
+    storeClosed ||
     (fulfillmentType === "delivery" &&
       (deliveryFeeKobo === null || !!deliveryFeeError || deliveryFeeLoading));
 
@@ -582,16 +585,23 @@ export default function CheckoutPage() {
 
       {/* Fixed pay footer */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-black-100 px-4 py-4 shadow-lg">
+        {storeClosed && (
+          <p className="text-center text-sm font-semibold text-cinnabar-500 mb-3">
+            {restaurant.name} is currently closed and not accepting orders.
+          </p>
+        )}
         <button
           onClick={handlePay}
           disabled={payDisabled}
-          className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-bold py-4 rounded-2xl transition-colors text-base flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-colors text-base flex items-center justify-center gap-2 cursor-pointer"
         >
           {loading ? (
             <>
               <Loader2 size={18} className="animate-spin" />
               Processing…
             </>
+          ) : storeClosed ? (
+            "Store is closed"
           ) : (
             `Pay now · ${formatKobo(total)}`
           )}
