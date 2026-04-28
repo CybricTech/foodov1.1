@@ -25,6 +25,7 @@ export default async function AdminSettlementsPage() {
         delivery_fee_kobo,
         service_fee_kobo,
         vat_kobo,
+        total_kobo,
         settlement_id,
         fulfillment_type,
         status,
@@ -100,7 +101,7 @@ export default async function AdminSettlementsPage() {
     // Platform settings for fee calculations
     supabase
       .from("platform_settings")
-      .select("service_charge_fixed_kobo, delivery_commission_pct")
+      .select("merchant_charge_pct, delivery_commission_pct")
       .single(),
   ]);
 
@@ -122,6 +123,7 @@ export default async function AdminSettlementsPage() {
       delivery_fee_kobo: (o.delivery_fee_kobo as number) ?? 0,
       service_fee_kobo: (o.service_fee_kobo as number) ?? 0,
       vat_kobo: (o.vat_kobo as number) ?? 0,
+      total_kobo: (o.total_kobo as number) ?? 0,
       settlement_id: (o.settlement_id as string) ?? null,
       dispatch_type,
       fulfillment_type: o.fulfillment_type as string,
@@ -179,7 +181,7 @@ export default async function AdminSettlementsPage() {
         settlements={settlements ?? []}
         merchantSummaries={merchantSummaries}
         platformSettings={{
-          serviceFeeFixedKobo: platformSettings?.service_charge_fixed_kobo ?? 20000,
+          merchantChargePct: platformSettings?.merchant_charge_pct ?? 0.01,
           deliveryCommissionPct: platformSettings?.delivery_commission_pct ?? 0.10,
         }}
       />

@@ -15,6 +15,7 @@ type OrderRow = {
   delivery_fee_kobo: number;
   service_fee_kobo: number;
   vat_kobo: number;
+  total_kobo: number;
   settlement_id: string | null;
   dispatch_type: string | null;
   fulfillment_type: string;
@@ -62,7 +63,7 @@ interface SettlementsClientProps {
   orders: OrderRow[];
   settlements: SettlementRow[];
   merchantSummaries: MerchantSummary[];
-  platformSettings: { serviceFeeFixedKobo: number; deliveryCommissionPct: number };
+  platformSettings: { merchantChargePct: number; deliveryCommissionPct: number };
 }
 
 /* ── Helpers ───────────────────────────────────────────────────────────────── */
@@ -71,6 +72,13 @@ function toWATDate(iso: string): string {
   const d = new Date(iso);
   const wat = new Date(d.getTime() + 60 * 60 * 1000);
   return wat.toISOString().slice(0, 10);
+}
+
+function paystackTotal(o: OrderRow): number {
+  return (
+    o.total_kobo ||
+    (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0)
+  );
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -97,8 +105,10 @@ export function SettlementsClient({
   const [merchantSearch, setMerchantSearch] = useState("");
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [exportingDate, setExportingDate] = useState<string | null>(null);
+  const [orderFilter, setOrderFilter] = useState<"all" | "settled" | "unsettled">("all");
+  const [orderSearch, setOrderSearch] = useState("");
 
-  const { serviceFeeFixedKobo, deliveryCommissionPct } = platformSettings;
+  const { merchantChargePct, deliveryCommissionPct } = platformSettings;
 
   /* ── Revenue aggregation ────────────────────────────────────────────────── */
 
@@ -110,20 +120,32 @@ export function SettlementsClient({
   const revenue = useMemo(() => {
     let grossVolume = 0;
     let totalDeliveryFees = 0;
+    let totalMerchantCharge = 0;
+    let totalCustomerServiceFees = 0;
 
     for (const o of completedOrders) {
+      const pTotal = paystackTotal(o);
       grossVolume += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
       totalDeliveryFees += o.delivery_fee_kobo ?? 0;
+      totalMerchantCharge += Math.round(pTotal * merchantChargePct);
+      totalCustomerServiceFees += o.service_fee_kobo ?? 0;
     }
 
-    const totalServiceFees = completedOrders.length * serviceFeeFixedKobo;
     const totalCommissions = Math.round(totalDeliveryFees * deliveryCommissionPct);
+    const totalFoodoRevenue = totalMerchantCharge + totalCommissions + totalCustomerServiceFees;
     const netSettled = settlements
       .filter((s) => s.status === "paid")
       .reduce((sum, s) => sum + s.amount_kobo, 0);
 
-    return { grossVolume, totalServiceFees, totalCommissions, netSettled };
-  }, [completedOrders, settlements, serviceFeeFixedKobo, deliveryCommissionPct]);
+    return {
+      grossVolume,
+      totalMerchantCharge,
+      totalCommissions,
+      totalCustomerServiceFees,
+      totalFoodoRevenue,
+      netSettled,
+    };
+  }, [completedOrders, settlements, merchantChargePct, deliveryCommissionPct]);
 
   /* ── Daily grouped orders ───────────────────────────────────────────────── */
 
@@ -139,16 +161,17 @@ export function SettlementsClient({
       .map(([date, dayOrders]) => {
         let gross = 0;
         let deliveryTotal = 0;
+        let merchantChargeTotal = 0;
         for (const o of dayOrders) {
+          const pTotal = paystackTotal(o);
           gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
           deliveryTotal += o.delivery_fee_kobo ?? 0;
+          merchantChargeTotal += Math.round(pTotal * merchantChargePct);
         }
-        const serviceFees = dayOrders.length * serviceFeeFixedKobo;
         const commission = Math.round(deliveryTotal * deliveryCommissionPct);
-        const net = gross - serviceFees - commission;
+        const net = gross - merchantChargeTotal - commission;
         const allSettled = dayOrders.every((o) => o.settlement_id != null);
 
-        // Build merchant breakdown for expanded view
         const merchantMap: Record<string, { name: string; orders: number; gross: number }> = {};
         for (const o of dayOrders) {
           const rid = o.restaurant_id;
@@ -156,21 +179,39 @@ export function SettlementsClient({
             merchantMap[rid] = { name: o.restaurants?.name ?? "Unknown", orders: 0, gross: 0 };
           }
           merchantMap[rid].orders++;
-          merchantMap[rid].gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+          merchantMap[rid].gross +=
+            (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
         }
 
         return {
           date,
           orderCount: dayOrders.length,
           gross,
-          serviceFees,
+          merchantChargeTotal,
           commission,
           net,
           allSettled,
           merchants: Object.values(merchantMap),
         };
       });
-  }, [completedOrders, serviceFeeFixedKobo, deliveryCommissionPct]);
+  }, [completedOrders, merchantChargePct, deliveryCommissionPct]);
+
+  /* ── Per-order breakdown filter ─────────────────────────────────────────── */
+
+  const filteredOrderBreakdown = useMemo(() => {
+    return completedOrders.filter((o) => {
+      const matchesFilter =
+        orderFilter === "all" ||
+        (orderFilter === "settled" && o.settlement_id != null) ||
+        (orderFilter === "unsettled" && o.settlement_id == null);
+      const q = orderSearch.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        (o.order_number ?? "").toLowerCase().includes(q) ||
+        (o.restaurants?.name ?? "").toLowerCase().includes(q);
+      return matchesFilter && matchesSearch;
+    });
+  }, [completedOrders, orderFilter, orderSearch]);
 
   /* ── Settlement history filter ──────────────────────────────────────────── */
 
@@ -186,7 +227,11 @@ export function SettlementsClient({
     next.setUTCHours(8, 0, 0, 0); // 9 AM WAT
     if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
     return next.toLocaleDateString("en-NG", {
-      weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   }, []);
 
@@ -223,20 +268,43 @@ export function SettlementsClient({
     });
   }
 
-  /* ── Render ──────────────────────────────────────────────────────────────── */
+  /* ── Render ─────────────────────────────────────────────────────────────── */
 
   return (
     <div className="space-y-6">
-      {/* ── Summary Cards ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <SummaryCard label="Gross Volume" value={formatKobo(revenue.grossVolume)} sublabel="All completed orders" />
-        <SummaryCard label="Total Service Fees" value={formatKobo(revenue.totalServiceFees)} sublabel={`₦${(serviceFeeFixedKobo / 100).toFixed(0)} × ${completedOrders.length} orders`} />
-        <SummaryCard label="Total Commissions" value={formatKobo(revenue.totalCommissions)} sublabel={`${(deliveryCommissionPct * 100).toFixed(0)}% delivery commission`} />
-        <SummaryCard label="Net Settled Amount" value={formatKobo(revenue.netSettled)} sublabel="Paid to merchants" highlight="green" />
+
+      {/* ── Revenue Dashboard ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <SummaryCard
+          label="Gross Volume"
+          value={formatKobo(revenue.grossVolume)}
+          sublabel="Subtotal + VAT + Delivery"
+        />
+        <SummaryCard
+          label="Merchant Charge"
+          value={formatKobo(revenue.totalMerchantCharge)}
+          sublabel={`${(merchantChargePct * 100).toFixed(0)}% of Paystack totals`}
+        />
+        <SummaryCard
+          label="Delivery Commission"
+          value={formatKobo(revenue.totalCommissions)}
+          sublabel={`${(deliveryCommissionPct * 100).toFixed(0)}% on all deliveries`}
+        />
+        <SummaryCard
+          label="Customer Svc Fees"
+          value={formatKobo(revenue.totalCustomerServiceFees)}
+          sublabel="1% + ₦200 per order (customer)"
+        />
+        <SummaryCard
+          label="Total Foodo Revenue"
+          value={formatKobo(revenue.totalFoodoRevenue)}
+          sublabel="Merch charge + commission + svc fees"
+          highlight="green"
+        />
         <div className="bg-white rounded-2xl border border-black-200 px-4 py-4 flex flex-col justify-between">
-          <p className="text-xs text-black-500 font-medium">Payout Window</p>
-          <p className="text-sm font-bold text-black-900 mt-1">9 AM – 12 PM WAT</p>
-          <p className="text-[10px] text-black-400 mt-0.5">Next: {nextSettlement}</p>
+          <p className="text-xs text-black-500 font-medium">Net Settled</p>
+          <p className="text-lg font-bold text-black-900 mt-1">{formatKobo(revenue.netSettled)}</p>
+          <p className="text-[10px] text-black-400 mt-0.5">Next payout: {nextSettlement}</p>
         </div>
       </div>
 
@@ -257,8 +325,10 @@ export function SettlementsClient({
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Service Fees</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Delivery Commission</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Merchant Charge</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Delivery Commission
+                </th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Net Payout</th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Status</th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Actions</th>
@@ -291,6 +361,175 @@ export function SettlementsClient({
         </div>
       </div>
 
+      {/* ── Per-Order Fee Breakdown ───────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-black-900 text-sm">Per-Order Fee Breakdown</h2>
+              <p className="text-xs text-black-400 mt-0.5">
+                {filteredOrderBreakdown.length} of {completedOrders.length} orders · Every fee
+                component per transaction
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap items-center">
+              <input
+                type="text"
+                value={orderSearch}
+                onChange={(e) => setOrderSearch(e.target.value)}
+                placeholder="Search order or restaurant…"
+                className="px-3 py-1.5 text-xs rounded-lg border border-black-200 text-black-900 focus:outline-none focus:border-purple-500 w-52"
+              />
+              {(["all", "settled", "unsettled"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setOrderFilter(f)}
+                  className={`px-3 py-1 text-xs rounded-lg font-medium border capitalize transition-colors ${
+                    orderFilter === f
+                      ? "bg-purple-500 text-white border-purple-500"
+                      : "bg-white text-black-500 border-black-200 hover:bg-black-50"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-black-100 bg-black-50">
+                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Order #
+                </th>
+                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Restaurant
+                </th>
+                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Date
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Subtotal
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  VAT
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Del. Fee
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Cust. Svc Fee
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-900 whitespace-nowrap">
+                  Paystack Total
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-purple-600 whitespace-nowrap">
+                  Merch. Charge ({(merchantChargePct * 100).toFixed(0)}%)
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-purple-600 whitespace-nowrap">
+                  Del. Commission ({(deliveryCommissionPct * 100).toFixed(0)}%)
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-viridian-600 whitespace-nowrap">
+                  Foodo Revenue
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Merchant Net
+                </th>
+                <th className="text-center px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Settled
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black-50">
+              {filteredOrderBreakdown.length === 0 ? (
+                <tr>
+                  <td colSpan={13} className="text-center py-8 text-black-400">
+                    No orders found
+                  </td>
+                </tr>
+              ) : (
+                filteredOrderBreakdown.slice(0, 200).map((o) => {
+                  const pTotal = paystackTotal(o);
+                  const merchantCharge = Math.round(pTotal * merchantChargePct);
+                  const delCommission = Math.round((o.delivery_fee_kobo ?? 0) * deliveryCommissionPct);
+                  const foodoRevenue = merchantCharge + delCommission + (o.service_fee_kobo ?? 0);
+                  const grossToMerchant =
+                    (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+                  const merchantNet = grossToMerchant - merchantCharge - delCommission;
+                  const dateLabel = new Date(o.created_at).toLocaleDateString("en-NG", {
+                    day: "numeric",
+                    month: "short",
+                  });
+                  const timeLabel = new Date(o.created_at).toLocaleTimeString("en-NG", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+
+                  return (
+                    <tr key={o.id} className="hover:bg-black-25 transition-colors">
+                      <td className="px-3 py-2.5 font-mono text-black-700 whitespace-nowrap">
+                        {o.order_number ?? "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-black-700 max-w-[140px] truncate">
+                        {o.restaurants?.name ?? "Unknown"}
+                      </td>
+                      <td className="px-3 py-2.5 text-black-500 whitespace-nowrap">
+                        {dateLabel} {timeLabel}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
+                        {formatKobo(o.subtotal_kobo)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-500">
+                        {formatKobo(o.vat_kobo)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
+                        {formatKobo(o.delivery_fee_kobo)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-500">
+                        {formatKobo(o.service_fee_kobo)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-black-900">
+                        {formatKobo(pTotal)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-purple-600">
+                        {formatKobo(merchantCharge)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-purple-600">
+                        {formatKobo(delCommission)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-viridian-600">
+                        {formatKobo(foodoRevenue)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
+                        {formatKobo(merchantNet)}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <span
+                          className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                            o.settlement_id
+                              ? "bg-viridian-100 text-viridian-600"
+                              : "bg-dixie-100 text-dixie-600"
+                          }`}
+                        >
+                          {o.settlement_id ? "Yes" : "No"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+          {filteredOrderBreakdown.length > 200 && (
+            <p className="text-xs text-black-400 text-center py-3 border-t border-black-100">
+              Showing 200 of {filteredOrderBreakdown.length} orders
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* ── Merchant Settlements ──────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-black-200">
@@ -315,25 +554,39 @@ export function SettlementsClient({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-black-100 bg-black-50">
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Restaurant</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Total Earned</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Total Paid</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Outstanding</th>
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Restaurant
+                </th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Total Earned
+                </th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Total Paid
+                </th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Outstanding
+                </th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Bank</th>
-                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Payouts</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Payouts
+                </th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500" />
               </tr>
             </thead>
             <tbody className="divide-y divide-black-50">
               {merchantSummaries
-                .filter((m) =>
-                  !merchantSearch.trim() ||
-                  m.restaurant_name.toLowerCase().includes(merchantSearch.toLowerCase())
+                .filter(
+                  (m) =>
+                    !merchantSearch.trim() ||
+                    m.restaurant_name.toLowerCase().includes(merchantSearch.toLowerCase())
                 )
                 .map((m) => {
                   const outstanding = m.available_balance_kobo + m.pending_balance_kobo;
                   return (
-                    <tr key={m.restaurant_id} className="hover:bg-black-25 transition-colors group">
+                    <tr
+                      key={m.restaurant_id}
+                      className="hover:bg-black-25 transition-colors group"
+                    >
                       <td className="px-4 py-3">
                         <p className="font-semibold text-black-900 truncate max-w-[200px]">
                           {m.restaurant_name}
@@ -387,9 +640,7 @@ export function SettlementsClient({
         <div className="px-4 py-3 border-b border-black-200 flex flex-wrap gap-2 items-center justify-between">
           <div>
             <h2 className="font-bold text-black-900 text-sm">Settlement History</h2>
-            <p className="text-xs text-black-400 mt-0.5">
-              Recorded payouts to restaurants
-            </p>
+            <p className="text-xs text-black-400 mt-0.5">Recorded payouts to restaurants</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             {(["all", "pending", "processing", "paid", "failed"] as const).map((s) => (
@@ -419,14 +670,22 @@ export function SettlementsClient({
                     <p className="text-sm font-semibold text-black-900 truncate">
                       {s.restaurants?.name ?? "Unknown"}
                     </p>
-                    <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${TYPE_STYLES[s.settlement_type] ?? TYPE_STYLES.automatic}`}>
+                    <span
+                      className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
+                        TYPE_STYLES[s.settlement_type] ?? TYPE_STYLES.automatic
+                      }`}
+                    >
                       {s.settlement_type}
                     </span>
                   </div>
                   <p className="text-xs text-black-400 mt-0.5">
                     {s.period_date ? `Period: ${s.period_date} · ` : ""}
                     {s.order_count > 0 ? `${s.order_count} orders · ` : ""}
-                    {new Date(s.created_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
+                    {new Date(s.created_at).toLocaleDateString("en-NG", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
                     {s.bank_reference ? ` · Ref: ${s.bank_reference}` : ""}
                     {s.paystack_transfer_ref ? ` · ${s.paystack_transfer_ref}` : ""}
                   </p>
@@ -468,7 +727,7 @@ function DailyRow({
     date: string;
     orderCount: number;
     gross: number;
-    serviceFees: number;
+    merchantChargeTotal: number;
     commission: number;
     net: number;
     allSettled: boolean;
@@ -480,7 +739,9 @@ function DailyRow({
   exporting: boolean;
 }) {
   const dateLabel = new Date(day.date + "T12:00:00").toLocaleDateString("en-NG", {
-    weekday: "short", day: "numeric", month: "short",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
   });
 
   return (
@@ -495,14 +756,24 @@ function DailyRow({
         </td>
         <td className="px-4 py-2.5 font-medium text-black-900 whitespace-nowrap">{dateLabel}</td>
         <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{day.orderCount}</td>
-        <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{formatKobo(day.gross)}</td>
-        <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.serviceFees)}</td>
-        <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.commission)}</td>
-        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-black-900">{formatKobo(day.net)}</td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-black-700">
+          {formatKobo(day.gross)}
+        </td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">
+          {formatKobo(day.merchantChargeTotal)}
+        </td>
+        <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">
+          {formatKobo(day.commission)}
+        </td>
+        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-black-900">
+          {formatKobo(day.net)}
+        </td>
         <td className="px-4 py-2.5 text-center">
           <span
             className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-              day.allSettled ? "bg-viridian-100 text-viridian-600" : "bg-dixie-100 text-dixie-600"
+              day.allSettled
+                ? "bg-viridian-100 text-viridian-600"
+                : "bg-dixie-100 text-dixie-600"
             }`}
           >
             {day.allSettled ? "Settled" : "Pending"}
@@ -528,7 +799,9 @@ function DailyRow({
               <p className="font-semibold text-black-600 mb-1.5">Merchant Breakdown</p>
               {day.merchants.map((m, i) => (
                 <div key={i} className="flex justify-between text-black-600">
-                  <span>{m.name} ({m.orders} orders)</span>
+                  <span>
+                    {m.name} ({m.orders} orders)
+                  </span>
                   <span className="tabular-nums">{formatKobo(m.gross)}</span>
                 </div>
               ))}
@@ -562,7 +835,11 @@ function SummaryCard({
       }`}
     >
       <p className="text-xs text-black-500 font-medium">{label}</p>
-      <p className={`text-lg font-bold mt-1 ${highlight === "green" ? "text-viridian-600" : "text-black-900"}`}>
+      <p
+        className={`text-lg font-bold mt-1 ${
+          highlight === "green" ? "text-viridian-600" : "text-black-900"
+        }`}
+      >
         {value}
       </p>
       <p className="text-[10px] text-black-400 mt-0.5">{sublabel}</p>
