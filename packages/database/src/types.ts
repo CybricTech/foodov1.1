@@ -472,6 +472,7 @@ export type Database = {
           estimated_delivery_at: string | null
           fulfillment_type: string
           id: string
+          late_at: string | null
           order_number: string
           payment_id: string | null
           payment_ref: string | null
@@ -511,6 +512,7 @@ export type Database = {
           estimated_delivery_at?: string | null
           fulfillment_type: string
           id?: string
+          late_at?: string | null
           order_number: string
           payment_id?: string | null
           payment_ref?: string | null
@@ -550,6 +552,7 @@ export type Database = {
           estimated_delivery_at?: string | null
           fulfillment_type?: string
           id?: string
+          late_at?: string | null
           order_number?: string
           payment_id?: string | null
           payment_ref?: string | null
@@ -1257,6 +1260,7 @@ export type Database = {
         Args: { p_amount_kobo: number; p_restaurant_id: string }
         Returns: undefined
       }
+      mark_late_orders: { Args: never; Returns: undefined }
       release_pending_wallet_balances: { Args: never; Returns: undefined }
       restore_failed_settlement: {
         Args: { p_amount_kobo: number; p_restaurant_id: string }

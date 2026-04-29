@@ -87,3 +87,7 @@ export function useConnection() {
   }
   return ctx;
 }
+
+export function useConnectionOptional() {
+  return useContext(ConnectionContext);
+}

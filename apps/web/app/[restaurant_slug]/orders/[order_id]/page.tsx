@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
+import { OrderEtaCountdown } from "@/components/storefront/order-eta-countdown";
 import { formatKobo } from "@foodo/utils";
 import { ORDER_PROGRESS_STEPS_DELIVERY, ORDER_PROGRESS_STEPS_PICKUP } from "@foodo/utils";
 import { cn } from "@foodo/ui";
@@ -147,6 +148,13 @@ export default function OrderTrackingPage() {
           </div>
         </div>
 
+        {/* ETA countdown */}
+        <OrderEtaCountdown
+          estimatedDeliveryAt={(order as unknown as { estimated_delivery_at?: string | null }).estimated_delivery_at ?? null}
+          status={order.status}
+          fulfillmentType={order.fulfillment_type as "delivery" | "pickup"}
+        />
+
         {/* Progress stepper */}
         {!isCancelled && (
           <div className="bg-white rounded-2xl border border-black-100 px-4 py-5">
@@ -238,6 +246,109 @@ export default function OrderTrackingPage() {
             <div>
               <p className="text-xs text-black-400 font-medium mb-0.5">Delivery to</p>
               <p className="text-sm text-black-900 leading-relaxed">{order.delivery_address}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Order details */}
+        <OrderDetailsCard order={order} />
+      </div>
+    </div>
+  );
+}
+
+function OrderDetailsCard({ order }: { order: OrderWithItems }) {
+  const raw = order as unknown as Record<string, unknown>;
+
+  const subtotalKobo     = typeof raw.subtotal_kobo      === "number" ? raw.subtotal_kobo      : 0;
+  const deliveryFeeKobo  = typeof raw.delivery_fee_kobo  === "number" ? raw.delivery_fee_kobo  : 0;
+  const vatKobo          = typeof raw.vat_kobo           === "number" ? raw.vat_kobo           : 0;
+  const serviceFeeKobo   = typeof raw.service_fee_kobo   === "number" ? raw.service_fee_kobo   : 0;
+  const specialInstructions = typeof raw.special_instructions === "string" ? raw.special_instructions : null;
+
+  const placedAt = new Date(order.created_at);
+  const placedAtDate = placedAt.toLocaleDateString("en-NG", {
+    timeZone: "Africa/Lagos",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const placedAtTime = placedAt.toLocaleTimeString("en-NG", {
+    timeZone: "Africa/Lagos",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  const isDelivery = order.fulfillment_type === "delivery";
+
+  return (
+    <div className="bg-white rounded-2xl border border-black-100 px-4 py-5">
+      <h2 className="text-sm font-bold text-black-700 mb-4">Order details</h2>
+
+      <div className="space-y-3">
+        {/* Fulfillment row */}
+        <div className="flex items-center gap-2.5">
+          {isDelivery ? (
+            <Bike size={15} className="text-black-400 flex-shrink-0" strokeWidth={1.75} />
+          ) : (
+            <Package size={15} className="text-black-400 flex-shrink-0" strokeWidth={1.75} />
+          )}
+          <span className="text-sm text-black-900 font-medium">
+            {isDelivery && order.delivery_address
+              ? `Delivery to ${order.delivery_address}`
+              : "Pickup"}
+          </span>
+        </div>
+
+        {/* Placed at */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-black-500">Placed at</span>
+          <span className="text-black-900 font-medium">{placedAtDate} · {placedAtTime}</span>
+        </div>
+
+        {/* Price breakdown */}
+        {subtotalKobo > 0 && (
+          <div className="border-t border-black-100 pt-3 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-black-500">Subtotal</span>
+              <span className="text-black-900 font-medium">{formatKobo(subtotalKobo)}</span>
+            </div>
+
+            {isDelivery && deliveryFeeKobo > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-black-500">Delivery fee</span>
+                <span className="text-black-900 font-medium">{formatKobo(deliveryFeeKobo)}</span>
+              </div>
+            )}
+
+            {vatKobo > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-black-500">VAT</span>
+                <span className="text-black-900 font-medium">{formatKobo(vatKobo)}</span>
+              </div>
+            )}
+
+            {serviceFeeKobo > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-black-500">Service fee</span>
+                <span className="text-black-900 font-medium">{formatKobo(serviceFeeKobo)}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-sm border-t border-black-100 pt-2">
+              <span className="font-bold text-black-900">Total</span>
+              <span className="font-bold text-black-900">{formatKobo(order.total_kobo)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Special instructions */}
+        {specialInstructions && (
+          <div className="border-t border-black-100 pt-3">
+            <p className="text-xs text-black-500 font-medium mb-1.5">Special instructions</p>
+            <div className="bg-black-50 rounded-xl px-3 py-2.5">
+              <p className="text-sm text-black-500 italic leading-relaxed">{specialInstructions}</p>
             </div>
           </div>
         )}

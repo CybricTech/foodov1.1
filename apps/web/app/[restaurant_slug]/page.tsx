@@ -12,6 +12,7 @@ import {
 import { LandingFeatured } from "@/components/storefront/landing-featured";
 import { ReviewsSection } from "@/components/storefront/reviews-section";
 import { LocationSection } from "@/components/storefront/location-section";
+import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
 
 export const revalidate = 60;
 
@@ -48,6 +49,8 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
     !!restaurant.min_order_amount;
 
   return (
+    <>
+      <ActiveOrderBanner />
     <div className="min-h-screen bg-white">
       {/* ── Hero ── */}
       <section className="relative w-full h-[72vh] min-h-[480px] max-h-[720px]">
@@ -183,5 +186,6 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
         restaurantSlug={params.restaurant_slug}
       />
     </div>
+    </>
   );
 }

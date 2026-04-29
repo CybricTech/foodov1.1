@@ -159,6 +159,13 @@ export async function POST(request: NextRequest) {
     }>;
   }>) ?? [];
 
+  const menuItemIds = items.map((i) => i.menuItemId);
+
+  const { data: menuItems } = await supabase
+    .from("menu_items")
+    .select("id, price_kobo, prep_time_minutes")
+    .in("id", menuItemIds);
+
   if (items.length > 0) {
     await supabase.from("order_items").insert(
       items.map((item) => ({
@@ -175,6 +182,22 @@ export async function POST(request: NextRequest) {
       }))
     );
   }
+
+  const menuPrepMap = new Map(
+    (menuItems ?? []).map((m) => [m.id, (m as unknown as { prep_time_minutes?: number | null }).prep_time_minutes ?? null])
+  );
+  const prepTimes = items
+    .map((item) => menuPrepMap.get(item.menuItemId))
+    .filter((p): p is number => p != null);
+  const maxPrepMinutes = prepTimes.length > 0 ? Math.max(...prepTimes) : 20;
+  const bufferMinutes = meta.fulfillment_type === "delivery" ? 30 : 0;
+  const etaMs = (maxPrepMinutes + bufferMinutes) * 60 * 1000;
+  const estimatedDeliveryAt = new Date(Date.now() + etaMs).toISOString();
+
+  await supabase
+    .from("orders")
+    .update({ estimated_delivery_at: estimatedDeliveryAt })
+    .eq("id", order.id);
 
   // 7. Upsert CRM customer record
   const totalKobo =
