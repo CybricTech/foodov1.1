@@ -201,7 +201,10 @@ export async function POST(request: NextRequest) {
 
   // 7. Upsert CRM customer record
   const totalKobo =
-    (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number) + ((meta.vat_kobo as number) || 0);
+    (meta.subtotal_kobo as number) +
+    (meta.delivery_fee_kobo as number) +
+    ((meta.vat_kobo as number) || 0) +
+    ((meta.service_fee_kobo as number) || 0);
 
   await supabase.rpc("upsert_customer", {
     p_restaurant_id: restaurantId,

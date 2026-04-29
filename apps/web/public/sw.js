@@ -1,5 +1,5 @@
 // Foodo Service Worker — offline-first for Nigerian low-bandwidth users
-const CACHE = "foodo-v1";
+const CACHE = "foodo-v2";
 const OFFLINE_URL = "/offline";
 const STATIC_ASSETS = [
   OFFLINE_URL,
@@ -57,17 +57,23 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Next.js static assets (_next/static): cache-first with long TTL
+  // Next.js JS/CSS chunks (_next/static): network-first so that a new deploy
+  // always delivers fresh bundles. Falls back to cache only when offline.
+  // This prevents stale checkout JS being served from cache after a deploy,
+  // which was the root cause of the iOS bfcache regression.
   if (request.url.includes("/_next/static/")) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, clone));
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, clone));
+          }
           return response;
-        });
-      })
+        })
+        .catch(() =>
+          caches.match(request).then((r) => r ?? Response.error())
+        )
     );
     return;
   }

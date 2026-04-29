@@ -239,8 +239,10 @@ export async function POST(request: NextRequest) {
         deliveryFeeKobo = data.deliveryFeeKobo ?? baseFeeKobo;
       }
     } else {
-      // No dynamic fee submitted — fall back to restaurant's flat rate
-      deliveryFeeKobo = restaurant.delivery_fee ?? 0;
+      // No distance submitted (restaurant has no coordinates or client omitted it).
+      // Prefer the fee the UI already showed the customer; only fall back to the
+      // restaurant's flat rate if the client sent nothing at all.
+      deliveryFeeKobo = data.deliveryFeeKobo ?? restaurant.delivery_fee ?? 0;
     }
   }
 

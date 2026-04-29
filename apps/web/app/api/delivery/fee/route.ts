@@ -51,9 +51,22 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+  // Safety guard: if the API key is not configured, return the base fee rather
+  // than making a request with key=undefined which would always fail.
+  if (!apiKey) {
+    return NextResponse.json({
+      feeKobo: baseFeeKobo,
+      distanceKm: null,
+      durationMinutes: null,
+      fallback: true,
+      message: "Using base delivery fee — GOOGLE_MAPS_API_KEY is not configured",
+    });
+  }
+
   const origin = `${restaurant.latitude},${restaurant.longitude}`;
   const destination = encodeURIComponent(destinationAddress);
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 
   const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&units=metric&key=${apiKey}`;
 

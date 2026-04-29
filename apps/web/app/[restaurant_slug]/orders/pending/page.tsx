@@ -20,29 +20,61 @@ function PendingOrderContent() {
     let timeout: ReturnType<typeof setTimeout>;
 
     async function poll() {
-      const res = await fetch(`/api/checkout/status?ref=${encodeURIComponent(ref!)}`);
-      const json = await res.json();
-
-      if (json.orderId) {
+      try {
+        const res = await fetch(`/api/checkout/status?ref=${encodeURIComponent(ref!)}`);
+        // res.json() can throw when the server returns a non-JSON body (e.g. a
+        // 502 HTML error page), so parse inside the try block as well.
+        let json: Record<string, unknown>;
         try {
-          localStorage.setItem(
-            `kitchyn:lastOrder:${restaurant.slug}`,
-            JSON.stringify({ orderId: json.orderId, savedAt: Date.now() })
-          );
-        } catch {}
-        router.replace(`/${restaurant.slug}/orders/success/${json.orderId}`);
-        return;
-      }
-
-      setAttempts((a) => {
-        const next = a + 1;
-        if (next >= 15) {
-          setTimedOut(true);
-          return next;
+          json = await res.json();
+        } catch {
+          // JSON parse failure — treat as a transient error and keep polling.
+          setAttempts((a) => {
+            const next = a + 1;
+            if (next >= 15) {
+              setTimedOut(true);
+              return next;
+            }
+            timeout = setTimeout(poll, 2000);
+            return next;
+          });
+          return;
         }
-        timeout = setTimeout(poll, 2000);
-        return next;
-      });
+
+        if (json.orderId) {
+          try {
+            localStorage.setItem(
+              `kitchyn:lastOrder:${restaurant.slug}`,
+              JSON.stringify({ orderId: json.orderId, savedAt: Date.now() })
+            );
+          } catch {}
+          router.replace(`/${restaurant.slug}/orders/success/${json.orderId}`);
+          return;
+        }
+
+        setAttempts((a) => {
+          const next = a + 1;
+          if (next >= 15) {
+            setTimedOut(true);
+            return next;
+          }
+          timeout = setTimeout(poll, 2000);
+          return next;
+        });
+      } catch {
+        // Network error (fetch threw) — increment the attempt counter so the
+        // loop eventually times out, but keep retrying in case it is a brief
+        // connectivity blip.
+        setAttempts((a) => {
+          const next = a + 1;
+          if (next >= 15) {
+            setTimedOut(true);
+            return next;
+          }
+          timeout = setTimeout(poll, 2000);
+          return next;
+        });
+      }
     }
 
     timeout = setTimeout(poll, 2000);

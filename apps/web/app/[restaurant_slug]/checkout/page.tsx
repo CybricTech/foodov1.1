@@ -42,6 +42,7 @@ export default function CheckoutPage() {
 
   const placesReadyRef = useRef(false);
   const predictionsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deliveryFeeAbortRef = useRef<AbortController | null>(null);
 
   const [aptSuiteFloor, setAptSuiteFloor] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
@@ -70,19 +71,31 @@ export default function CheckoutPage() {
     return () => window.removeEventListener("pageshow", handlePageShow);
   }, []);
 
-  // Auto-calculate delivery fee when user stops typing an address
+  // Auto-calculate delivery fee when user stops typing an address.
+  // Uses an abort-controller pattern so that if the address changes while a
+  // request is already in-flight the stale response is discarded and a fresh
+  // calculation is kicked off for the latest address.
   useEffect(() => {
     if (fulfillmentType !== "delivery") return;
     if (addressInput.trim().length < 10) return;
-    if (deliveryFeeLoading) return;
+
+    // Abort any previous in-flight request immediately.
+    if (deliveryFeeAbortRef.current) {
+      deliveryFeeAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    deliveryFeeAbortRef.current = controller;
 
     const id = setTimeout(() => {
       if (deliveryFeeKobo === null && !deliveryFeeError) {
-        calculateDeliveryFee(addressInput.trim());
+        calculateDeliveryFee(addressInput.trim(), controller.signal);
       }
     }, 1200);
 
-    return () => clearTimeout(id);
+    return () => {
+      clearTimeout(id);
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addressInput, fulfillmentType]);
 
@@ -157,13 +170,17 @@ export default function CheckoutPage() {
     return () => { cancelled = true; };
   }, [fulfillmentType]);
 
-  async function calculateDeliveryFee(address: string) {
+  async function calculateDeliveryFee(address: string, signal?: AbortSignal) {
     setDeliveryFeeLoading(true);
     setDeliveryFeeError("");
     try {
       const url = `/api/delivery/fee?restaurantId=${restaurant.id}&destinationAddress=${encodeURIComponent(address)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, signal ? { signal } : undefined);
+      // If this request was aborted after it completed, discard the response so
+      // the result for a stale address is never committed to state.
+      if (signal?.aborted) return;
       const text = await res.text();
+      if (signal?.aborted) return;
       let data;
       try {
         data = JSON.parse(text);
@@ -182,10 +199,15 @@ export default function CheckoutPage() {
         // Accept manually-typed addresses too — not just Google Places predictions
         setSelectedPlaceAddress(address);
       }
-    } catch {
+    } catch (err) {
+      // AbortError is expected when the effect cleans up — don't surface it as a UI error.
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setDeliveryFeeError("Could not calculate delivery fee. Please try again.");
     } finally {
-      setDeliveryFeeLoading(false);
+      // Only clear the loading spinner if this request wasn't superseded.
+      if (!signal?.aborted) {
+        setDeliveryFeeLoading(false);
+      }
     }
   }
 
@@ -289,13 +311,17 @@ export default function CheckoutPage() {
       }
 
       const PaystackPop = await loadPaystackScript();
+      // Paystack v1 expects either access_code or ref — not both.
+      // Prefer access_code (the secure server-generated token); fall back to
+      // ref only when access_code is absent.
       const handler = PaystackPop.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
         email: email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`,
         amount: initData.totalKobo,
         currency: "NGN",
-        ref: initData.paystackRef,
-        access_code: initData.accessCode,
+        ...(initData.accessCode
+          ? { access_code: initData.accessCode }
+          : { ref: initData.paystackRef }),
         callback: () => {
           clearCart();
           router.push(`/${restaurant.slug}/orders/pending?ref=${initData.paystackRef}`);
@@ -334,6 +360,78 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-black-50 pb-32">
+      {/* Phone gate overlay — rendered at root JSX level, outside any scrollable
+          container, so that `position: fixed` is anchored to the viewport on iOS
+          Safari. Nesting a fixed element inside a parent that has transform,
+          overflow:hidden, or -webkit-overflow-scrolling clips it to the parent
+          instead of the viewport. */}
+      {step === "phone" && (
+        <div
+          className="fixed inset-0 z-[100] bg-black-50 flex flex-col items-center justify-center px-4"
+          style={{ WebkitTransform: "translateZ(0)" }}
+        >
+          <div className="bg-white rounded-2xl border border-black-100 p-6 space-y-5 w-full max-w-sm shadow-xl">
+            <div className="text-center space-y-2">
+              {restaurant.logo_url && (
+                <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-black-100">
+                  <Image
+                    src={restaurant.logo_url}
+                    alt={restaurant.name}
+                    width={64}
+                    height={64}
+                    className="object-cover w-full h-full"
+                    unoptimized
+                  />
+                </div>
+              )}
+              <h2 className="text-lg font-bold text-black-900">
+                {restaurant.name}
+              </h2>
+              <p className="text-sm text-black-500">
+                Enter your phone number to continue
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    lookupCustomer().then(() => setStep("checkout"));
+                  }
+                }}
+                placeholder="e.g. 0812 345 6789"
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
+                  "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
+                  "placeholder:text-black-300 transition-colors",
+                  "border-black-200"
+                )}
+              />
+              <button
+                onClick={() => {
+                  lookupCustomer().then(() => setStep("checkout"));
+                }}
+                disabled={phoneLoading || !isValidNigerianPhone(phone)}
+                className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                {phoneLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Looking you up…
+                  </>
+                ) : (
+                  "Continue"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b border-black-100 px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
         <button
@@ -350,74 +448,6 @@ export default function CheckoutPage() {
       </div>
 
       <div className="px-4 mt-5 space-y-5">
-        {/* Phone gate overlay — full screen, above everything, iOS-safe */}
-        {step === "phone" && (
-          <div
-            className="fixed inset-0 z-[100] bg-black-50 flex flex-col items-center justify-center px-4"
-            style={{ WebkitTransform: "translateZ(0)" }}
-          >
-            <div className="bg-white rounded-2xl border border-black-100 p-6 space-y-5 w-full max-w-sm shadow-xl">
-              <div className="text-center space-y-2">
-                {restaurant.logo_url && (
-                  <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-black-100">
-                    <Image
-                      src={restaurant.logo_url}
-                      alt={restaurant.name}
-                      width={64}
-                      height={64}
-                      className="object-cover w-full h-full"
-                      unoptimized
-                    />
-                  </div>
-                )}
-                <h2 className="text-lg font-bold text-black-900">
-                  {restaurant.name}
-                </h2>
-                <p className="text-sm text-black-500">
-                  Enter your phone number to continue
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      lookupCustomer().then(() => setStep("checkout"));
-                    }
-                  }}
-                  placeholder="e.g. 0812 345 6789"
-                  className={cn(
-                    "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
-                    "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
-                    "placeholder:text-black-300 transition-colors",
-                    "border-black-200"
-                  )}
-                />
-                <button
-                  onClick={() => {
-                    lookupCustomer().then(() => setStep("checkout"));
-                  }}
-                  disabled={phoneLoading || !isValidNigerianPhone(phone)}
-                  className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {phoneLoading ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" />
-                      Looking you up…
-                    </>
-                  ) : (
-                    "Continue"
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Order type card */}
         <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
           {/* Pickup / Delivery toggle */}
