@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
     order_number: fallbackOrderNumber,
   };
 
-  let orderResult = await supabase
+  const orderResult = await supabase
     .from("orders")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .insert(orderPayload as any)
