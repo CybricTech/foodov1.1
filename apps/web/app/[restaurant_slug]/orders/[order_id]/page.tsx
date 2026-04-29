@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import {
-  Check, XCircle, PackageCheck, Bike, Package,
-  UtensilsCrossed, Clock, AlertCircle, MapPin, ArrowLeft,
+  Check, Bike, Package,
+  AlertCircle, MapPin, ArrowLeft,
   Store,
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";

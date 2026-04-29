@@ -103,46 +103,57 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. Create the order
-  const { data: order, error: orderError } = await supabase
+  // Fallback order number in case the DB trigger is missing or fails.
+  // The BEFORE INSERT trigger (if present) will override this with the
+  // proper prefix + sequence format (e.g. TC-1001).
+  const fallbackOrderNumber = `FD-${Date.now()}`;
+
+  const orderPayload = {
+    restaurant_id: restaurantId,
+    payment_id: existingPayment.id,
+    customer_phone: meta.customer_phone as string,
+    customer_name: meta.customer_name as string,
+    customer_email: (meta.customer_email as string) || null,
+    fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
+    delivery_address: (meta.delivery_address as string) || null,
+    special_instructions: (meta.special_instructions as string) || null,
+    status: "confirmed" as const,
+    payment_status: "paid" as const,
+    subtotal_kobo: meta.subtotal_kobo as number,
+    delivery_fee_kobo: meta.delivery_fee_kobo as number,
+    vat_kobo: (meta.vat_kobo as number) || 0,
+    service_fee_kobo: (meta.service_fee_kobo as number) || 0,
+    total_kobo:
+      (meta.subtotal_kobo as number) +
+      (meta.delivery_fee_kobo as number) +
+      ((meta.vat_kobo as number) || 0) +
+      ((meta.service_fee_kobo as number) || 0),
+    subtotal: meta.subtotal_kobo as number,
+    total_amount:
+      (meta.subtotal_kobo as number) +
+      (meta.delivery_fee_kobo as number) +
+      ((meta.vat_kobo as number) || 0) +
+      ((meta.service_fee_kobo as number) || 0),
+    delivery_distance_km: (meta.delivery_distance_km as number) || null,
+    delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
+    order_number: fallbackOrderNumber,
+  };
+
+  let orderResult = await supabase
     .from("orders")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .insert({
-      restaurant_id: restaurantId,
-      payment_id: existingPayment.id,
-      customer_phone: meta.customer_phone as string,
-      customer_name: meta.customer_name as string,
-      customer_email: (meta.customer_email as string) || null,
-      fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
-      delivery_address: (meta.delivery_address as string) || null,
-      special_instructions: (meta.special_instructions as string) || null,
-      status: "confirmed" as const,
-      payment_status: "paid" as const,
-      subtotal_kobo: meta.subtotal_kobo as number,
-      delivery_fee_kobo: meta.delivery_fee_kobo as number,
-      vat_kobo: (meta.vat_kobo as number) || 0,
-      service_fee_kobo: (meta.service_fee_kobo as number) || 0,
-      total_kobo:
-        (meta.subtotal_kobo as number) +
-        (meta.delivery_fee_kobo as number) +
-        ((meta.vat_kobo as number) || 0) +
-        ((meta.service_fee_kobo as number) || 0),
-      subtotal: meta.subtotal_kobo as number,
-      total_amount:
-        (meta.subtotal_kobo as number) +
-        (meta.delivery_fee_kobo as number) +
-        ((meta.vat_kobo as number) || 0) +
-        ((meta.service_fee_kobo as number) || 0),
-      delivery_distance_km: (meta.delivery_distance_km as number) || null,
-      delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
+    .insert(orderPayload as any)
     .select("id, order_number")
     .single();
 
-  if (orderError || !order) {
-    console.error("[webhook] Order creation failed:", JSON.stringify(orderError));
+  // If the insert failed, log the full payload and error for debugging
+  if (orderResult.error || !orderResult.data) {
+    console.error("[webhook] Order creation failed:", JSON.stringify(orderResult.error));
+    console.error("[webhook] Order payload:", JSON.stringify(orderPayload));
     return NextResponse.json({ error: "Order creation failed" }, { status: 500 });
   }
+
+  const order = orderResult.data;
 
   console.log(`[webhook] Order created: id=${order.id}, number=${order.order_number}`);
 

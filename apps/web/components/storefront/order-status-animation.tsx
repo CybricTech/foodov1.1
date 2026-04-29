@@ -156,7 +156,7 @@ function DeliveredAnimation({ size, brandColor }: { size: number; brandColor: st
 }
 
 /* ── Cancelled: X mark ────────────────────────────────────────────── */
-function CancelledAnimation({ size, brandColor }: { size: number; brandColor: string }) {
+function CancelledAnimation({ size, brandColor: _brandColor }: { size: number; brandColor: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none" className="animate-in fade-in zoom-in duration-500">
       <circle cx="32" cy="32" r="28" fill="#EF4444" opacity="0.1" />
