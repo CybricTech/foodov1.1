@@ -102,31 +102,7 @@
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant menu page food ordering mobile customer\" --design-system -p \"Foodo Menu Page\")",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant merchant dashboard SaaS analytics orders revenue\" --design-system -p \"Kitchyn Dashboard\")",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard KPI cards orders status real-time mobile\" --domain ux -n 5)",
-      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard analytics nextjs\" --stack nextjs)",
-      "Bash(lsof -i :3000 -sTCP:LISTEN)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 check-ignore apps/web/.env)",
-      "Bash(lsof -ti:3000,3001,3002)",
-      "Bash(git branch *)",
-      "Bash(git switch *)",
-      "Bash(git stash *)",
-      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 status)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 diff apps/web/app/admin/\\\\\\(protected\\\\\\)/analytics/page.tsx apps/web/components/admin/merchant-settlement-detail-client.tsx)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 add apps/web/components/dashboard/frontline-orders-client.tsx)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 commit -m ' *)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 push origin staging)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 add .github/workflows/ci.yml)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 push origin main)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 checkout main)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 pull origin main)",
-      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"food restaurant SaaS platform landing page purple brand\" --design-system -p \"kitchyn\" -f markdown)",
-      "Bash(git -C /Users/amir/Downloads/Repos/foodov1.1 diff --stat HEAD)",
-      "Bash(git checkout *)",
-      "Bash(git merge *)",
-      "Bash(supabase db *)",
-      "Bash(supabase migration *)",
-      "Bash(git pull *)",
-      "Bash(kill 9054 78804 78775 78774)"
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard analytics nextjs\" --stack nextjs)"
     ]
   }
 }
