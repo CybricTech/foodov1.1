@@ -1,5 +1,5 @@
 // Foodo Service Worker — offline-first for Nigerian low-bandwidth users
-const CACHE = "foodo-v1";
+const CACHE = "foodo-v2";
 const OFFLINE_URL = "/offline";
 const STATIC_ASSETS = [
   OFFLINE_URL,
@@ -20,8 +20,8 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
       )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -57,17 +57,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Next.js static assets (_next/static): cache-first with long TTL
+  // Next.js static assets (_next/static): network-first to prevent stale JS/CSS bundles.
+  // This is critical for App Router deployments where page chunks change between builds.
   if (request.url.includes("/_next/static/")) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, clone));
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, clone));
+          }
           return response;
-        });
-      })
+        })
+        .catch(() => caches.match(request).then((cached) => cached ?? Response.error()))
     );
     return;
   }

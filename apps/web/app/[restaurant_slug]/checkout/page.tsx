@@ -59,11 +59,14 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, []);
 
-  // Detect bfcache restore (iOS Safari) and reload to prevent stale checkout bundles
+  // Detect bfcache restore (iOS Safari) and hard-reload to prevent stale checkout bundles.
+  // A hard reload (cache-busting URL) is required because Safari may serve cached JS chunks.
   useEffect(() => {
     function handlePageShow(e: PageTransitionEvent) {
       if (e.persisted) {
-        window.location.reload();
+        const url = new URL(window.location.href);
+        url.searchParams.set("_v", Date.now().toString());
+        window.location.replace(url.toString());
       }
     }
     window.addEventListener("pageshow", handlePageShow);
@@ -96,6 +99,24 @@ export default function CheckoutPage() {
     Array<{ id: string; address: string; label: string | null; is_default: boolean }>
   >([]);
   const [phoneLoading, setPhoneLoading] = useState(false);
+  const phoneGateRef = useRef<HTMLDivElement | null>(null);
+
+  // iOS Safari safeguard: ensure phone gate is visible on first mount.
+  // If the checkout form renders without the gate, force a hard reload
+  // to bust any stale cached JS bundles.
+  useEffect(() => {
+    // Small delay to let React finish painting
+    const id = setTimeout(() => {
+      if (step === "phone" && !phoneGateRef.current) {
+        console.warn("[Checkout] Phone gate missing from DOM — reloading to bust stale cache");
+        const url = new URL(window.location.href);
+        url.searchParams.set("_v", Date.now().toString());
+        window.location.replace(url.toString());
+      }
+    }, 600);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (fulfillmentType === "pickup") {
@@ -349,75 +370,77 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      <div className="px-4 mt-5 space-y-5">
-        {/* Phone gate overlay — full screen, above everything, iOS-safe */}
-        {step === "phone" && (
-          <div
-            className="fixed inset-0 z-[100] bg-black-50 flex flex-col items-center justify-center px-4"
-            style={{ WebkitTransform: "translateZ(0)" }}
-          >
-            <div className="bg-white rounded-2xl border border-black-100 p-6 space-y-5 w-full max-w-sm shadow-xl">
-              <div className="text-center space-y-2">
-                {restaurant.logo_url && (
-                  <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-black-100">
-                    <Image
-                      src={restaurant.logo_url}
-                      alt={restaurant.name}
-                      width={64}
-                      height={64}
-                      className="object-cover w-full h-full"
-                      unoptimized
-                    />
-                  </div>
-                )}
-                <h2 className="text-lg font-bold text-black-900">
-                  {restaurant.name}
-                </h2>
-                <p className="text-sm text-black-500">
-                  Enter your phone number to continue
-                </p>
-              </div>
+      {/* Phone gate overlay — MUST be a direct child of the root viewport div.
+          Nesting inside a scrolling container breaks iOS Safari fixed positioning. */}
+      {step === "phone" && (
+        <div
+          ref={phoneGateRef}
+          className="fixed inset-0 z-[100] bg-black-50 flex flex-col items-center justify-center px-4"
+          style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+        >
+          <div className="bg-white rounded-2xl border border-black-100 p-6 space-y-5 w-full max-w-sm shadow-xl">
+            <div className="text-center space-y-2">
+              {restaurant.logo_url && (
+                <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-black-100">
+                  <Image
+                    src={restaurant.logo_url}
+                    alt={restaurant.name}
+                    width={64}
+                    height={64}
+                    className="object-cover w-full h-full"
+                    unoptimized
+                  />
+                </div>
+              )}
+              <h2 className="text-lg font-bold text-black-900">
+                {restaurant.name}
+              </h2>
+              <p className="text-sm text-black-500">
+                Enter your phone number to continue
+              </p>
+            </div>
 
-              <div className="space-y-3">
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      lookupCustomer().then(() => setStep("checkout"));
-                    }
-                  }}
-                  placeholder="e.g. 0812 345 6789"
-                  className={cn(
-                    "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
-                    "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
-                    "placeholder:text-black-300 transition-colors",
-                    "border-black-200"
-                  )}
-                />
-                <button
-                  onClick={() => {
+            <div className="space-y-3">
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
                     lookupCustomer().then(() => setStep("checkout"));
-                  }}
-                  disabled={phoneLoading || !isValidNigerianPhone(phone)}
-                  className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {phoneLoading ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" />
-                      Looking you up…
-                    </>
-                  ) : (
-                    "Continue"
-                  )}
-                </button>
-              </div>
+                  }
+                }}
+                placeholder="e.g. 0812 345 6789"
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
+                  "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
+                  "placeholder:text-black-300 transition-colors",
+                  "border-black-200"
+                )}
+              />
+              <button
+                onClick={() => {
+                  lookupCustomer().then(() => setStep("checkout"));
+                }}
+                disabled={phoneLoading || !isValidNigerianPhone(phone)}
+                className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                {phoneLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Looking you up…
+                  </>
+                ) : (
+                  "Continue"
+                )}
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
+      <div className="px-4 mt-5 space-y-5">
         {/* Order type card */}
         <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
           {/* Pickup / Delivery toggle */}
