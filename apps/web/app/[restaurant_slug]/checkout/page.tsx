@@ -314,6 +314,10 @@ export default function CheckoutPage() {
       // Paystack v1 expects either access_code or ref — not both.
       // Prefer access_code (the secure server-generated token); fall back to
       // ref only when access_code is absent.
+      let paystackTimeout: ReturnType<typeof setTimeout> | null = null;
+      const clearPaystackTimeout = () => {
+        if (paystackTimeout) clearTimeout(paystackTimeout);
+      };
       const handler = PaystackPop.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
         email: email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`,
@@ -323,15 +327,34 @@ export default function CheckoutPage() {
           ? { access_code: initData.accessCode }
           : { ref: initData.paystackRef }),
         callback: () => {
+          clearPaystackTimeout();
           clearCart();
           router.push(`/${restaurant.slug}/orders/pending?ref=${initData.paystackRef}`);
         },
         onClose: () => {
+          clearPaystackTimeout();
           setError("Payment was cancelled. You can try again.");
           setLoading(false);
         },
       });
-      handler.openIframe();
+      try {
+        handler.openIframe();
+      } catch (e) {
+        clearPaystackTimeout();
+        console.error("[Checkout] Paystack openIframe failed:", e);
+        setError("Payment gateway failed to open. Please try again.");
+        setLoading(false);
+        return;
+      }
+      // Safety net: if Paystack iframe assets fail to load (e.g. 403 on an
+      // unregistered staging domain) neither callback nor onClose fires, so
+      // loading would stay stuck true. Reset after a generous timeout.
+      paystackTimeout = setTimeout(() => {
+        setLoading(false);
+        setError(
+          "Payment gateway timed out. If this keeps happening, the site domain may need to be registered with Paystack."
+        );
+      }, 30000);
     } catch (e) {
       console.error(e);
       setError("Something went wrong. Please try again.");
