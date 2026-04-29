@@ -159,6 +159,13 @@ export async function POST(request: NextRequest) {
     }>;
   }>) ?? [];
 
+  const menuItemIds = items.map((i) => i.menuItemId);
+
+  const { data: menuItems } = await supabase
+    .from("menu_items")
+    .select("id, price_kobo, prep_time_minutes")
+    .in("id", menuItemIds);
+
   if (items.length > 0) {
     await supabase.from("order_items").insert(
       items.map((item) => ({
@@ -176,6 +183,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const menuPrepMap = new Map(
+    (menuItems ?? []).map((m) => [m.id, (m as unknown as { prep_time_minutes?: number | null }).prep_time_minutes ?? null])
+  );
+  const prepTimes = items
+    .map((item) => menuPrepMap.get(item.menuItemId))
+    .filter((p): p is number => p != null);
+  const maxPrepMinutes = prepTimes.length > 0 ? Math.max(...prepTimes) : 20;
+  const bufferMinutes = meta.fulfillment_type === "delivery" ? 30 : 0;
+  const etaMs = (maxPrepMinutes + bufferMinutes) * 60 * 1000;
+  const estimatedDeliveryAt = new Date(Date.now() + etaMs).toISOString();
+
+  await supabase
+    .from("orders")
+    .update({ estimated_delivery_at: estimatedDeliveryAt })
+    .eq("id", order.id);
+
   // 7. Upsert CRM customer record
   const totalKobo =
     (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number) + ((meta.vat_kobo as number) || 0);
@@ -187,6 +210,30 @@ export async function POST(request: NextRequest) {
     p_email: (meta.customer_email as string) || undefined,
     p_order_total_kobo: totalKobo,
   });
+
+  // 7.5 Save delivery address for returning customer lookup
+  const deliveryAddress = (meta.delivery_address as string) || null;
+  if (deliveryAddress) {
+    const { data: customerRow } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("phone", meta.customer_phone as string)
+      .single();
+
+    if (customerRow) {
+      await supabase
+        .from("customer_addresses")
+        .upsert(
+          {
+            customer_id: customerRow.id,
+            restaurant_id: restaurantId,
+            address: deliveryAddress,
+          },
+          { onConflict: "customer_id, address" }
+        );
+    }
+  }
 
   // 8. Update payment with order_id
   await supabase

@@ -118,6 +118,54 @@ export type Database = {
           },
         ]
       }
+      customer_addresses: {
+        Row: {
+          address: string
+          created_at: string
+          customer_id: string
+          id: string
+          is_default: boolean
+          label: string | null
+          restaurant_id: string
+          updated_at: string
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          customer_id: string
+          id?: string
+          is_default?: boolean
+          label?: string | null
+          restaurant_id: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          customer_id?: string
+          id?: string
+          is_default?: boolean
+          label?: string | null
+          restaurant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_addresses_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_addresses_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_assignments: {
         Row: {
           assigned_at: string
@@ -472,6 +520,7 @@ export type Database = {
           estimated_delivery_at: string | null
           fulfillment_type: string
           id: string
+          late_at: string | null
           order_number: string
           payment_id: string | null
           payment_ref: string | null
@@ -511,6 +560,7 @@ export type Database = {
           estimated_delivery_at?: string | null
           fulfillment_type: string
           id?: string
+          late_at?: string | null
           order_number: string
           payment_id?: string | null
           payment_ref?: string | null
@@ -550,6 +600,7 @@ export type Database = {
           estimated_delivery_at?: string | null
           fulfillment_type?: string
           id?: string
+          late_at?: string | null
           order_number?: string
           payment_id?: string | null
           payment_ref?: string | null
@@ -1257,6 +1308,7 @@ export type Database = {
         Args: { p_amount_kobo: number; p_restaurant_id: string }
         Returns: undefined
       }
+      mark_late_orders: { Args: never; Returns: undefined }
       release_pending_wallet_balances: { Args: never; Returns: undefined }
       restore_failed_settlement: {
         Args: { p_amount_kobo: number; p_restaurant_id: string }

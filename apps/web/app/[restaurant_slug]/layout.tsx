@@ -4,6 +4,7 @@ import { getRestaurantBySlug } from "@foodo/database";
 import { RestaurantProvider } from "@/components/storefront/restaurant-context";
 import { CartGuard } from "@/components/storefront/cart-guard";
 import { ClosedNotice } from "@/components/storefront/closed-notice";
+import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
 
 export default async function StorefrontLayout({
   children,
@@ -25,6 +26,7 @@ export default async function StorefrontLayout({
       className="min-h-screen bg-black-50"
     >
       <RestaurantProvider restaurant={restaurant}>
+        <ActiveOrderBanner />
         <ClosedNotice />
         <CartGuard />
         {children}

@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Banknote,
   Settings,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,6 +24,7 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean
   { href: "/admin/analytics",    label: "Analytics",   icon: TrendingUp,      exact: false },
   { href: "/admin/settlements",  label: "Settlements", icon: Banknote,        exact: false },
   { href: "/admin/disputes",     label: "Disputes",    icon: Scale,           exact: false },
+  { href: "/admin/late-orders",  label: "Late Orders", icon: AlertTriangle,   exact: false },
   { href: "/admin/logs/sms",     label: "SMS Logs",    icon: MessageSquare,   exact: false },
   { href: "/admin/settings",     label: "Settings",    icon: Settings,        exact: false },
 ];

@@ -24,7 +24,13 @@ function PendingOrderContent() {
       const json = await res.json();
 
       if (json.orderId) {
-        router.replace(`/${restaurant.slug}/orders/${json.orderId}`);
+        try {
+          localStorage.setItem(
+            `kitchyn:lastOrder:${restaurant.slug}`,
+            JSON.stringify({ orderId: json.orderId, savedAt: Date.now() })
+          );
+        } catch {}
+        router.replace(`/${restaurant.slug}/orders/success/${json.orderId}`);
         return;
       }
 

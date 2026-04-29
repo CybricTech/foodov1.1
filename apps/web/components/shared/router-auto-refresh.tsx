@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useConnection } from "@/lib/connection-context";
+import { useConnectionOptional } from "@/lib/connection-context";
 
 /**
  * Drop-in component for server-rendered layouts.
@@ -12,7 +12,7 @@ import { useConnection } from "@/lib/connection-context";
  */
 export function RouterAutoRefresh() {
   const router = useRouter();
-  const { onReconnect } = useConnection();
+  const connection = useConnectionOptional();
   const lastRefreshRef = useRef(0);
 
   const refresh = useCallback(() => {
@@ -22,10 +22,11 @@ export function RouterAutoRefresh() {
     router.refresh();
   }, [router]);
 
-  // Refresh when network/realtime connection is restored
+  // Refresh when network/realtime connection is restored (only if provider is mounted)
   useEffect(() => {
-    return onReconnect(refresh);
-  }, [onReconnect, refresh]);
+    if (!connection) return;
+    return connection.onReconnect(refresh);
+  }, [connection, refresh]);
 
   // Refresh when the user switches back to this tab
   useEffect(() => {

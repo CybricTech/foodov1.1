@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { useCartStore } from "@/lib/stores/cart";
@@ -58,10 +59,64 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, []);
 
+  // Detect bfcache restore (iOS Safari) and hard-reload to prevent stale checkout bundles.
+  // A hard reload (cache-busting URL) is required because Safari may serve cached JS chunks.
+  useEffect(() => {
+    function handlePageShow(e: PageTransitionEvent) {
+      if (e.persisted) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("_v", Date.now().toString());
+        window.location.replace(url.toString());
+      }
+    }
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+
+  // Auto-calculate delivery fee when user stops typing an address
+  useEffect(() => {
+    if (fulfillmentType !== "delivery") return;
+    if (addressInput.trim().length < 10) return;
+    if (deliveryFeeLoading) return;
+
+    const id = setTimeout(() => {
+      if (deliveryFeeKobo === null && !deliveryFeeError) {
+        calculateDeliveryFee(addressInput.trim());
+      }
+    }, 1200);
+
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addressInput, fulfillmentType]);
+
   const [phone, setPhone] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+
+  const [step, setStep] = useState<"phone" | "checkout">("phone");
+  const [savedAddresses, setSavedAddresses] = useState<
+    Array<{ id: string; address: string; label: string | null; is_default: boolean }>
+  >([]);
+  const [phoneLoading, setPhoneLoading] = useState(false);
+  const phoneGateRef = useRef<HTMLDivElement | null>(null);
+
+  // iOS Safari safeguard: ensure phone gate is visible on first mount.
+  // If the checkout form renders without the gate, force a hard reload
+  // to bust any stale cached JS bundles.
+  useEffect(() => {
+    // Small delay to let React finish painting
+    const id = setTimeout(() => {
+      if (step === "phone" && !phoneGateRef.current) {
+        console.warn("[Checkout] Phone gate missing from DOM — reloading to bust stale cache");
+        const url = new URL(window.location.href);
+        url.searchParams.set("_v", Date.now().toString());
+        window.location.replace(url.toString());
+      }
+    }, 600);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (fulfillmentType === "pickup") {
@@ -145,6 +200,8 @@ export default function CheckoutPage() {
         setDeliveryFeeKobo(data.feeKobo);
         setDistanceKm(data.distanceKm);
         setDurationMinutes(data.durationMinutes);
+        // Accept manually-typed addresses too — not just Google Places predictions
+        setSelectedPlaceAddress(address);
       }
     } catch {
       setDeliveryFeeError("Could not calculate delivery fee. Please try again.");
@@ -159,8 +216,9 @@ export default function CheckoutPage() {
 
   if (items.length === 0) return null;
 
-  async function handlePhoneBlur() {
+  async function lookupCustomer() {
     if (!isValidNigerianPhone(phone)) return;
+    setPhoneLoading(true);
     const normalized = normalizeToE164(phone);
     try {
       const res = await fetch(
@@ -170,14 +228,25 @@ export default function CheckoutPage() {
         const data = await res.json();
         if (data.full_name) {
           const parts = (data.full_name as string).split(" ");
-          if (!firstName) setFirstName(parts[0] ?? "");
-          if (!lastName) setLastName(parts.slice(1).join(" "));
+          setFirstName(parts[0] ?? "");
+          setLastName(parts.slice(1).join(" "));
         }
-        if (data.email && !email) setEmail(data.email);
+        if (data.email) setEmail(data.email);
+        if (data.addresses) {
+          setSavedAddresses(data.addresses);
+        }
       }
     } catch {
       // silent
+    } finally {
+      setPhoneLoading(false);
     }
+  }
+
+  function selectSavedAddress(addr: string) {
+    setAddressInput(addr);
+    setSelectedPlaceAddress(addr);
+    calculateDeliveryFee(addr);
   }
 
   function validate(): boolean {
@@ -189,10 +258,10 @@ export default function CheckoutPage() {
       });
     }
     if (fulfillmentType === "delivery") {
-      if (!selectedPlaceAddress) {
-        errors.deliveryAddress = "Select a delivery address from the suggestions";
+      if (!addressInput.trim()) {
+        errors.deliveryAddress = "Enter a delivery address";
       } else if (deliveryFeeKobo === null) {
-        errors.deliveryAddress = "Delivery fee could not be calculated for this address";
+        errors.deliveryAddress = "Delivery fee could not be calculated — please check your address";
       }
     }
     setFieldErrors(errors);
@@ -301,6 +370,76 @@ export default function CheckoutPage() {
         </div>
       </div>
 
+      {/* Phone gate overlay — MUST be a direct child of the root viewport div.
+          Nesting inside a scrolling container breaks iOS Safari fixed positioning. */}
+      {step === "phone" && (
+        <div
+          ref={phoneGateRef}
+          className="fixed inset-0 z-[100] bg-black-50 flex flex-col items-center justify-center px-4"
+          style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+        >
+          <div className="bg-white rounded-2xl border border-black-100 p-6 space-y-5 w-full max-w-sm shadow-xl">
+            <div className="text-center space-y-2">
+              {restaurant.logo_url && (
+                <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-black-100">
+                  <Image
+                    src={restaurant.logo_url}
+                    alt={restaurant.name}
+                    width={64}
+                    height={64}
+                    className="object-cover w-full h-full"
+                    unoptimized
+                  />
+                </div>
+              )}
+              <h2 className="text-lg font-bold text-black-900">
+                {restaurant.name}
+              </h2>
+              <p className="text-sm text-black-500">
+                Enter your phone number to continue
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    lookupCustomer().then(() => setStep("checkout"));
+                  }
+                }}
+                placeholder="e.g. 0812 345 6789"
+                className={cn(
+                  "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
+                  "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
+                  "placeholder:text-black-300 transition-colors",
+                  "border-black-200"
+                )}
+              />
+              <button
+                onClick={() => {
+                  lookupCustomer().then(() => setStep("checkout"));
+                }}
+                disabled={phoneLoading || !isValidNigerianPhone(phone)}
+                className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                {phoneLoading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Looking you up…
+                  </>
+                ) : (
+                  "Continue"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="px-4 mt-5 space-y-5">
         {/* Order type card */}
         <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
@@ -344,6 +483,30 @@ export default function CheckoutPage() {
             </div>
           ) : (
             <div className="px-4 py-4 space-y-3">
+              {/* Saved addresses */}
+              {savedAddresses.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-black-500">Saved addresses</p>
+                  <div className="flex flex-wrap gap-2">
+                    {savedAddresses.map((addr) => (
+                      <button
+                        key={addr.id}
+                        type="button"
+                        onClick={() => selectSavedAddress(addr.address)}
+                        className={cn(
+                          "text-xs px-3 py-1.5 rounded-lg border transition-colors",
+                          addressInput === addr.address
+                            ? "bg-primary/10 border-primary text-primary font-medium"
+                            : "bg-black-50 border-black-200 text-black-600 hover:border-black-300"
+                        )}
+                      >
+                        {addr.label ? `${addr.label}: ` : ""}
+                        {addr.address}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-black-700 mb-1.5">
                   <span className="flex items-center gap-1.5">
@@ -399,7 +562,9 @@ export default function CheckoutPage() {
                         }
                       }, 300);
                     }}
-                    onBlur={() => setTimeout(() => setShowPredictions(false), 150)}
+                    onBlur={() => {
+                      setTimeout(() => setShowPredictions(false), 150);
+                    }}
                     onFocus={() => { if (predictions.length > 0) setShowPredictions(true); }}
                     className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
                     autoComplete="off"
@@ -530,14 +695,21 @@ export default function CheckoutPage() {
 
         {/* Customer info */}
         <div>
-          <h2 className="text-base font-bold text-black-900 mb-3">Your information</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-bold text-black-900">Your information</h2>
+            <button
+              onClick={() => setStep("phone")}
+              className="text-xs text-primary font-medium hover:underline cursor-pointer"
+            >
+              Change number
+            </button>
+          </div>
           <div className="space-y-3">
             <Field label="Mobile number" error={fieldErrors.phone}>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                onBlur={handlePhoneBlur}
                 placeholder="e.g. 0812 345 6789"
                 className={inputClass(!!fieldErrors.phone)}
               />
@@ -584,29 +756,41 @@ export default function CheckoutPage() {
       </div>
 
       {/* Fixed pay footer */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-black-100 px-4 py-4 shadow-lg">
-        {storeClosed && (
-          <p className="text-center text-sm font-semibold text-cinnabar-500 mb-3">
-            {restaurant.name} is currently closed and not accepting orders.
-          </p>
-        )}
-        <button
-          onClick={handlePay}
-          disabled={payDisabled}
-          className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-colors text-base flex items-center justify-center gap-2 cursor-pointer"
-        >
-          {loading ? (
-            <>
-              <Loader2 size={18} className="animate-spin" />
-              Processing…
-            </>
-          ) : storeClosed ? (
-            "Store is closed"
-          ) : (
-            `Pay now · ${formatKobo(total)}`
+      {step === "checkout" && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-black-100 px-4 py-4 shadow-lg">
+          {storeClosed && (
+            <p className="text-center text-sm font-semibold text-cinnabar-500 mb-3">
+              {restaurant.name} is currently closed and not accepting orders.
+            </p>
           )}
-        </button>
-      </div>
+          <button
+            onClick={handlePay}
+            disabled={payDisabled}
+            className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-colors text-base flex items-center justify-center gap-2 cursor-pointer"
+          >
+            {loading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Processing…
+              </>
+            ) : storeClosed ? (
+              "Store is closed"
+            ) : fulfillmentType === "delivery" && deliveryFeeLoading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Calculating delivery fee…
+              </>
+            ) : fulfillmentType === "delivery" && deliveryFeeKobo === null ? (
+              <>
+                <MapPin size={18} />
+                Enter address to continue
+              </>
+            ) : (
+              `Pay now · ${formatKobo(total)}`
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

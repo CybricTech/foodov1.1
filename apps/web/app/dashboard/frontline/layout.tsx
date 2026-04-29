@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { FrontlineShell } from "@/components/dashboard/frontline-shell";
+import { RouterAutoRefresh } from "@/components/shared/router-auto-refresh";
 
 export default async function FrontlineLayout({
   children,
@@ -24,6 +25,7 @@ export default async function FrontlineLayout({
       userName={session.fullName || session.email}
       role={session.role}
     >
+      <RouterAutoRefresh />
       {children}
     </FrontlineShell>
   );
