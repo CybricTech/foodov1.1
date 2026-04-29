@@ -30,7 +30,7 @@ function PendingOrderContent() {
             JSON.stringify({ orderId: json.orderId, savedAt: Date.now() })
           );
         } catch {}
-        router.replace(`/${restaurant.slug}/orders/${json.orderId}`);
+        router.replace(`/${restaurant.slug}/orders/success/${json.orderId}`);
         return;
       }
 

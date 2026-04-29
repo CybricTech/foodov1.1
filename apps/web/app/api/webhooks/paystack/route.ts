@@ -211,6 +211,30 @@ export async function POST(request: NextRequest) {
     p_order_total_kobo: totalKobo,
   });
 
+  // 7.5 Save delivery address for returning customer lookup
+  const deliveryAddress = (meta.delivery_address as string) || null;
+  if (deliveryAddress) {
+    const { data: customerRow } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("phone", meta.customer_phone as string)
+      .single();
+
+    if (customerRow) {
+      await supabase
+        .from("customer_addresses")
+        .upsert(
+          {
+            customer_id: customerRow.id,
+            restaurant_id: restaurantId,
+            address: deliveryAddress,
+          },
+          { onConflict: "customer_id, address" }
+        );
+    }
+  }
+
   // 8. Update payment with order_id
   await supabase
     .from("payments")

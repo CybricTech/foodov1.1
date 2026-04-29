@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -10,19 +10,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing params" }, { status: 400 });
   }
 
-  const supabase = await createServerClient();
+  const supabase = createServiceClient();
 
-  const { data } = await supabase
+  const { data: customer } = await supabase
     .from("customers")
-    .select("full_name, email")
+    .select("id, full_name, email")
     .eq("restaurant_id", restaurantId)
     .eq("phone", phone)
     .maybeSingle();
 
-  if (!data) return NextResponse.json({});
+  if (!customer) return NextResponse.json({});
+
+  const { data: addresses } = await supabase
+    .from("customer_addresses")
+    .select("id, address, label, is_default")
+    .eq("customer_id", customer.id)
+    .eq("restaurant_id", restaurantId)
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: false });
 
   return NextResponse.json({
-    full_name: data.full_name,
-    email: data.email,
+    full_name: customer.full_name,
+    email: customer.email,
+    addresses: addresses ?? [],
   });
 }
