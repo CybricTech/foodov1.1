@@ -59,6 +59,33 @@ export default function CheckoutPage() {
       .catch(() => {});
   }, []);
 
+  // Detect bfcache restore (iOS Safari) and reload to prevent stale checkout bundles
+  useEffect(() => {
+    function handlePageShow(e: PageTransitionEvent) {
+      if (e.persisted) {
+        window.location.reload();
+      }
+    }
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+
+  // Auto-calculate delivery fee when user stops typing an address
+  useEffect(() => {
+    if (fulfillmentType !== "delivery") return;
+    if (addressInput.trim().length < 10) return;
+    if (deliveryFeeLoading) return;
+
+    const id = setTimeout(() => {
+      if (deliveryFeeKobo === null && !deliveryFeeError) {
+        calculateDeliveryFee(addressInput.trim());
+      }
+    }, 1200);
+
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addressInput, fulfillmentType]);
+
   const [phone, setPhone] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -152,6 +179,8 @@ export default function CheckoutPage() {
         setDeliveryFeeKobo(data.feeKobo);
         setDistanceKm(data.distanceKm);
         setDurationMinutes(data.durationMinutes);
+        // Accept manually-typed addresses too — not just Google Places predictions
+        setSelectedPlaceAddress(address);
       }
     } catch {
       setDeliveryFeeError("Could not calculate delivery fee. Please try again.");
@@ -208,10 +237,10 @@ export default function CheckoutPage() {
       });
     }
     if (fulfillmentType === "delivery") {
-      if (!selectedPlaceAddress) {
-        errors.deliveryAddress = "Select a delivery address from the suggestions";
+      if (!addressInput.trim()) {
+        errors.deliveryAddress = "Enter a delivery address";
       } else if (deliveryFeeKobo === null) {
-        errors.deliveryAddress = "Delivery fee could not be calculated for this address";
+        errors.deliveryAddress = "Delivery fee could not be calculated — please check your address";
       }
     }
     setFieldErrors(errors);
@@ -321,66 +350,70 @@ export default function CheckoutPage() {
       </div>
 
       <div className="px-4 mt-5 space-y-5">
-        {/* Phone gate overlay */}
+        {/* Phone gate overlay — full screen, above everything, iOS-safe */}
         {step === "phone" && (
-          <div className="bg-white rounded-2xl border border-black-100 p-6 space-y-5">
-            <div className="text-center space-y-2">
-              {restaurant.logo_url && (
-                <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-black-100">
-                  <Image
-                    src={restaurant.logo_url}
-                    alt={restaurant.name}
-                    width={64}
-                    height={64}
-                    className="object-cover w-full h-full"
-                    unoptimized
-                  />
-                </div>
-              )}
-              <h2 className="text-lg font-bold text-black-900">
-                {restaurant.name}
-              </h2>
-              <p className="text-sm text-black-500">
-                Enter your phone number to continue
-              </p>
-            </div>
+          <div
+            className="fixed inset-0 z-[100] bg-black-50 flex flex-col items-center justify-center px-4"
+            style={{ WebkitTransform: "translateZ(0)" }}
+          >
+            <div className="bg-white rounded-2xl border border-black-100 p-6 space-y-5 w-full max-w-sm shadow-xl">
+              <div className="text-center space-y-2">
+                {restaurant.logo_url && (
+                  <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-black-100">
+                    <Image
+                      src={restaurant.logo_url}
+                      alt={restaurant.name}
+                      width={64}
+                      height={64}
+                      className="object-cover w-full h-full"
+                      unoptimized
+                    />
+                  </div>
+                )}
+                <h2 className="text-lg font-bold text-black-900">
+                  {restaurant.name}
+                </h2>
+                <p className="text-sm text-black-500">
+                  Enter your phone number to continue
+                </p>
+              </div>
 
-            <div className="space-y-3">
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
+              <div className="space-y-3">
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      lookupCustomer().then(() => setStep("checkout"));
+                    }
+                  }}
+                  placeholder="e.g. 0812 345 6789"
+                  className={cn(
+                    "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
+                    "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
+                    "placeholder:text-black-300 transition-colors",
+                    "border-black-200"
+                  )}
+                />
+                <button
+                  onClick={() => {
                     lookupCustomer().then(() => setStep("checkout"));
-                  }
-                }}
-                placeholder="e.g. 0812 345 6789"
-                className={cn(
-                  "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
-                  "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
-                  "placeholder:text-black-300 transition-colors",
-                  "border-black-200"
-                )}
-                autoFocus
-              />
-              <button
-                onClick={() => {
-                  lookupCustomer().then(() => setStep("checkout"));
-                }}
-                disabled={phoneLoading || !isValidNigerianPhone(phone)}
-                className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"
-              >
-                {phoneLoading ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Looking you up…
-                  </>
-                ) : (
-                  "Continue"
-                )}
-              </button>
+                  }}
+                  disabled={phoneLoading || !isValidNigerianPhone(phone)}
+                  className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {phoneLoading ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Looking you up…
+                    </>
+                  ) : (
+                    "Continue"
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -506,7 +539,9 @@ export default function CheckoutPage() {
                         }
                       }, 300);
                     }}
-                    onBlur={() => setTimeout(() => setShowPredictions(false), 150)}
+                    onBlur={() => {
+                      setTimeout(() => setShowPredictions(false), 150);
+                    }}
                     onFocus={() => { if (predictions.length > 0) setShowPredictions(true); }}
                     className={cn(inputClass(!!fieldErrors.deliveryAddress), "w-full")}
                     autoComplete="off"
@@ -717,6 +752,16 @@ export default function CheckoutPage() {
               </>
             ) : storeClosed ? (
               "Store is closed"
+            ) : fulfillmentType === "delivery" && deliveryFeeLoading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Calculating delivery fee…
+              </>
+            ) : fulfillmentType === "delivery" && deliveryFeeKobo === null ? (
+              <>
+                <MapPin size={18} />
+                Enter address to continue
+              </>
             ) : (
               `Pay now · ${formatKobo(total)}`
             )}
