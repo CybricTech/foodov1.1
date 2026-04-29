@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CheckCircle, UtensilsCrossed, Phone, MapPin, Clock, ArrowLeft, Store } from "lucide-react";
+import { CheckCircle, UtensilsCrossed, Phone, MapPin, Clock, ArrowLeft, Store, Sparkles } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
 import { getRestaurantBySlug } from "@foodo/database";
 import { formatKobo } from "@foodo/utils";
@@ -73,12 +73,20 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
 
   return (
     <div className="min-h-screen bg-black-50 pb-10">
-      {/* Header */}
+      {/* ── Branded Header ─────────────────────────────────────────── */}
       <div
-        className="px-4 py-6 text-white"
+        className="px-4 pt-6 pb-8 text-white relative overflow-hidden"
         style={{ backgroundColor: brandColor }}
       >
-        <div className="flex items-center justify-between mb-4">
+        {/* Decorative sparkles */}
+        <div className="absolute top-3 right-4 opacity-20">
+          <Sparkles size={48} />
+        </div>
+        <div className="absolute bottom-2 left-6 opacity-15">
+          <Sparkles size={32} />
+        </div>
+
+        <div className="flex items-center justify-between mb-5 relative z-10">
           <Link
             href={`/${params.restaurant_slug}`}
             className="flex items-center gap-2 text-white/80 hover:text-white text-sm font-medium transition-colors"
@@ -94,9 +102,9 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
           </Link>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 relative z-10">
           {restaurant.logo_url ? (
-            <div className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-white/30 bg-white flex-shrink-0">
+            <div className="relative w-18 h-18 rounded-2xl overflow-hidden border-2 border-white/40 bg-white flex-shrink-0 shadow-lg">
               <Image
                 src={restaurant.logo_url}
                 alt={restaurant.name}
@@ -106,57 +114,62 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
               />
             </div>
           ) : (
-            <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
-              <Store size={28} className="text-white" />
+            <div className="w-18 h-18 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0 border-2 border-white/30">
+              <Store size={32} className="text-white" />
             </div>
           )}
           <div>
             <div className="flex items-center gap-2">
-              <CheckCircle size={18} className="text-white" strokeWidth={2.5} />
-              <h1 className="text-xl font-bold">Payment successful</h1>
+              <div className="w-7 h-7 rounded-full bg-white flex items-center justify-center">
+                <CheckCircle size={16} style={{ color: brandColor }} strokeWidth={2.5} />
+              </div>
+              <h1 className="text-2xl font-bold">Payment successful</h1>
             </div>
-            <p className="text-white/80 text-sm mt-0.5">
+            <p className="text-white/85 text-sm mt-1">
               {restaurant.name} has received your order
             </p>
           </div>
         </div>
       </div>
 
-      <div className="px-4 mt-4 space-y-4">
-        {/* Order number card */}
-        <div className="bg-white rounded-2xl border border-black-100 p-5 space-y-4">
+      <div className="px-4 -mt-4 space-y-4 relative z-10">
+        {/* ── Order Receipt Card ───────────────────────────────────── */}
+        <div className="bg-white rounded-2xl border border-black-100 shadow-sm p-5 space-y-5">
+          {/* Order number + brand icon */}
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-black-400 font-medium">Order number</p>
-              <p className="text-2xl font-bold text-black-900 mt-0.5">
+              <p className="text-3xl font-black text-black-900 mt-0.5 tracking-tight">
                 #{order.order_number}
               </p>
             </div>
             <div
-              className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: `${brandColor}15` }}
+              className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: `${brandColor}12` }}
             >
-              <UtensilsCrossed size={20} style={{ color: brandColor }} />
+              <UtensilsCrossed size={24} style={{ color: brandColor }} />
             </div>
           </div>
 
+          {/* Meta grid */}
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="bg-black-50 rounded-xl px-3 py-2.5">
-              <p className="text-xs text-black-400 mb-0.5">Placed at</p>
-              <p className="font-semibold text-black-900">{placedTime}</p>
+            <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${brandColor}08` }}>
+              <p className="text-xs mb-0.5" style={{ color: `${brandColor}aa` }}>Placed at</p>
+              <p className="font-bold text-black-900">{placedTime}</p>
             </div>
-            <div className="bg-black-50 rounded-xl px-3 py-2.5">
-              <p className="text-xs text-black-400 mb-0.5">
+            <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${brandColor}08` }}>
+              <p className="text-xs mb-0.5" style={{ color: `${brandColor}aa` }}>
                 {isDelivery ? "Est. delivery" : "Ready for pickup"}
               </p>
-              <p className="font-semibold text-black-900">{eta ?? "—"}</p>
+              <p className="font-bold text-black-900">{eta ?? "—"}</p>
             </div>
           </div>
         </div>
 
-        {/* Order items */}
-        <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
-          <div className="px-4 py-3 border-b border-black-100">
+        {/* ── Order Items Card ─────────────────────────────────────── */}
+        <div className="bg-white rounded-2xl border border-black-100 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-black-100 flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brandColor }} />
             <h2 className="font-bold text-black-900 text-sm">Your order</h2>
           </div>
           <div className="divide-y divide-black-50">
@@ -172,16 +185,16 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
                 className="px-4 py-3 flex justify-between items-center"
               >
                 <span className="text-sm text-black-900">
-                  <span className="font-semibold text-black-500">{item.quantity}×</span>{" "}
+                  <span className="font-bold" style={{ color: brandColor }}>{item.quantity}×</span>{" "}
                   {item.item_name}
                 </span>
-                <span className="text-sm font-semibold text-black-900">
+                <span className="text-sm font-bold text-black-900">
                   {formatKobo(item.line_total_kobo)}
                 </span>
               </div>
             ))}
           </div>
-          <div className="px-4 py-3 bg-black-50 space-y-2">
+          <div className="px-4 py-3 space-y-2" style={{ backgroundColor: `${brandColor}06` }}>
             {Number(order.subtotal_kobo) > 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-black-500">Subtotal</span>
@@ -207,15 +220,18 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
               </div>
             )}
             <div className="flex items-center justify-between text-sm border-t border-black-100 pt-2">
-              <span className="font-bold text-black-900">Total paid</span>
-              <span className="font-bold text-black-900">{formatKobo(Number(order.total_kobo))}</span>
+              <span className="font-black text-black-900">Total paid</span>
+              <span className="font-black text-black-900">{formatKobo(Number(order.total_kobo))}</span>
             </div>
           </div>
         </div>
 
-        {/* Customer & delivery details */}
-        <div className="bg-white rounded-2xl border border-black-100 p-5 space-y-3">
-          <h2 className="font-bold text-black-900 text-sm">Order details</h2>
+        {/* ── Customer & Delivery Details ──────────────────────────── */}
+        <div className="bg-white rounded-2xl border border-black-100 shadow-sm p-5 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brandColor }} />
+            <h2 className="font-bold text-black-900 text-sm">Order details</h2>
+          </div>
 
           <div className="space-y-3 text-sm">
             <div className="flex items-start gap-2.5">
@@ -247,26 +263,27 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
             )}
 
             {order.special_instructions && (
-              <div className="bg-black-50 rounded-xl px-3 py-2.5">
-                <p className="text-xs text-black-500 font-medium mb-1">Special instructions</p>
+              <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${brandColor}08` }}>
+                <p className="text-xs font-medium mb-1" style={{ color: `${brandColor}aa` }}>Special instructions</p>
                 <p className="text-sm text-black-600 italic">{order.special_instructions}</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Actions */}
+        {/* ── Actions ──────────────────────────────────────────────── */}
         <div className="space-y-3 pt-2">
           <Link
             href={`/${params.restaurant_slug}`}
-            className="block w-full text-center py-3.5 rounded-2xl font-bold text-sm transition-colors"
+            className="block w-full text-center py-3.5 rounded-2xl font-bold text-sm transition-all hover:opacity-90 active:scale-[0.98]"
             style={{ backgroundColor: brandColor, color: "#fff" }}
           >
             Return to store
           </Link>
           <Link
             href={`/${params.restaurant_slug}/orders/${order.id}`}
-            className="block w-full text-center py-3.5 rounded-2xl font-semibold text-sm border border-black-200 text-black-700 hover:bg-black-50 transition-colors"
+            className="block w-full text-center py-3.5 rounded-2xl font-semibold text-sm border text-black-700 hover:bg-black-50 transition-colors"
+            style={{ borderColor: `${brandColor}40` }}
           >
             Track your order
           </Link>

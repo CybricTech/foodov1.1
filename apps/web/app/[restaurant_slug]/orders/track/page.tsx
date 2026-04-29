@@ -4,8 +4,53 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { createBrowserClient } from "@/lib/supabase/client";
-import { Search, PackageSearch, ArrowLeft, AlertCircle } from "lucide-react";
+import { Phone, PackageSearch, ArrowLeft, AlertCircle, Clock, MapPin, Bike, Package } from "lucide-react";
 import { cn } from "@foodo/ui";
+import { formatKobo, ORDER_STATUS_LABELS } from "@foodo/utils";
+
+interface ActiveOrder {
+  id: string;
+  order_number: string;
+  status: string;
+  fulfillment_type: string;
+  customer_name: string | null;
+  total_kobo: number;
+  created_at: string;
+  delivery_address: string | null;
+}
+
+function normalizePhone(raw: string): string {
+  // Remove all non-digits, then handle Nigerian prefixes
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("234") && digits.length === 13) {
+    return "0" + digits.slice(3);
+  }
+  return digits;
+}
+
+function StatusBadge({ status, brandColor }: { status: string; brandColor: string }) {
+  const label = ORDER_STATUS_LABELS[status as keyof typeof ORDER_STATUS_LABELS] ?? status;
+  const isTerminal = status === "delivered" || status === "cancelled";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide",
+        isTerminal && "bg-black-100 text-black-500"
+      )}
+      style={!isTerminal ? { backgroundColor: `${brandColor}15`, color: brandColor } : undefined}
+    >
+      {label}
+    </span>
+  );
+}
+
+function FulfillmentIcon({ type }: { type: string }) {
+  return type === "delivery" ? (
+    <Bike size={14} className="text-black-400" />
+  ) : (
+    <Package size={14} className="text-black-400" />
+  );
+}
 
 export default function TrackOrderPage() {
   const { restaurant } = useRestaurant();
@@ -13,9 +58,12 @@ export default function TrackOrderPage() {
   const supabase = createBrowserClient();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [orderNumber, setOrderNumber] = useState("");
+  const [phone, setPhone] = useState("");
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
+  const [orders, setOrders] = useState<ActiveOrder[] | null>(null);
+
+  const brandColor = restaurant.primary_color ?? "#2D6A4F";
 
   // Auto-focus on mount
   useEffect(() => {
@@ -24,141 +72,215 @@ export default function TrackOrderPage() {
 
   async function handleTrack(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = orderNumber.trim();
+    const trimmed = phone.trim();
     if (!trimmed) return;
 
     setSearching(true);
     setError("");
+    setOrders(null);
 
-    // Search for order by order_number within this restaurant
-    const { data: order, error: fetchErr } = await supabase
+    const normalized = normalizePhone(trimmed);
+
+    // Search for orders by customer_phone within this restaurant
+    // Include recent delivered orders (last 24h) + all active orders
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error: fetchErr } = await supabase
       .from("orders")
-      .select("id")
+      .select("id, order_number, status, fulfillment_type, customer_name, total_kobo, created_at, delivery_address")
       .eq("restaurant_id", restaurant.id)
-      .eq("order_number", trimmed)
-      .single();
+      .or(`customer_phone.eq.${trimmed},customer_phone.eq.${normalized}`)
+      .or(`and(status.neq.cancelled,status.neq.delivered),and(status.eq.delivered,created_at.gte.${oneDayAgo})`)
+      .order("created_at", { ascending: false })
+      .limit(20);
 
-    if (fetchErr || !order) {
-      // Try case-insensitive match and partial match
-      const { data: fuzzyOrder } = await supabase
-        .from("orders")
-        .select("id, order_number")
-        .eq("restaurant_id", restaurant.id)
-        .ilike("order_number", `%${trimmed}%`)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (fuzzyOrder) {
-        router.push(`/${restaurant.slug}/orders/${fuzzyOrder.id}`);
-        return;
-      }
-
-      setError("No order found with that number. Please check and try again.");
+    if (fetchErr) {
+      setError("Something went wrong. Please try again.");
       setSearching(false);
       return;
     }
 
-    router.push(`/${restaurant.slug}/orders/${order.id}`);
+    if (!data || data.length === 0) {
+      setError("No active orders found for that phone number. Please check and try again.");
+      setSearching(false);
+      return;
+    }
+
+    setOrders(data);
+    setSearching(false);
   }
 
   return (
     <div className="min-h-screen bg-black-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-black-100 px-4 py-4">
-        <div className="flex items-center gap-3">
+      {/* ── Branded Header ─────────────────────────────────────────── */}
+      <div className="px-4 pt-6 pb-8 text-white relative overflow-hidden" style={{ backgroundColor: brandColor }}>
+        <div className="flex items-center gap-3 relative z-10">
           <button
             onClick={() => router.push(`/${restaurant.slug}`)}
-            className="w-9 h-9 rounded-xl bg-black-50 flex items-center justify-center hover:bg-black-100 transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors cursor-pointer"
             aria-label="Back to menu"
           >
-            <ArrowLeft size={16} className="text-black-600" />
+            <ArrowLeft size={16} className="text-white" />
           </button>
           <div>
-            <p className="text-xs text-black-400 font-medium">{restaurant.name}</p>
-            <h1 className="font-bold text-black-900 text-lg leading-tight">
-              Track your order
-            </h1>
+            <p className="text-xs text-white/70 font-medium">{restaurant.name}</p>
+            <h1 className="font-bold text-white text-xl leading-tight">Track your order</h1>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center px-4 pt-12">
-        {/* Icon */}
-        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
-          <PackageSearch size={36} className="text-primary" strokeWidth={1.5} />
-        </div>
+      {/* ── Content ────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col px-4 -mt-4 relative z-10">
+        {/* Search card */}
+        <div className="bg-white rounded-2xl border border-black-100 shadow-sm p-5">
+          {!orders ? (
+            <>
+              <div className="flex flex-col items-center text-center mb-6">
+                <div
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                  style={{ backgroundColor: `${brandColor}12` }}
+                >
+                  <PackageSearch size={32} style={{ color: brandColor }} strokeWidth={1.5} />
+                </div>
+                <h2 className="text-lg font-bold text-black-900">Enter your phone number</h2>
+                <p className="text-sm text-black-400 mt-1 max-w-xs leading-relaxed">
+                  We’ll find all your active orders linked to this number.
+                </p>
+              </div>
 
-        <h2 className="text-lg font-bold text-black-900 text-center">
-          Enter your order number
-        </h2>
-        <p className="text-sm text-black-400 text-center mt-1.5 mb-8 max-w-xs leading-relaxed">
-          You can find it in the SMS or email confirmation you received after placing your order.
-        </p>
+              <form onSubmit={handleTrack} className="w-full space-y-4">
+                <div className="relative">
+                  <Phone
+                    size={16}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-black-300 pointer-events-none"
+                  />
+                  <input
+                    ref={inputRef}
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (error) setError("");
+                    }}
+                    placeholder="e.g. 0803 123 4567"
+                    className={cn(
+                      "w-full pl-11 pr-4 py-3.5 text-sm font-medium text-black-900",
+                      "bg-white border rounded-2xl",
+                      "placeholder:text-black-300 placeholder:font-normal",
+                      "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
+                      "transition-all duration-150",
+                      error
+                        ? "border-cinnabar-300 focus:ring-cinnabar-100 focus:border-cinnabar-400"
+                        : "border-black-200"
+                    )}
+                    autoComplete="tel"
+                    inputMode="tel"
+                    id="phone-input"
+                  />
+                </div>
 
-        {/* Search form */}
-        <form onSubmit={handleTrack} className="w-full max-w-sm space-y-4">
-          <div className="relative">
-            <Search
-              size={16}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-black-300 pointer-events-none"
-            />
-            <input
-              ref={inputRef}
-              type="text"
-              value={orderNumber}
-              onChange={(e) => {
-                setOrderNumber(e.target.value.toUpperCase());
-                if (error) setError("");
-              }}
-              placeholder="e.g. ORD-1745581234567"
-              className={cn(
-                "w-full pl-11 pr-4 py-3.5 text-sm font-medium text-black-900",
-                "bg-white border rounded-2xl",
-                "placeholder:text-black-300 placeholder:font-normal",
-                "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
-                "transition-all duration-150",
-                error
-                  ? "border-cinnabar-300 focus:ring-cinnabar-100 focus:border-cinnabar-400"
-                  : "border-black-200"
-              )}
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              id="order-number-input"
-            />
-          </div>
+                {error && (
+                  <div className="flex items-start gap-2 text-cinnabar-500 text-xs px-1">
+                    <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
+                )}
 
-          {/* Error */}
-          {error && (
-            <div className="flex items-start gap-2 text-cinnabar-500 text-xs px-1">
-              <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
+                <button
+                  type="submit"
+                  disabled={!phone.trim() || searching}
+                  className={cn(
+                    "w-full py-3.5 rounded-2xl text-sm font-semibold text-white",
+                    "hover:opacity-90 disabled:opacity-50",
+                    "transition-all duration-150 cursor-pointer",
+                    "flex items-center justify-center gap-2 active:scale-[0.98]"
+                  )}
+                  style={{ backgroundColor: brandColor }}
+                >
+                  {searching ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Searching…
+                    </>
+                  ) : (
+                    "Find My Orders"
+                  )}
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-black-900">Your orders</h2>
+                  <p className="text-xs text-black-400 mt-0.5">
+                    Found {orders.length} order{orders.length !== 1 ? "s" : ""} for {phone}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setOrders(null);
+                    setPhone("");
+                    setError("");
+                  }}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-full border hover:bg-black-50 transition-colors"
+                  style={{ borderColor: `${brandColor}40`, color: brandColor }}
+                >
+                  Search again
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {orders.map((order) => (
+                  <button
+                    key={order.id}
+                    onClick={() => router.push(`/${restaurant.slug}/orders/${order.id}`)}
+                    className="w-full text-left bg-white border border-black-100 rounded-2xl p-4 hover:shadow-md hover:border-black-200 transition-all active:scale-[0.99]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-black text-black-900">#{order.order_number}</span>
+                          <StatusBadge status={order.status} brandColor={brandColor} />
+                        </div>
+                        <p className="text-xs text-black-500 truncate">
+                          {order.customer_name ?? "Guest"} · {formatKobo(order.total_kobo)}
+                        </p>
+                        <div className="flex items-center gap-3 mt-2 text-xs text-black-400">
+                          <span className="flex items-center gap-1">
+                            <Clock size={12} />
+                            {new Date(order.created_at).toLocaleDateString("en-NG", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <FulfillmentIcon type={order.fulfillment_type} />
+                            {order.fulfillment_type === "delivery" ? "Delivery" : "Pickup"}
+                          </span>
+                        </div>
+                        {order.fulfillment_type === "delivery" && order.delivery_address && (
+                          <p className="text-[11px] text-black-400 mt-1.5 flex items-center gap-1 truncate">
+                            <MapPin size={11} />
+                            {order.delivery_address}
+                          </p>
+                        )}
+                      </div>
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: `${brandColor}12` }}
+                      >
+                        <ArrowLeft size={14} style={{ color: brandColor }} className="rotate-180" />
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
-
-          <button
-            type="submit"
-            disabled={!orderNumber.trim() || searching}
-            className={cn(
-              "w-full py-3.5 rounded-2xl text-sm font-semibold",
-              "bg-primary text-white",
-              "hover:opacity-90 disabled:opacity-50",
-              "transition-all duration-150 cursor-pointer",
-              "flex items-center justify-center gap-2"
-            )}
-          >
-            {searching ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Searching…
-              </>
-            ) : (
-              "Track Order"
-            )}
-          </button>
-        </form>
+        </div>
       </div>
     </div>
   );

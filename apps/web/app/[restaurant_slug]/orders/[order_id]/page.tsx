@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Image from "next/image";
 import {
   Check, XCircle, PackageCheck, Bike, Package,
-  UtensilsCrossed, Clock, AlertCircle, MapPin,
+  UtensilsCrossed, Clock, AlertCircle, MapPin, ArrowLeft,
+  Store,
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { OrderEtaCountdown } from "@/components/storefront/order-eta-countdown";
+import { OrderStatusAnimation } from "@/components/storefront/order-status-animation";
 import { formatKobo } from "@foodo/utils";
 import { ORDER_PROGRESS_STEPS_DELIVERY, ORDER_PROGRESS_STEPS_PICKUP } from "@foodo/utils";
 import { cn } from "@foodo/ui";
@@ -24,18 +27,6 @@ interface OrderWithItems extends Order {
   }>;
 }
 
-function OrderStatusIcon({ status, size = 40 }: { status: string; size?: number }) {
-  const props = { size, strokeWidth: 1.5 };
-  switch (status) {
-    case "cancelled":   return <XCircle {...props} className="text-cinnabar-500" />;
-    case "delivered":   return <PackageCheck {...props} className="text-green-500" />;
-    case "in_transit":  return <Bike {...props} className="text-primary" />;
-    case "ready_for_pickup": return <Package {...props} className="text-green-500" />;
-    case "preparing":   return <UtensilsCrossed {...props} className="text-primary" />;
-    default:            return <Clock {...props} className="text-dixie-500" />;
-  }
-}
-
 export default function OrderTrackingPage() {
   const params = useParams<{ restaurant_slug: string; order_id: string }>();
   const { restaurant } = useRestaurant();
@@ -44,6 +35,8 @@ export default function OrderTrackingPage() {
   const [order, setOrder] = useState<OrderWithItems | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const brandColor = restaurant.primary_color ?? "#2D6A4F";
 
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -116,33 +109,69 @@ export default function OrderTrackingPage() {
 
   return (
     <div className="min-h-screen bg-black-50 pb-10">
-      {/* Header */}
+      {/* ── Branded Header ─────────────────────────────────────────── */}
       <div className="bg-white border-b border-black-100 px-4 py-4">
-        <p className="text-xs text-black-400 font-medium">{restaurant.name}</p>
-        <h1 className="font-bold text-black-900 text-lg leading-tight">
-          Order #{order.order_number}
-        </h1>
+        <div className="flex items-center gap-3">
+          <a
+            href={`/${params.restaurant_slug}`}
+            className="w-9 h-9 rounded-xl bg-black-50 flex items-center justify-center hover:bg-black-100 transition-colors"
+          >
+            <ArrowLeft size={16} className="text-black-600" />
+          </a>
+          {restaurant.logo_url ? (
+            <div className="relative w-9 h-9 rounded-lg overflow-hidden border border-black-100 flex-shrink-0">
+              <Image
+                src={restaurant.logo_url}
+                alt={restaurant.name}
+                fill
+                className="object-cover"
+                unoptimized
+              />
+            </div>
+          ) : (
+            <div className="w-9 h-9 rounded-lg bg-black-50 flex items-center justify-center flex-shrink-0">
+              <Store size={18} className="text-black-400" />
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-black-400 font-medium">{restaurant.name}</p>
+            <h1 className="font-bold text-black-900 text-lg leading-tight">
+              Order #{order.order_number}
+            </h1>
+          </div>
+        </div>
       </div>
 
       <div className="px-4 mt-4 space-y-4">
-        {/* Status card */}
+        {/* ── Animated Status Card ─────────────────────────────────── */}
         <div
           className={cn(
-            "rounded-2xl p-6 flex flex-col items-center text-center gap-3",
-            isCancelled ? "bg-cinnabar-50 border border-cinnabar-100" : "bg-primary/5 border border-primary/10"
+            "rounded-2xl p-6 flex flex-col items-center text-center gap-4",
+            isCancelled
+              ? "bg-cinnabar-50 border border-cinnabar-100"
+              : "bg-white border border-black-100 shadow-sm"
           )}
         >
-          <OrderStatusIcon status={order.status} size={44} />
+          <OrderStatusAnimation
+            status={order.status}
+            size={100}
+            brandColor={isCancelled ? "#EF4444" : brandColor}
+          />
           <div>
             <p className={cn(
-              "text-lg font-bold",
-              isCancelled ? "text-cinnabar-600" : "text-primary"
+              "text-lg font-black",
+              isCancelled ? "text-cinnabar-600" : "text-black-900"
             )}>
               {statusLabel(order.status)}
             </p>
             {order.status === "cancelled" && order.cancellation_reason && (
               <p className="text-sm text-black-400 mt-1 leading-relaxed">
                 {order.cancellation_reason}
+              </p>
+            )}
+            {!isCancelled && (
+              <p className="text-xs text-black-400 mt-1">
+                We’ll update you as your order progresses
               </p>
             )}
           </div>
@@ -155,9 +184,9 @@ export default function OrderTrackingPage() {
           fulfillmentType={order.fulfillment_type as "delivery" | "pickup"}
         />
 
-        {/* Progress stepper */}
+        {/* ── Progress Stepper ─────────────────────────────────────── */}
         {!isCancelled && (
-          <div className="bg-white rounded-2xl border border-black-100 px-4 py-5">
+          <div className="bg-white rounded-2xl border border-black-100 shadow-sm px-4 py-5">
             <h2 className="text-sm font-bold text-black-700 mb-4">Order progress</h2>
             <div className="space-y-0">
               {progressSteps.map((stepStatus, idx) => {
@@ -172,8 +201,9 @@ export default function OrderTrackingPage() {
                       <div
                         className={cn(
                           "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors duration-300",
-                          isCompleted ? "bg-primary" : "bg-black-100"
+                          isCompleted ? "" : "bg-black-100"
                         )}
+                        style={isCompleted ? { backgroundColor: brandColor } : undefined}
                       >
                         {isCompleted ? (
                           <Check size={13} className="text-white" strokeWidth={2.5} />
@@ -183,10 +213,8 @@ export default function OrderTrackingPage() {
                       </div>
                       {!isLast && (
                         <div
-                          className={cn(
-                            "w-0.5 h-6 transition-colors duration-300",
-                            isCompleted ? "bg-primary/30" : "bg-black-100"
-                          )}
+                          className={cn("w-0.5 h-6 transition-colors duration-300", isCompleted ? "" : "bg-black-100")}
+                          style={isCompleted ? { backgroundColor: `${brandColor}40` } : undefined}
                         />
                       )}
                     </div>
@@ -194,8 +222,8 @@ export default function OrderTrackingPage() {
                     {/* Label */}
                     <div className={cn("pt-1", !isLast && "pb-4")}>
                       <p className={cn(
-                        "text-sm font-medium transition-colors",
-                        isActive ? "text-primary" : isCompleted ? "text-black-800" : "text-black-300"
+                        "text-sm font-bold transition-colors",
+                        isActive ? "text-black-900" : isCompleted ? "text-black-700" : "text-black-300"
                       )}>
                         {statusLabel(stepStatus)}
                       </p>
@@ -210,9 +238,10 @@ export default function OrderTrackingPage() {
           </div>
         )}
 
-        {/* Order items */}
-        <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
-          <div className="px-4 py-3 border-b border-black-100">
+        {/* ── Order Items ──────────────────────────────────────────── */}
+        <div className="bg-white rounded-2xl border border-black-100 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-black-100 flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brandColor }} />
             <h2 className="font-bold text-black-900 text-sm">Your order</h2>
           </div>
           <div className="divide-y divide-black-50">
@@ -222,18 +251,18 @@ export default function OrderTrackingPage() {
                 className="px-4 py-3 flex justify-between items-center"
               >
                 <span className="text-sm text-black-900">
-                  <span className="font-semibold text-black-500">{item.quantity}×</span>{" "}
+                  <span className="font-bold" style={{ color: brandColor }}>{item.quantity}×</span>{" "}
                   {item.item_name}
                 </span>
-                <span className="text-sm font-semibold text-black-900">
+                <span className="text-sm font-bold text-black-900">
                   {formatKobo(item.line_total_kobo)}
                 </span>
               </div>
             ))}
           </div>
-          <div className="px-4 py-3 bg-black-50 flex justify-between border-t border-black-100">
-            <span className="text-sm font-bold text-black-900">Total</span>
-            <span className="text-sm font-bold text-black-900">
+          <div className="px-4 py-3 flex justify-between border-t border-black-100">
+            <span className="text-sm font-black text-black-900">Total</span>
+            <span className="text-sm font-black text-black-900">
               {formatKobo(order.total_kobo)}
             </span>
           </div>
@@ -241,7 +270,7 @@ export default function OrderTrackingPage() {
 
         {/* Delivery address */}
         {order.fulfillment_type === "delivery" && order.delivery_address && (
-          <div className="bg-white rounded-2xl border border-black-100 px-4 py-4 flex items-start gap-3">
+          <div className="bg-white rounded-2xl border border-black-100 shadow-sm px-4 py-4 flex items-start gap-3">
             <MapPin size={15} className="text-black-400 mt-0.5 flex-shrink-0" />
             <div>
               <p className="text-xs text-black-400 font-medium mb-0.5">Delivery to</p>
@@ -251,13 +280,13 @@ export default function OrderTrackingPage() {
         )}
 
         {/* Order details */}
-        <OrderDetailsCard order={order} />
+        <OrderDetailsCard order={order} brandColor={brandColor} />
       </div>
     </div>
   );
 }
 
-function OrderDetailsCard({ order }: { order: OrderWithItems }) {
+function OrderDetailsCard({ order, brandColor }: { order: OrderWithItems; brandColor: string }) {
   const raw = order as unknown as Record<string, unknown>;
 
   const subtotalKobo     = typeof raw.subtotal_kobo      === "number" ? raw.subtotal_kobo      : 0;
@@ -283,8 +312,11 @@ function OrderDetailsCard({ order }: { order: OrderWithItems }) {
   const isDelivery = order.fulfillment_type === "delivery";
 
   return (
-    <div className="bg-white rounded-2xl border border-black-100 px-4 py-5">
-      <h2 className="text-sm font-bold text-black-700 mb-4">Order details</h2>
+    <div className="bg-white rounded-2xl border border-black-100 shadow-sm px-4 py-5">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brandColor }} />
+        <h2 className="text-sm font-bold text-black-700">Order details</h2>
+      </div>
 
       <div className="space-y-3">
         {/* Fulfillment row */}
@@ -337,8 +369,8 @@ function OrderDetailsCard({ order }: { order: OrderWithItems }) {
             )}
 
             <div className="flex items-center justify-between text-sm border-t border-black-100 pt-2">
-              <span className="font-bold text-black-900">Total</span>
-              <span className="font-bold text-black-900">{formatKobo(order.total_kobo)}</span>
+              <span className="font-black text-black-900">Total</span>
+              <span className="font-black text-black-900">{formatKobo(order.total_kobo)}</span>
             </div>
           </div>
         )}
@@ -347,8 +379,8 @@ function OrderDetailsCard({ order }: { order: OrderWithItems }) {
         {specialInstructions && (
           <div className="border-t border-black-100 pt-3">
             <p className="text-xs text-black-500 font-medium mb-1.5">Special instructions</p>
-            <div className="bg-black-50 rounded-xl px-3 py-2.5">
-              <p className="text-sm text-black-500 italic leading-relaxed">{specialInstructions}</p>
+            <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${brandColor}08` }}>
+              <p className="text-sm text-black-600 italic leading-relaxed">{specialInstructions}</p>
             </div>
           </div>
         )}
