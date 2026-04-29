@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { X, UtensilsCrossed, ArrowRight, Minus, Plus } from "lucide-react";
 import { formatKobo } from "@foodo/utils";
 import { useCartStore } from "@/lib/stores/cart";
@@ -12,6 +13,7 @@ interface CartSheetProps {
 }
 
 export function CartSheet({ open, onClose }: CartSheetProps) {
+  const router = useRouter();
   const { restaurant } = useRestaurant();
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore((s) => s.subtotalKobo)();
@@ -28,11 +30,7 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
 
   function handleCheckout() {
     onClose();
-    // Force full page navigation (not client-side router.push) so Safari
-    // always loads the latest checkout JS chunks instead of a stale cache.
-    const url = new URL(`/${slug}/checkout`, window.location.origin);
-    url.searchParams.set("_v", Date.now().toString());
-    window.location.assign(url.toString());
+    router.push(`/${slug}/checkout`);
   }
 
   function optionsSummary(item: typeof items[number]) {
