@@ -19,7 +19,14 @@ const nextConfig = {
   },
   experimental: {
     serverActions: {
-      allowedOrigins: ["localhost:3000"],
+      allowedOrigins: [
+        "localhost:3000",
+        "kitchyn.app",
+        "dashboard.kitchyn.app",
+        "admin.kitchyn.app",
+        "staging.kitchyn.app",
+        "*.kitchyn.app",
+      ],
     },
   },
 };
