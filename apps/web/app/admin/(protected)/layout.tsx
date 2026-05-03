@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { AdminNav } from "@/components/admin/nav";
 import { ConnectionProvider } from "@/lib/connection-context";
 import { ConnectionBanner } from "@/components/dashboard/connection-banner";
 import { RouterAutoRefresh } from "@/components/shared/router-auto-refresh";
+
+export const metadata: Metadata = { title: "Kitchyn Admin" };
 
 export default async function AdminLayout({
   children,
