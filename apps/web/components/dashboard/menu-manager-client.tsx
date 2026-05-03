@@ -44,6 +44,34 @@ export function MenuManagerClient({
     initialCategories[0]?.id ?? null
   );
 
+  function handleExport() {
+    const catMap = new Map(categories.map((c) => [c.id, c.name]));
+    const header = "name,description,price,category,is_featured,prep_time_minutes";
+    const csvRows = items.map((item) => {
+      const cell = (v: string) =>
+        v.includes(",") || v.includes('"') || v.includes("\n")
+          ? `"${v.replace(/"/g, '""')}"`
+          : v;
+      return [
+        cell(item.name),
+        cell(item.description ?? ""),
+        item.price_kobo > 0 ? (item.price_kobo / 100).toString() : "0",
+        cell(item.category_id ? (catMap.get(item.category_id) ?? "") : ""),
+        item.is_featured ? "true" : "false",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (item as any).prep_time_minutes ?? "",
+      ].join(",");
+    });
+    const csv = [header, ...csvRows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "menu-export.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function toggleAvailable(itemId: string, current: boolean) {
     await supabase
       .from("menu_items")
@@ -89,6 +117,15 @@ export function MenuManagerClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            disabled={items.length === 0}
+            className="flex items-center gap-1.5 bg-black-100 text-black-600 text-sm font-semibold px-3.5 py-2.5 rounded-xl hover:bg-black-200 transition-colors duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Export menu as CSV"
+          >
+            <Download size={15} strokeWidth={2.5} />
+            <span className="hidden sm:inline">Export CSV</span>
+          </button>
           <button
             onClick={() => setShowCsvImport(true)}
             className="flex items-center gap-1.5 bg-black-100 text-black-600 text-sm font-semibold px-3.5 py-2.5 rounded-xl hover:bg-black-200 transition-colors duration-200 cursor-pointer"
@@ -264,13 +301,20 @@ export function MenuManagerClient({
         <CsvImportModal
           restaurantId={restaurantId}
           categories={categories}
+          existingItemCount={items.length}
           onClose={() => setShowCsvImport(false)}
-          onImported={(newCats, newItems) => {
-            setCategories((prev) => {
-              const existingIds = new Set(prev.map((c) => c.id));
-              return [...prev, ...newCats.filter((c) => !existingIds.has(c.id))];
-            });
-            setItems((prev) => [...prev, ...newItems]);
+          onImported={(newCats, newItems, replaced) => {
+            if (replaced) {
+              setCategories(newCats);
+              setItems(newItems);
+              setActiveCategory(newCats[0]?.id ?? null);
+            } else {
+              setCategories((prev) => {
+                const existingIds = new Set(prev.map((c) => c.id));
+                return [...prev, ...newCats.filter((c) => !existingIds.has(c.id))];
+              });
+              setItems((prev) => [...prev, ...newItems]);
+            }
             setShowCsvImport(false);
           }}
         />
@@ -1239,15 +1283,17 @@ function downloadTemplate() {
 interface CsvImportModalProps {
   restaurantId: string;
   categories: MenuCategory[];
+  existingItemCount: number;
   onClose: () => void;
-  onImported: (newCategories: MenuCategory[], newItems: MenuItemWithOptions[]) => void;
+  onImported: (newCategories: MenuCategory[], newItems: MenuItemWithOptions[], replaced: boolean) => void;
 }
 
-function CsvImportModal({ restaurantId, categories, onClose, onImported }: CsvImportModalProps) {
+function CsvImportModal({ restaurantId, categories, existingItemCount, onClose, onImported }: CsvImportModalProps) {
   const supabase = createBrowserClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState("");
+  const [importMode, setImportMode] = useState<"add" | "replace">("add");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
   const [importDone, setImportDone] = useState(false);
@@ -1276,8 +1322,27 @@ function CsvImportModal({ restaurantId, categories, onClose, onImported }: CsvIm
     setImportError("");
 
     try {
+      let baseCategories = categories;
+
+      if (importMode === "replace") {
+        // Delete all existing items first (options/choices cascade), then categories
+        const { error: delItemsErr } = await supabase
+          .from("menu_items")
+          .delete()
+          .eq("restaurant_id", restaurantId);
+        if (delItemsErr) throw delItemsErr;
+
+        const { error: delCatsErr } = await supabase
+          .from("menu_categories")
+          .delete()
+          .eq("restaurant_id", restaurantId);
+        if (delCatsErr) throw delCatsErr;
+
+        baseCategories = [];
+      }
+
       // Resolve / create categories
-      const categoryMap = new Map<string, string>(categories.map((c) => [c.name.toLowerCase(), c.id]));
+      const categoryMap = new Map<string, string>(baseCategories.map((c) => [c.name.toLowerCase(), c.id]));
       const newCategories: MenuCategory[] = [];
 
       const uniqueCatNames = [...new Set(validRows.map((r) => r.category.trim()).filter(Boolean))];
@@ -1285,7 +1350,7 @@ function CsvImportModal({ restaurantId, categories, onClose, onImported }: CsvIm
         if (!categoryMap.has(catName.toLowerCase())) {
           const { data, error } = await supabase
             .from("menu_categories")
-            .insert({ restaurant_id: restaurantId, name: catName, display_order: categories.length + newCategories.length })
+            .insert({ restaurant_id: restaurantId, name: catName, display_order: baseCategories.length + newCategories.length })
             .select("*")
             .single();
           if (error) throw error;
@@ -1315,7 +1380,7 @@ function CsvImportModal({ restaurantId, categories, onClose, onImported }: CsvIm
       if (insertError) throw insertError;
 
       setImportDone(true);
-      onImported(newCategories, inserted as unknown as MenuItemWithOptions[]);
+      onImported(newCategories, inserted as unknown as MenuItemWithOptions[], importMode === "replace");
     } catch (e: unknown) {
       setImportError((e as Error).message ?? "Import failed");
     } finally {
@@ -1461,6 +1526,45 @@ function CsvImportModal({ restaurantId, categories, onClose, onImported }: CsvIm
             </div>
           )}
 
+          {/* Import mode selector — shown once a valid file is loaded */}
+          {validRows.length > 0 && !importDone && (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-black-700">How should we import this?</p>
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-black-200 cursor-pointer hover:border-purple-400 transition-colors has-[:checked]:border-purple-500 has-[:checked]:bg-purple-50">
+                <input
+                  type="radio"
+                  name="importMode"
+                  value="add"
+                  checked={importMode === "add"}
+                  onChange={() => setImportMode("add")}
+                  className="mt-0.5 accent-purple-500 cursor-pointer"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-black-900">Add to existing menu</p>
+                  <p className="text-xs text-black-400 mt-0.5">
+                    The {validRows.length} item{validRows.length !== 1 ? "s" : ""} in this file will be added alongside your current menu.
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-black-200 cursor-pointer hover:border-cinnabar-400 transition-colors has-[:checked]:border-cinnabar-500 has-[:checked]:bg-cinnabar-50">
+                <input
+                  type="radio"
+                  name="importMode"
+                  value="replace"
+                  checked={importMode === "replace"}
+                  onChange={() => setImportMode("replace")}
+                  className="mt-0.5 accent-red-500 cursor-pointer"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-black-900">Replace entire menu</p>
+                  <p className="text-xs text-black-400 mt-0.5">
+                    Your current {existingItemCount} item{existingItemCount !== 1 ? "s" : ""} and {categories.length} categor{categories.length !== 1 ? "ies" : "y"} will be <span className="font-semibold text-cinnabar-500">permanently deleted</span>, then replaced with the {validRows.length} item{validRows.length !== 1 ? "s" : ""} in this file. This cannot be undone.
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
+
           {importError && (
             <div className="bg-cinnabar-50 border border-cinnabar-200 rounded-xl px-4 py-3 text-sm text-cinnabar-600">
               {importError}
@@ -1473,14 +1577,21 @@ function CsvImportModal({ restaurantId, categories, onClose, onImported }: CsvIm
           <button
             onClick={handleImport}
             disabled={validRows.length === 0 || importing || importDone}
-            className="w-full bg-purple-500 hover:bg-purple-400 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-colors duration-200 cursor-pointer"
+            className={cn(
+              "w-full disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-colors duration-200 cursor-pointer",
+              importMode === "replace"
+                ? "bg-cinnabar-500 hover:bg-cinnabar-400"
+                : "bg-purple-500 hover:bg-purple-400"
+            )}
           >
             {importing
               ? "Importing…"
               : importDone
-              ? `Imported ${validRows.length} item${validRows.length !== 1 ? "s" : ""}`
+              ? `${importMode === "replace" ? "Menu replaced" : "Imported"} — ${validRows.length} item${validRows.length !== 1 ? "s" : ""}`
               : validRows.length > 0
-              ? `Import ${validRows.length} item${validRows.length !== 1 ? "s" : ""}`
+              ? importMode === "replace"
+                ? `Replace menu with ${validRows.length} item${validRows.length !== 1 ? "s" : ""}`
+                : `Add ${validRows.length} item${validRows.length !== 1 ? "s" : ""} to menu`
               : "Select a CSV file first"}
           </button>
         </div>
