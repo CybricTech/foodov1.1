@@ -305,15 +305,15 @@ export function MenuManagerClient({
           existingItemCount={items.length}
           onClose={() => setShowCsvImport(false)}
           onImported={(newCats, newItems, replaced) => {
+            setCategories((prev) => {
+              const existingIds = new Set(prev.map((c) => c.id));
+              return [...prev, ...newCats.filter((c) => !existingIds.has(c.id))];
+            });
             if (replaced) {
-              setCategories(newCats);
+              // Replace: swap out the item list entirely with only the visible imported items
               setItems(newItems);
-              setActiveCategory(newCats[0]?.id ?? null);
+              setActiveCategory(newItems[0]?.category_id ?? newCats[0]?.id ?? null);
             } else {
-              setCategories((prev) => {
-                const existingIds = new Set(prev.map((c) => c.id));
-                return [...prev, ...newCats.filter((c) => !existingIds.has(c.id))];
-              });
               setItems((prev) => [...prev, ...newItems]);
             }
             setShowCsvImport(false);
@@ -1325,27 +1325,8 @@ function CsvImportModal({ restaurantId, categories, existingItemCount, onClose, 
     setImportError("");
 
     try {
-      let baseCategories = categories;
-
-      if (importMode === "replace") {
-        // Delete all existing items first (options/choices cascade), then categories
-        const { error: delItemsErr } = await supabase
-          .from("menu_items")
-          .delete()
-          .eq("restaurant_id", restaurantId);
-        if (delItemsErr) throw delItemsErr;
-
-        const { error: delCatsErr } = await supabase
-          .from("menu_categories")
-          .delete()
-          .eq("restaurant_id", restaurantId);
-        if (delCatsErr) throw delCatsErr;
-
-        baseCategories = [];
-      }
-
-      // Resolve / create categories
-      const categoryMap = new Map<string, string>(baseCategories.map((c) => [c.name.toLowerCase(), c.id]));
+      // ── Resolve / create categories (shared by both modes) ─────────────────
+      const categoryMap = new Map<string, string>(categories.map((c) => [c.name.toLowerCase(), c.id]));
       const newCategories: MenuCategory[] = [];
 
       const uniqueCatNames = [...new Set(validRows.map((r) => r.category.trim()).filter(Boolean))];
@@ -1353,7 +1334,7 @@ function CsvImportModal({ restaurantId, categories, existingItemCount, onClose, 
         if (!categoryMap.has(catName.toLowerCase())) {
           const { data, error } = await supabase
             .from("menu_categories")
-            .insert({ restaurant_id: restaurantId, name: catName, display_order: baseCategories.length + newCategories.length })
+            .insert({ restaurant_id: restaurantId, name: catName, display_order: categories.length + newCategories.length })
             .select("*")
             .single();
           if (error) throw error;
@@ -1362,29 +1343,117 @@ function CsvImportModal({ restaurantId, categories, existingItemCount, onClose, 
         }
       }
 
-      // Bulk insert items
-      const insertPayloads = validRows.map((row) => ({
-        restaurant_id: restaurantId,
-        name: row.name.trim(),
-        description: row.description.trim() || null,
-        price_kobo: row._priceKobo,
-        price: row._priceKobo,
-        category_id: row.category.trim() ? (categoryMap.get(row.category.trim().toLowerCase()) ?? null) : null,
-        is_featured: row.is_featured.toLowerCase() === "true",
-        prep_time_minutes: row.prep_time_minutes ? parseInt(row.prep_time_minutes, 10) || null : null,
-        image_url: row.image_url.trim() || null,
-        is_available: true,
-        display_order: 0,
-      }));
+      if (importMode === "replace") {
+        // ── Replace: hide-then-upsert so order history is never broken ─────────
+        // Deleting menu_items that are referenced by order_items would violate the
+        // FK constraint. Instead we hide everything, then update matched rows back
+        // to visible and insert genuinely new items.
 
-      const { data: inserted, error: insertError } = await supabase
-        .from("menu_items")
-        .insert(insertPayloads)
-        .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))");
-      if (insertError) throw insertError;
+        const { data: existingItems, error: fetchErr } = await supabase
+          .from("menu_items")
+          .select("id, name")
+          .eq("restaurant_id", restaurantId);
+        if (fetchErr) throw fetchErr;
 
-      setImportDone(true);
-      onImported(newCategories, inserted as unknown as MenuItemWithOptions[], importMode === "replace");
+        const { error: hideErr } = await supabase
+          .from("menu_items")
+          .update({ is_available: false })
+          .eq("restaurant_id", restaurantId);
+        if (hideErr) throw hideErr;
+
+        const existingByName = new Map(
+          (existingItems ?? []).map((i) => [i.name.toLowerCase(), i.id])
+        );
+
+        const toUpdate: { id: string; row: ParsedRow }[] = [];
+        const toInsert: ParsedRow[] = [];
+        for (const row of validRows) {
+          const existingId = existingByName.get(row.name.trim().toLowerCase());
+          if (existingId) toUpdate.push({ id: existingId, row });
+          else toInsert.push(row);
+        }
+
+        await Promise.all(
+          toUpdate.map(({ id, row }) =>
+            supabase
+              .from("menu_items")
+              .update({
+                name: row.name.trim(),
+                description: row.description.trim() || null,
+                price_kobo: row._priceKobo,
+                price: row._priceKobo,
+                category_id: row.category.trim() ? (categoryMap.get(row.category.trim().toLowerCase()) ?? null) : null,
+                is_featured: row.is_featured.toLowerCase() === "true",
+                prep_time_minutes: row.prep_time_minutes ? parseInt(row.prep_time_minutes, 10) || null : null,
+                image_url: row.image_url.trim() || null,
+                is_available: true,
+              })
+              .eq("id", id)
+          )
+        );
+
+        let insertedItems: MenuItemWithOptions[] = [];
+        if (toInsert.length > 0) {
+          const { data: inserted, error: insertError } = await supabase
+            .from("menu_items")
+            .insert(
+              toInsert.map((row) => ({
+                restaurant_id: restaurantId,
+                name: row.name.trim(),
+                description: row.description.trim() || null,
+                price_kobo: row._priceKobo,
+                price: row._priceKobo,
+                category_id: row.category.trim() ? (categoryMap.get(row.category.trim().toLowerCase()) ?? null) : null,
+                is_featured: row.is_featured.toLowerCase() === "true",
+                prep_time_minutes: row.prep_time_minutes ? parseInt(row.prep_time_minutes, 10) || null : null,
+                image_url: row.image_url.trim() || null,
+                is_available: true,
+                display_order: 0,
+              }))
+            )
+            .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))");
+          if (insertError) throw insertError;
+          insertedItems = inserted as unknown as MenuItemWithOptions[];
+        }
+
+        let updatedItems: MenuItemWithOptions[] = [];
+        if (toUpdate.length > 0) {
+          const { data: fetched, error: fetchUpdErr } = await supabase
+            .from("menu_items")
+            .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
+            .in("id", toUpdate.map((u) => u.id));
+          if (fetchUpdErr) throw fetchUpdErr;
+          updatedItems = fetched as unknown as MenuItemWithOptions[];
+        }
+
+        setImportDone(true);
+        onImported(newCategories, [...updatedItems, ...insertedItems], true);
+
+      } else {
+        // ── Add mode: bulk insert ──────────────────────────────────────────────
+        const { data: inserted, error: insertError } = await supabase
+          .from("menu_items")
+          .insert(
+            validRows.map((row) => ({
+              restaurant_id: restaurantId,
+              name: row.name.trim(),
+              description: row.description.trim() || null,
+              price_kobo: row._priceKobo,
+              price: row._priceKobo,
+              category_id: row.category.trim() ? (categoryMap.get(row.category.trim().toLowerCase()) ?? null) : null,
+              is_featured: row.is_featured.toLowerCase() === "true",
+              prep_time_minutes: row.prep_time_minutes ? parseInt(row.prep_time_minutes, 10) || null : null,
+              image_url: row.image_url.trim() || null,
+              is_available: true,
+              display_order: 0,
+            }))
+          )
+          .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))");
+        if (insertError) throw insertError;
+
+        setImportDone(true);
+        onImported(newCategories, inserted as unknown as MenuItemWithOptions[], false);
+      }
     } catch (e: unknown) {
       setImportError((e as Error).message ?? "Import failed");
     } finally {
