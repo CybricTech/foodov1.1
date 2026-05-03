@@ -46,7 +46,7 @@ export function MenuManagerClient({
 
   function handleExport() {
     const catMap = new Map(categories.map((c) => [c.id, c.name]));
-    const header = "name,description,price,category,is_featured,prep_time_minutes";
+    const header = "name,description,price,category,is_featured,prep_time_minutes,image_url";
     const csvRows = items.map((item) => {
       const cell = (v: string) =>
         v.includes(",") || v.includes('"') || v.includes("\n")
@@ -60,6 +60,7 @@ export function MenuManagerClient({
         item.is_featured ? "true" : "false",
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (item as any).prep_time_minutes ?? "",
+        item.image_url ?? "",
       ].join(",");
     });
     const csv = [header, ...csvRows].join("\n");
@@ -1186,6 +1187,7 @@ interface CsvRow {
   category: string;
   is_featured: string;
   prep_time_minutes: string;
+  image_url: string;
 }
 
 interface ParsedRow extends CsvRow {
@@ -1210,7 +1212,7 @@ function parseCSV(text: string): ParsedRow[] {
   if (missingHeaders.length > 0) {
     return [{
       name: "", description: "", price: "", category: "",
-      is_featured: "", prep_time_minutes: "",
+      is_featured: "", prep_time_minutes: "", image_url: "",
       _line: 1,
       _errors: [`Missing required column(s): ${missingHeaders.join(", ")}`],
       _priceKobo: 0,
@@ -1230,6 +1232,7 @@ function parseCSV(text: string): ParsedRow[] {
       category: obj["category"] ?? "",
       is_featured: obj["is_featured"] ?? "false",
       prep_time_minutes: obj["prep_time_minutes"] ?? "",
+      image_url: obj["image_url"] ?? "",
       _line: i + 1,
       _errors: [],
       _priceKobo: 0,
@@ -1369,6 +1372,7 @@ function CsvImportModal({ restaurantId, categories, existingItemCount, onClose, 
         category_id: row.category.trim() ? (categoryMap.get(row.category.trim().toLowerCase()) ?? null) : null,
         is_featured: row.is_featured.toLowerCase() === "true",
         prep_time_minutes: row.prep_time_minutes ? parseInt(row.prep_time_minutes, 10) || null : null,
+        image_url: row.image_url.trim() || null,
         is_available: true,
         display_order: 0,
       }));
