@@ -318,14 +318,21 @@ export default function CheckoutPage() {
       const clearPaystackTimeout = () => {
         if (paystackTimeout) clearTimeout(paystackTimeout);
       };
+      // When using access_code, Paystack inline.js requires ONLY key + access_code
+      // + callbacks. Passing email/amount/currency alongside makes inline.js
+      // discard the access_code and create a fresh transaction with an
+      // auto-generated reference, leaving the server-initialized one abandoned
+      // and breaking the webhook → order pipeline.
       const handler = PaystackPop.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
-        email: email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`,
-        amount: initData.totalKobo,
-        currency: "NGN",
         ...(initData.accessCode
           ? { access_code: initData.accessCode }
-          : { ref: initData.paystackRef }),
+          : {
+              ref: initData.paystackRef,
+              email: email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`,
+              amount: initData.totalKobo,
+              currency: "NGN",
+            }),
         callback: () => {
           clearPaystackTimeout();
           clearCart();
