@@ -311,54 +311,60 @@ export default function CheckoutPage() {
       }
 
       const PaystackPop = await loadPaystackScript();
-      // Paystack v1 expects either access_code or ref — not both.
-      // Prefer access_code (the secure server-generated token); fall back to
-      // ref only when access_code is absent.
       let paystackTimeout: ReturnType<typeof setTimeout> | null = null;
       const clearPaystackTimeout = () => {
         if (paystackTimeout) clearTimeout(paystackTimeout);
       };
-      // Paystack inline.js requires `email` even when an access_code is present
-      // (the popup re-validates it client-side). But passing `amount`/`currency`
-      // alongside an access_code makes inline.js discard the access_code and
-      // open a fresh transaction with an auto-generated reference — orphaning
-      // our server-initialized FD-* row and breaking the webhook pipeline.
-      // So: always send email + the access_code-or-ref discriminator, and only
-      // include amount/currency in the no-access_code fallback.
       const popupEmail = email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`;
-      const handler = PaystackPop.setup({
-        key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
-        email: popupEmail,
-        ...(initData.accessCode
-          ? { access_code: initData.accessCode }
-          : {
-              ref: initData.paystackRef,
-              amount: initData.totalKobo,
-              currency: "NGN",
-            }),
-        callback: () => {
+
+      // Paystack inline.js v2 API. For server-initialized transactions we use
+      // resumeTransaction(accessCode) — the v1 setup({access_code, amount, …})
+      // path was creating duplicate auto-generated transactions because v1
+      // setup() with mixed access_code + amount params silently discards the
+      // access_code and opens a fresh inline transaction. v2 has dedicated
+      // methods that don't share that footgun.
+      const callbacks = {
+        onSuccess: () => {
           clearPaystackTimeout();
           clearCart();
           router.push(`/${restaurant.slug}/orders/pending?ref=${initData.paystackRef}`);
         },
-        onClose: () => {
+        onCancel: () => {
           clearPaystackTimeout();
           setError("Payment was cancelled. You can try again.");
           setLoading(false);
         },
-      });
+        onError: (err: { message: string }) => {
+          clearPaystackTimeout();
+          console.error("[Checkout] Paystack onError:", err);
+          setError(err.message || "Payment gateway error. Please try again.");
+          setLoading(false);
+        },
+      };
       try {
-        handler.openIframe();
+        const popup = new PaystackPop();
+        if (initData.accessCode) {
+          popup.resumeTransaction(initData.accessCode, callbacks);
+        } else {
+          popup.newTransaction({
+            key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
+            email: popupEmail,
+            amount: initData.totalKobo,
+            currency: "NGN",
+            reference: initData.paystackRef,
+            ...callbacks,
+          });
+        }
       } catch (e) {
         clearPaystackTimeout();
-        console.error("[Checkout] Paystack openIframe failed:", e);
+        console.error("[Checkout] Paystack popup failed to open:", e);
         setError("Payment gateway failed to open. Please try again.");
         setLoading(false);
         return;
       }
-      // Safety net: if Paystack iframe assets fail to load (e.g. 403 on an
-      // unregistered staging domain) neither callback nor onClose fires, so
-      // loading would stay stuck true. Reset after a generous timeout.
+      // Safety net: if inline.js assets fail to load (e.g. 403 on an
+      // unregistered domain) none of the callbacks fire, so loading would
+      // stay stuck true. Reset after a generous timeout.
       paystackTimeout = setTimeout(() => {
         setLoading(false);
         setError(
@@ -862,18 +868,39 @@ function inputClass(hasError: boolean) {
   );
 }
 
-function loadPaystackScript(): Promise<{
-  setup: (config: Record<string, unknown>) => { openIframe: () => void };
-}> {
+// Paystack inline.js v2 API surface (only the bits we use).
+// Docs: https://github.com/PaystackHQ/inline-js (README packaged in
+// @paystack/inline-js@2.x).
+type PaystackPopCallbacks = {
+  onSuccess?: (txn: { id: number; reference: string; message: string }) => void;
+  onCancel?: () => void;
+  onError?: (err: { message: string }) => void;
+  onLoad?: (txn: { id: number; customer: unknown; accessCode: string }) => void;
+};
+type PaystackPopInstance = {
+  resumeTransaction: (accessCode: string, callbacks: PaystackPopCallbacks) => void;
+  newTransaction: (
+    config: Record<string, unknown> & PaystackPopCallbacks
+  ) => void;
+};
+type PaystackPopConstructor = new () => PaystackPopInstance;
+
+function loadPaystackScript(): Promise<PaystackPopConstructor> {
   return new Promise((resolve, reject) => {
-    if ((window as unknown as Record<string, unknown>).PaystackPop) {
-      resolve((window as unknown as Record<string, unknown>).PaystackPop as ReturnType<typeof loadPaystackScript> extends Promise<infer T> ? T : never);
+    const existing = (window as unknown as { PaystackPop?: PaystackPopConstructor })
+      .PaystackPop;
+    if (existing) {
+      resolve(existing);
       return;
     }
     const script = document.createElement("script");
-    script.src = "https://js.paystack.co/v1/inline.js";
-    script.onload = () =>
-      resolve((window as unknown as Record<string, unknown>).PaystackPop as ReturnType<typeof loadPaystackScript> extends Promise<infer T> ? T : never);
+    script.src = "https://js.paystack.co/v2/inline.js";
+    script.onload = () => {
+      const ctor = (window as unknown as { PaystackPop?: PaystackPopConstructor })
+        .PaystackPop;
+      if (ctor) resolve(ctor);
+      else reject(new Error("PaystackPop did not register on window"));
+    };
     script.onerror = reject;
     document.head.appendChild(script);
   });
