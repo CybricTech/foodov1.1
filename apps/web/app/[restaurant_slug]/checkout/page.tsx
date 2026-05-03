@@ -318,18 +318,21 @@ export default function CheckoutPage() {
       const clearPaystackTimeout = () => {
         if (paystackTimeout) clearTimeout(paystackTimeout);
       };
-      // When using access_code, Paystack inline.js requires ONLY key + access_code
-      // + callbacks. Passing email/amount/currency alongside makes inline.js
-      // discard the access_code and create a fresh transaction with an
-      // auto-generated reference, leaving the server-initialized one abandoned
-      // and breaking the webhook → order pipeline.
+      // Paystack inline.js requires `email` even when an access_code is present
+      // (the popup re-validates it client-side). But passing `amount`/`currency`
+      // alongside an access_code makes inline.js discard the access_code and
+      // open a fresh transaction with an auto-generated reference — orphaning
+      // our server-initialized FD-* row and breaking the webhook pipeline.
+      // So: always send email + the access_code-or-ref discriminator, and only
+      // include amount/currency in the no-access_code fallback.
+      const popupEmail = email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`;
       const handler = PaystackPop.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
+        email: popupEmail,
         ...(initData.accessCode
           ? { access_code: initData.accessCode }
           : {
               ref: initData.paystackRef,
-              email: email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`,
               amount: initData.totalKobo,
               currency: "NGN",
             }),
