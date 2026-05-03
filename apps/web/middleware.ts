@@ -75,6 +75,17 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hostname = request.headers.get("host") ?? "";
 
+  // Copy supabaseResponse cookies onto any new response we create.
+  // Per Supabase SSR docs: every response returned from middleware MUST carry
+  // the same Set-Cookie headers as supabaseResponse, otherwise the browser and
+  // server go out of sync and the session gets stuck in a broken/403 state.
+  function withSessionCookies(res: NextResponse): NextResponse {
+    supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
+      res.cookies.set(name, value);
+    });
+    return res;
+  }
+
   // ─── Subdomain routing ─────────────────────────────────────────────────────
   const isDashboardSub = hostname === "dashboard.kitchyn.app";
   const isAdminSub     = hostname === "admin.kitchyn.app";
@@ -83,12 +94,12 @@ export async function middleware(request: NextRequest) {
 
   // dashboard.kitchyn.app/ → redirect to /dashboard (all /dashboard/* paths work as-is)
   if (isDashboardSub && pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return withSessionCookies(NextResponse.redirect(new URL("/dashboard", request.url)));
   }
 
   // admin.kitchyn.app/ → redirect to /admin
   if (isAdminSub && pathname === "/") {
-    return NextResponse.redirect(new URL("/admin", request.url));
+    return withSessionCookies(NextResponse.redirect(new URL("/admin", request.url)));
   }
 
   // slug.kitchyn.app/* → rewrite to /{slug}/*  (but NOT /api/* paths)
@@ -96,11 +107,7 @@ export async function middleware(request: NextRequest) {
     const slug = hostname.replace(".kitchyn.app", "");
     if (!pathname.startsWith("/api") && !pathname.startsWith(`/${slug}`)) {
       const rewritePath = pathname === "/" ? `/${slug}` : `/${slug}${pathname}`;
-      const response = NextResponse.rewrite(new URL(rewritePath, request.url));
-      supabaseResponse.cookies.getAll().forEach((c) => {
-        response.cookies.set(c.name, c.value);
-      });
-      return response;
+      return withSessionCookies(NextResponse.rewrite(new URL(rewritePath, request.url)));
     }
   }
 
@@ -112,7 +119,7 @@ export async function middleware(request: NextRequest) {
     if (!user && !authCheckFailed) {
       const loginUrl = new URL("/dashboard/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
-      return NextResponse.redirect(loginUrl);
+      return withSessionCookies(NextResponse.redirect(loginUrl));
     }
   }
 
@@ -121,7 +128,7 @@ export async function middleware(request: NextRequest) {
     if (!user && !authCheckFailed) {
       const loginUrl = new URL("/admin/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
-      return NextResponse.redirect(loginUrl);
+      return withSessionCookies(NextResponse.redirect(loginUrl));
     }
   }
 
