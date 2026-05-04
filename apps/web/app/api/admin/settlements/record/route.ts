@@ -156,6 +156,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: lockErr.message }, { status: 500 });
   }
 
+  // Create settlement_debit wallet transaction
+  await auth.serviceClient.from("wallet_transactions").insert({
+    restaurant_id,
+    settlement_id: settlement.id,
+    type: "settlement_debit",
+    direction: "debit",
+    amount_kobo: netPayout,
+    status: "settled",
+    description: `Settlement paid — ${orderCount} order${orderCount !== 1 ? "s" : ""} · Ref: ${bank_reference}`,
+  });
+
+  // Debit the wallet: decrement pending_balance_kobo, increment total_withdrawn_kobo
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (auth.serviceClient.rpc as any)("debit_wallet_for_settlement", {
+    p_restaurant_id: restaurant_id,
+    p_amount_kobo: netPayout,
+  });
+
   await auth.serviceClient.from("audit_logs").insert({
     actor_id: auth.user.id,
     action: "manual_settlement_recorded",
