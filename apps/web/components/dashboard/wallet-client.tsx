@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatKobo } from "@foodo/utils";
-import { Clock, Wallet, TrendingUp, ArrowDownCircle } from "lucide-react";
+import { Clock, TrendingUp, ArrowDownCircle } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -12,7 +12,6 @@ type WalletRow = {
   id: string;
   restaurant_id: string;
   pending_balance_kobo: number;
-  available_balance_kobo: number;
   total_earned_kobo: number;
   total_withdrawn_kobo: number;
   updated_at: string;
@@ -123,7 +122,6 @@ export function WalletClient({
   const [exporting, setExporting] = useState(false);
 
   const pendingBalance = wallet?.pending_balance_kobo ?? 0;
-  const availableBalance = wallet?.available_balance_kobo ?? 0;
   const totalEarned = wallet?.total_earned_kobo ?? 0;
   const totalWithdrawn = wallet?.total_withdrawn_kobo ?? 0;
 
@@ -171,20 +169,13 @@ export function WalletClient({
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-4 md:px-0 mb-6">
+      <div className="grid grid-cols-3 gap-3 px-4 md:px-0 mb-6">
         <StatCard
           icon={<Clock className="w-4 h-4 text-dixie-500" />}
-          label="In Hold"
+          label="Awaiting Payout"
           value={formatKobo(pendingBalance)}
-          sub="Being processed"
+          sub="Next settlement"
           color="bg-dixie-50 border-dixie-100"
-        />
-        <StatCard
-          icon={<Wallet className="w-4 h-4 text-viridian-500" />}
-          label="Available"
-          value={formatKobo(availableBalance)}
-          sub="Ready to pay out"
-          color="bg-viridian-50 border-viridian-100"
         />
         <StatCard
           icon={<ArrowDownCircle className="w-4 h-4 text-purple-500" />}
