@@ -191,6 +191,41 @@ export async function POST(request: NextRequest) {
     },
   });
 
+  // Fire-and-forget payout confirmation email to merchant
+  const { data: restaurantRow } = await auth.serviceClient
+    .from("restaurants")
+    .select("name, notification_email")
+    .eq("id", restaurant_id)
+    .single();
+
+  const notificationEmail = (restaurantRow as unknown as Record<string, unknown>)?.notification_email as string | null;
+
+  if (notificationEmail) {
+    fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-email`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          template: "settlement_payout",
+          to: notificationEmail,
+          props: {
+            restaurantName: restaurantRow?.name ?? "Restaurant",
+            periodDate: period_date,
+            orderCount,
+            grossTotalKobo: grossTotal,
+            netPayoutKobo: netPayout,
+            bankReference: bank_reference,
+            settlementId: settlement.id,
+          },
+        }),
+      }
+    ).catch(console.error);
+  }
+
   return NextResponse.json({
     settlement_id: settlement.id,
     restaurant_id,

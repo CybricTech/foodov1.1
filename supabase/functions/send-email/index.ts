@@ -30,13 +30,24 @@ interface OrderEmailProps {
   createdAt: string;
 }
 
+interface SettlementPayoutProps {
+  restaurantName: string;
+  periodDate: string;       // YYYY-MM-DD
+  orderCount: number;
+  grossTotalKobo: number;
+  netPayoutKobo: number;
+  bankReference: string;
+  settlementId: string;
+}
+
 interface EmailPayload {
   template:
     | "merchant-onboarding"
     | "password-reset"
     | "super-admin-alert"
     | "new_order_merchant"
-    | "new_order_admin";
+    | "new_order_admin"
+    | "settlement_payout";
   to: string;
   props: Record<string, unknown>;
 }
@@ -204,6 +215,164 @@ function buildOrderEmailHtml(props: OrderEmailProps, isAdmin: boolean): { subjec
   return { subject, html };
 }
 
+function buildSettlementPayoutHtml(props: SettlementPayoutProps): { subject: string; html: string } {
+  const periodFormatted = new Date(props.periodDate + "T12:00:00Z").toLocaleDateString("en-NG", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const issuedOn = new Date().toLocaleDateString("en-NG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const subject = `Payment Confirmation — ${formatKobo(props.netPayoutKobo)} · ${props.periodDate}`;
+
+  // Invoice number derived from settlement id (last 8 chars, uppercase)
+  const invoiceRef = `KTN-${props.settlementId.replace(/-/g, "").slice(-8).toUpperCase()}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Payment Confirmation</title>
+</head>
+<body style="margin:0;padding:0;background:#f0f0f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0f5;padding:32px 0">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(16,0,43,0.10)">
+
+      <!-- Header -->
+      <tr>
+        <td style="background:#10002B;padding:32px 40px">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td>
+                <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.5px">Kitchyn</p>
+                <p style="margin:4px 0 0;font-size:12px;color:#9d7fc9;letter-spacing:0.5px;text-transform:uppercase">Payment Confirmation</p>
+              </td>
+              <td align="right">
+                <p style="margin:0;font-size:11px;color:#9d7fc9">Ref: ${invoiceRef}</p>
+                <p style="margin:4px 0 0;font-size:11px;color:#9d7fc9">Issued ${issuedOn}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Payout amount hero -->
+      <tr>
+        <td style="background:#3C096C;padding:28px 40px;text-align:center">
+          <p style="margin:0 0 6px;font-size:13px;color:#c77dff;letter-spacing:0.5px;text-transform:uppercase">Amount Transferred</p>
+          <p style="margin:0;font-size:40px;font-weight:700;color:#ffffff;letter-spacing:-1px">${formatKobo(props.netPayoutKobo)}</p>
+          <p style="margin:8px 0 0;font-size:13px;color:#c77dff">to ${props.restaurantName}</p>
+        </td>
+      </tr>
+
+      <!-- Body -->
+      <tr>
+        <td style="padding:36px 40px">
+
+          <p style="margin:0 0 24px;font-size:15px;color:#444;line-height:1.6">
+            Hi <strong style="color:#10002B">${props.restaurantName}</strong>, your settlement for <strong style="color:#10002B">${periodFormatted}</strong> has been processed and the funds have been transferred to your registered bank account.
+          </p>
+
+          <!-- Settlement summary card -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f7ff;border-radius:12px;overflow:hidden;margin-bottom:28px">
+            <tr>
+              <td style="padding:14px 20px;border-bottom:1px solid #ede9ff">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="font-size:13px;color:#7b6d8d">Settlement period</td>
+                    <td align="right" style="font-size:13px;font-weight:600;color:#10002B">${periodFormatted}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 20px;border-bottom:1px solid #ede9ff">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="font-size:13px;color:#7b6d8d">Orders included</td>
+                    <td align="right" style="font-size:13px;font-weight:600;color:#10002B">${props.orderCount} order${props.orderCount !== 1 ? "s" : ""}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 20px;border-bottom:1px solid #ede9ff">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="font-size:13px;color:#7b6d8d">Gross sales</td>
+                    <td align="right" style="font-size:13px;color:#10002B">${formatKobo(props.grossTotalKobo)}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 20px;border-bottom:1px solid #ede9ff">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="font-size:13px;color:#7b6d8d">Platform fees</td>
+                    <td align="right" style="font-size:13px;color:#10002B">${formatKobo(props.grossTotalKobo - props.netPayoutKobo)}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 20px;background:#3C096C">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="font-size:14px;font-weight:700;color:#ffffff">Net payout</td>
+                    <td align="right" style="font-size:16px;font-weight:700;color:#FFC629">${formatKobo(props.netPayoutKobo)}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Bank reference -->
+          <div style="background:#f8f7ff;border-left:3px solid #3C096C;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:28px">
+            <p style="margin:0 0 2px;font-size:11px;color:#9d7fc9;text-transform:uppercase;letter-spacing:0.5px">Bank Transfer Reference</p>
+            <p style="margin:0;font-size:15px;font-weight:700;color:#10002B;font-family:monospace,monospace">${props.bankReference}</p>
+          </div>
+
+          <!-- Note -->
+          <p style="margin:0 0 8px;font-size:13px;color:#888;line-height:1.6">
+            Please allow up to 24 hours for the amount to reflect in your account depending on your bank. If you have not received the funds after 24 hours, please contact us immediately.
+          </p>
+          <p style="margin:0;font-size:13px;color:#888;line-height:1.6">
+            You can view your full payout history in your dashboard under <strong style="color:#10002B">Wallet → Payouts</strong>.
+          </p>
+
+        </td>
+      </tr>
+
+      <!-- Divider -->
+      <tr><td style="padding:0 40px"><div style="border-top:1px solid #ede9ff"></div></td></tr>
+
+      <!-- Footer -->
+      <tr>
+        <td style="padding:24px 40px;text-align:center">
+          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#10002B">Kitchyn</p>
+          <p style="margin:0;font-size:11px;color:#aaa">Operated by Cybric Technology Ltd &nbsp;·&nbsp; This is an automated payment confirmation</p>
+          <p style="margin:8px 0 0;font-size:11px;color:#ccc">Ref ${invoiceRef}</p>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+
+  return { subject, html };
+}
+
 function buildHtml(payload: EmailPayload): { subject: string; html: string } {
   switch (payload.template) {
     case "merchant-onboarding": {
@@ -283,6 +452,9 @@ function buildHtml(payload: EmailPayload): { subject: string; html: string } {
 
     case "new_order_admin":
       return buildOrderEmailHtml(payload.props as unknown as OrderEmailProps, true);
+
+    case "settlement_payout":
+      return buildSettlementPayoutHtml(payload.props as unknown as SettlementPayoutProps);
 
     default:
       throw new Error(`Unknown template: ${(payload as EmailPayload).template}`);
