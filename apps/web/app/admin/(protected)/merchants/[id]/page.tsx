@@ -204,6 +204,10 @@ export default async function MerchantDetailPage({
           logistics_default: restaurant.logistics_default ?? null,
           latitude: restaurant.latitude ?? null,
           longitude: restaurant.longitude ?? null,
+          max_delivery_radius_km: (restaurant as unknown as Record<string, unknown>).max_delivery_radius_km as number | null ?? null,
+          restaurant_base_fee_kobo: (restaurant as unknown as Record<string, unknown>).restaurant_base_fee_kobo as number | null ?? null,
+          restaurant_per_km_rate_kobo: (restaurant as unknown as Record<string, unknown>).restaurant_per_km_rate_kobo as number | null ?? null,
+          restaurant_max_fee_kobo: (restaurant as unknown as Record<string, unknown>).restaurant_max_fee_kobo as number | null ?? null,
           created_at: restaurant.created_at,
         }}
         wallet={

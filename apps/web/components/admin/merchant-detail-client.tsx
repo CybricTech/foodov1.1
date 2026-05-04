@@ -68,6 +68,10 @@ type Restaurant = {
   logistics_default: string | null;
   latitude: number | null;
   longitude: number | null;
+  max_delivery_radius_km: number | null;
+  restaurant_base_fee_kobo: number | null;
+  restaurant_per_km_rate_kobo: number | null;
+  restaurant_max_fee_kobo: number | null;
   created_at: string;
 };
 
@@ -1052,51 +1056,189 @@ function FinancialsTab({
 
 function SettingsTab({ restaurant }: { restaurant: Restaurant }) {
   return (
+    <div className="space-y-6">
+      <section>
+        <h2 className="text-base font-bold text-black-900 mb-3">Merchant Info</h2>
+        <div className="bg-white rounded-2xl border border-black-200 px-5 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <InfoRow label="Slug" value={`/${restaurant.slug}`} mono />
+          <InfoRow
+            label="WhatsApp"
+            value={restaurant.whatsapp_number ?? "Not configured"}
+            muted={!restaurant.whatsapp_number}
+          />
+          <InfoRow
+            label="Notification Email"
+            value={restaurant.notification_email ?? "Not configured"}
+            muted={!restaurant.notification_email}
+          />
+          <InfoRow
+            label="Bank Account"
+            value={
+              restaurant.bank_account_name && restaurant.bank_account_number
+                ? `${restaurant.bank_account_name} ...${restaurant.bank_account_number.slice(-4)}`
+                : "Not configured"
+            }
+            muted={!restaurant.bank_account_name}
+          />
+          <InfoRow
+            label="Paystack Recipient"
+            value={restaurant.paystack_recipient_code ?? "Not configured"}
+            muted={!restaurant.paystack_recipient_code}
+            mono={!!restaurant.paystack_recipient_code}
+          />
+          <InfoRow
+            label="Logistics Mode"
+            value={restaurant.logistics_default ?? "---"}
+          />
+          <InfoRow
+            label="Location"
+            value={
+              restaurant.latitude && restaurant.longitude
+                ? `${restaurant.latitude}, ${restaurant.longitude}`
+                : "Not configured"
+            }
+            muted={!restaurant.latitude}
+            warn={!restaurant.latitude}
+          />
+        </div>
+      </section>
+
+      <MerchantDeliveryPricingForm restaurant={restaurant} />
+    </div>
+  );
+}
+
+function MerchantDeliveryPricingForm({ restaurant }: { restaurant: Restaurant }) {
+  const toNgn = (kobo: number | null) => (kobo != null ? String(Math.round(kobo / 100)) : "");
+
+  const [baseFeeNgn, setBaseFeeNgn] = useState(toNgn(restaurant.restaurant_base_fee_kobo));
+  const [perKmNgn, setPerKmNgn] = useState(toNgn(restaurant.restaurant_per_km_rate_kobo));
+  const [maxFeeNgn, setMaxFeeNgn] = useState(toNgn(restaurant.restaurant_max_fee_kobo));
+  const [maxRadius, setMaxRadius] = useState(
+    restaurant.max_delivery_radius_km != null ? String(restaurant.max_delivery_radius_km) : ""
+  );
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  function previewFee(km: number): string {
+    const base = parseFloat(baseFeeNgn) || 0;
+    const rate = parseFloat(perKmNgn) || 0;
+    const cap = parseFloat(maxFeeNgn) || 999999;
+    const fee = Math.min(base + km * rate, cap);
+    return `₦${fee.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/merchants/delivery-pricing", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          restaurantId: restaurant.id,
+          restaurant_base_fee_kobo: baseFeeNgn ? Math.round(parseFloat(baseFeeNgn) * 100) : null,
+          restaurant_per_km_rate_kobo: perKmNgn ? Math.round(parseFloat(perKmNgn) * 100) : null,
+          restaurant_max_fee_kobo: maxFeeNgn ? Math.round(parseFloat(maxFeeNgn) * 100) : null,
+          max_delivery_radius_km: maxRadius ? parseInt(maxRadius) : null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Failed to save");
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch {
+      setError("Network error");
+    }
+    setSaving(false);
+  }
+
+  return (
     <section>
-      <h2 className="text-base font-bold text-black-900 mb-3">
-        Merchant Info
-      </h2>
-      <div className="bg-white rounded-2xl border border-black-200 px-5 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <InfoRow label="Slug" value={`/${restaurant.slug}`} mono />
-        <InfoRow
-          label="WhatsApp"
-          value={restaurant.whatsapp_number ?? "Not configured"}
-          muted={!restaurant.whatsapp_number}
-        />
-        <InfoRow
-          label="Notification Email"
-          value={restaurant.notification_email ?? "Not configured"}
-          muted={!restaurant.notification_email}
-        />
-        <InfoRow
-          label="Bank Account"
-          value={
-            restaurant.bank_account_name && restaurant.bank_account_number
-              ? `${restaurant.bank_account_name} ...${restaurant.bank_account_number.slice(-4)}`
-              : "Not configured"
-          }
-          muted={!restaurant.bank_account_name}
-        />
-        <InfoRow
-          label="Paystack Recipient"
-          value={restaurant.paystack_recipient_code ?? "Not configured"}
-          muted={!restaurant.paystack_recipient_code}
-          mono={!!restaurant.paystack_recipient_code}
-        />
-        <InfoRow
-          label="Logistics Mode"
-          value={restaurant.logistics_default ?? "---"}
-        />
-        <InfoRow
-          label="Location"
-          value={
-            restaurant.latitude && restaurant.longitude
-              ? `${restaurant.latitude}, ${restaurant.longitude}`
-              : "Not configured"
-          }
-          muted={!restaurant.latitude}
-          warn={!restaurant.latitude}
-        />
+      <h2 className="text-base font-bold text-black-900 mb-3">Delivery Pricing</h2>
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-black-100">
+          <p className="text-xs text-black-400">
+            Override delivery pricing for this merchant. Leave blank to use the platform default.
+            Formula: Base fee + (distance × per-km rate), capped at max fee.
+          </p>
+        </div>
+        <form onSubmit={handleSave} className="px-5 py-5 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">Base fee (₦)</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={baseFeeNgn}
+                onChange={(e) => setBaseFeeNgn(e.target.value)}
+                placeholder="Platform default"
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">Per km rate (₦/km)</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={perKmNgn}
+                onChange={(e) => setPerKmNgn(e.target.value)}
+                placeholder="Platform default"
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">Max fee cap (₦)</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={maxFeeNgn}
+                onChange={(e) => setMaxFeeNgn(e.target.value)}
+                placeholder="Platform default"
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-black-500 mb-1">Max radius (km)</label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                max="100"
+                value={maxRadius}
+                onChange={(e) => setMaxRadius(e.target.value)}
+                placeholder="Platform default"
+                className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+          </div>
+
+          {(baseFeeNgn || perKmNgn) && (
+            <div className="bg-black-50 rounded-xl px-4 py-3 text-xs text-black-500">
+              <span className="font-medium text-black-700">Preview: </span>
+              at 3km → {previewFee(3)} &nbsp;|&nbsp;
+              at 7km → {previewFee(7)} &nbsp;|&nbsp;
+              at 15km → {previewFee(15)}
+            </div>
+          )}
+
+          {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+          <button
+            type="submit"
+            disabled={saving}
+            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+          >
+            {saving ? "Saving…" : saved ? "✓ Saved!" : "Save delivery pricing"}
+          </button>
+        </form>
       </div>
     </section>
   );

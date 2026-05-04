@@ -189,21 +189,41 @@ export async function POST(request: NextRequest) {
     if (data.deliveryFeeKobo !== undefined && data.deliveryAddress && data.deliveryDistanceKm !== undefined) {
       // Server-side re-verification: re-fetch pricing and re-call Distance Matrix
       // to ensure the client-submitted fee wasn't tampered with.
-      const { data: settings } = await supabase
-        .from("platform_settings")
-        .select("delivery_base_fee_kobo, delivery_per_km_rate_kobo, delivery_max_radius_km, delivery_max_fee_kobo")
-        .single();
+      const [{ data: settings }, { data: rest }, { data: restPricing }] = await Promise.all([
+        supabase
+          .from("platform_settings")
+          .select("delivery_base_fee_kobo, delivery_per_km_rate_kobo, delivery_max_radius_km, delivery_max_fee_kobo")
+          .single(),
+        supabase
+          .from("restaurants")
+          .select("latitude, longitude, max_delivery_radius_km")
+          .eq("id", data.restaurantId)
+          .single(),
+        // Fetch new per-restaurant pricing columns separately (not in generated types yet)
+        supabase
+          .from("restaurants")
+          .select("restaurant_base_fee_kobo, restaurant_per_km_rate_kobo, restaurant_max_fee_kobo")
+          .eq("id", data.restaurantId)
+          .single() as unknown as Promise<{ data: Record<string, unknown> | null }>,
+      ]);
 
-      const baseFeeKobo = Number(settings?.delivery_base_fee_kobo ?? DELIVERY_BASE_FEE_KOBO);
-      const perKmRateKobo = Number(settings?.delivery_per_km_rate_kobo ?? DELIVERY_PER_KM_RATE_KOBO);
+      // Restaurant-specific values take priority; fall back to platform settings, then constants
+      const baseFeeKobo = Number(
+        restPricing?.restaurant_base_fee_kobo
+        ?? settings?.delivery_base_fee_kobo
+        ?? DELIVERY_BASE_FEE_KOBO
+      );
+      const perKmRateKobo = Number(
+        restPricing?.restaurant_per_km_rate_kobo
+        ?? settings?.delivery_per_km_rate_kobo
+        ?? DELIVERY_PER_KM_RATE_KOBO
+      );
       const maxRadiusKm = Number(settings?.delivery_max_radius_km ?? DELIVERY_MAX_RADIUS_KM);
-      const maxFeeKobo = Number(settings?.delivery_max_fee_kobo ?? DELIVERY_MAX_FEE_KOBO);
-
-      const { data: rest } = await supabase
-        .from("restaurants")
-        .select("latitude, longitude, max_delivery_radius_km")
-        .eq("id", data.restaurantId)
-        .single();
+      const maxFeeKobo = Number(
+        restPricing?.restaurant_max_fee_kobo
+        ?? settings?.delivery_max_fee_kobo
+        ?? DELIVERY_MAX_FEE_KOBO
+      );
 
       if (rest?.latitude && rest?.longitude) {
         const origin = `${rest.latitude},${rest.longitude}`;

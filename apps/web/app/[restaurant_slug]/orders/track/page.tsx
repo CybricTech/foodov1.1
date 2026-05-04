@@ -19,13 +19,23 @@ interface ActiveOrder {
   delivery_address: string | null;
 }
 
-function normalizePhone(raw: string): string {
-  // Remove all non-digits, then handle Nigerian prefixes
+function phoneVariants(raw: string): string[] {
   const digits = raw.replace(/\D/g, "");
+  const variants = new Set<string>([raw.trim()]);
+
   if (digits.startsWith("234") && digits.length === 13) {
-    return "0" + digits.slice(3);
+    // Covers both +2349036912213 and 2349036912213
+    variants.add("+" + digits);          // +2349036912213
+    variants.add(digits);                // 2349036912213
+    variants.add("0" + digits.slice(3)); // 09036912213
+  } else if (digits.startsWith("0") && digits.length === 11) {
+    // Local format: 09036912213
+    const intl = "234" + digits.slice(1);
+    variants.add("+" + intl); // +2349036912213
+    variants.add(intl);       // 2349036912213
   }
-  return digits;
+
+  return Array.from(variants);
 }
 
 function StatusBadge({ status, brandColor }: { status: string; brandColor: string }) {
@@ -79,7 +89,8 @@ export default function TrackOrderPage() {
     setError("");
     setOrders(null);
 
-    const normalized = normalizePhone(trimmed);
+    const variants = phoneVariants(trimmed);
+    const phoneFilter = variants.map((v) => `customer_phone.eq.${v}`).join(",");
 
     // Search for orders by customer_phone within this restaurant
     // Include recent delivered orders (last 24h) + all active orders
@@ -89,7 +100,7 @@ export default function TrackOrderPage() {
       .from("orders")
       .select("id, order_number, status, fulfillment_type, customer_name, total_kobo, created_at, delivery_address")
       .eq("restaurant_id", restaurant.id)
-      .or(`customer_phone.eq.${trimmed},customer_phone.eq.${normalized}`)
+      .or(phoneFilter)
       .or(`and(status.neq.cancelled,status.neq.delivered),and(status.eq.delivered,created_at.gte.${oneDayAgo})`)
       .order("created_at", { ascending: false })
       .limit(20);

@@ -153,6 +153,144 @@ function BankAccountSection({ restaurantId, initialData }: {
   );
 }
 
+function RestaurantDeliveryPricingSection({
+  initialBaseFeeKobo,
+  initialPerKmRateKobo,
+  initialMaxFeeKobo,
+  initialMaxRadiusKm,
+}: {
+  initialBaseFeeKobo: number | null;
+  initialPerKmRateKobo: number | null;
+  initialMaxFeeKobo: number | null;
+  initialMaxRadiusKm: number | null;
+}) {
+  const toNgn = (kobo: number | null) => (kobo != null ? String(Math.round(kobo / 100)) : "");
+
+  const [baseFeeNgn, setBaseFeeNgn] = useState(toNgn(initialBaseFeeKobo));
+  const [perKmNgn, setPerKmNgn] = useState(toNgn(initialPerKmRateKobo));
+  const [maxFeeNgn, setMaxFeeNgn] = useState(toNgn(initialMaxFeeKobo));
+  const [maxRadius, setMaxRadius] = useState(initialMaxRadiusKm != null ? String(initialMaxRadiusKm) : "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  function previewFee(km: number): string {
+    const base = parseFloat(baseFeeNgn) || 0;
+    const rate = parseFloat(perKmNgn) || 0;
+    const cap = parseFloat(maxFeeNgn) || 999999;
+    const fee = Math.min(base + km * rate, cap);
+    return `₦${fee.toLocaleString("en-NG", { maximumFractionDigits: 0 })}`;
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/merchant/delivery-pricing", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          restaurant_base_fee_kobo: baseFeeNgn ? Math.round(parseFloat(baseFeeNgn) * 100) : null,
+          restaurant_per_km_rate_kobo: perKmNgn ? Math.round(parseFloat(perKmNgn) * 100) : null,
+          restaurant_max_fee_kobo: maxFeeNgn ? Math.round(parseFloat(maxFeeNgn) * 100) : null,
+          max_delivery_radius_km: maxRadius ? parseInt(maxRadius) : null,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Failed to save delivery pricing");
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch {
+      setError("Network error");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <Section title="Delivery pricing">
+      <p className="text-xs text-black-400">
+        Set your own delivery pricing. Leave fields blank to use the platform default.
+        Formula: Base fee + (distance × per-km rate), capped at max fee.
+      </p>
+      <form onSubmit={handleSave} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-black-500 mb-1">Base fee (₦)</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={baseFeeNgn}
+              onChange={(e) => setBaseFeeNgn(e.target.value)}
+              placeholder="Platform default"
+              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-black-500 mb-1">Per km rate (₦/km)</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={perKmNgn}
+              onChange={(e) => setPerKmNgn(e.target.value)}
+              placeholder="Platform default"
+              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-black-500 mb-1">Max fee cap (₦)</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={maxFeeNgn}
+              onChange={(e) => setMaxFeeNgn(e.target.value)}
+              placeholder="Platform default"
+              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-black-500 mb-1">Max delivery radius (km)</label>
+            <input
+              type="number"
+              step="1"
+              min="1"
+              max="100"
+              value={maxRadius}
+              onChange={(e) => setMaxRadius(e.target.value)}
+              placeholder="Platform default"
+              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
+            />
+          </div>
+        </div>
+
+        {(baseFeeNgn || perKmNgn) && (
+          <div className="bg-black-50 rounded-xl px-4 py-3 text-xs text-black-500">
+            <span className="font-medium text-black-700">Preview: </span>
+            at 3km → {previewFee(3)} &nbsp;|&nbsp;
+            at 7km → {previewFee(7)} &nbsp;|&nbsp;
+            at 15km → {previewFee(15)}
+          </div>
+        )}
+
+        {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+        <button
+          type="submit"
+          disabled={saving}
+          className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+        >
+          {saving ? "Saving…" : saved ? "Saved!" : "Save delivery pricing"}
+        </button>
+      </form>
+    </Section>
+  );
+}
+
 function RestaurantLocationSection({
   initialLat,
   initialLng,
@@ -308,6 +446,9 @@ type RestaurantExtended = Restaurant & {
   latitude?: number | null;
   longitude?: number | null;
   max_delivery_radius_km?: number | null;
+  restaurant_base_fee_kobo?: number | null;
+  restaurant_per_km_rate_kobo?: number | null;
+  restaurant_max_fee_kobo?: number | null;
   vat_percentage?: number | null;
   opening_hours?: OpeningHours | null;
 };
@@ -953,6 +1094,14 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               bank_account_name: (r as RestaurantExtended & { bank_account_name?: string | null }).bank_account_name ?? null,
               paystack_recipient_code: (r as RestaurantExtended & { paystack_recipient_code?: string | null }).paystack_recipient_code ?? null,
             }}
+          />
+
+          {/* Delivery pricing */}
+          <RestaurantDeliveryPricingSection
+            initialBaseFeeKobo={r.restaurant_base_fee_kobo ?? null}
+            initialPerKmRateKobo={r.restaurant_per_km_rate_kobo ?? null}
+            initialMaxFeeKobo={r.restaurant_max_fee_kobo ?? null}
+            initialMaxRadiusKm={r.max_delivery_radius_km ?? null}
           />
 
           {/* Restaurant location */}

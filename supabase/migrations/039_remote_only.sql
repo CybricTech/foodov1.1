@@ -1,0 +1,1 @@
+-- Applied directly on remote; placeholder to satisfy local migration history.
