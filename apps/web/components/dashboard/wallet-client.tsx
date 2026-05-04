@@ -8,15 +8,6 @@ import { Clock, TrendingUp, ArrowDownCircle } from "lucide-react";
 /*  Types                                                               */
 /* ------------------------------------------------------------------ */
 
-type WalletRow = {
-  id: string;
-  restaurant_id: string;
-  pending_balance_kobo: number;
-  total_earned_kobo: number;
-  total_withdrawn_kobo: number;
-  updated_at: string;
-};
-
 type TxnRow = {
   id: string;
   type: string;
@@ -46,7 +37,9 @@ type ActiveTab = "activity" | "payouts";
 
 interface WalletClientProps {
   restaurantId: string;
-  wallet: WalletRow | null;
+  pendingBalanceKobo: number;
+  totalEarnedKobo: number;
+  totalWithdrawnKobo: number;
   transactions: TxnRow[];
   settlements: SettlementRow[];
 }
@@ -114,16 +107,18 @@ function extractBankRef(description: string | null, bankRef: string | null, pays
 
 export function WalletClient({
   restaurantId: _restaurantId,
-  wallet,
+  pendingBalanceKobo,
+  totalEarnedKobo,
+  totalWithdrawnKobo,
   transactions,
   settlements,
 }: WalletClientProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("activity");
   const [exporting, setExporting] = useState(false);
 
-  const pendingBalance = wallet?.pending_balance_kobo ?? 0;
-  const totalEarned = wallet?.total_earned_kobo ?? 0;
-  const totalWithdrawn = wallet?.total_withdrawn_kobo ?? 0;
+  const pendingBalance = pendingBalanceKobo;
+  const totalEarned = totalEarnedKobo;
+  const totalWithdrawn = totalWithdrawnKobo;
 
   // Activity tab: only order_credit transactions
   const activityItems = transactions.filter((t) => t.type === "order_credit");

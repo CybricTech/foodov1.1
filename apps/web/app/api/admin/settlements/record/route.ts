@@ -167,6 +167,14 @@ export async function POST(request: NextRequest) {
     description: `Settlement paid — ${orderCount} order${orderCount !== 1 ? "s" : ""} · Ref: ${bank_reference}`,
   });
 
+  // Mark the order_credit txns linked to those orders as settled
+  // so the Activity feed shows them as "Paid" instead of "Pending".
+  await auth.serviceClient
+    .from("wallet_transactions")
+    .update({ status: "settled" })
+    .in("order_id", orderIds)
+    .eq("type", "order_credit");
+
   // Debit the wallet: decrement pending_balance_kobo, increment total_withdrawn_kobo
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (auth.serviceClient.rpc as any)("debit_wallet_for_settlement", {
