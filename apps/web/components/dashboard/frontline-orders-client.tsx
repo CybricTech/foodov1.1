@@ -908,13 +908,9 @@ function FrontlineOrderCard({
                 </button>
               )}
               {order.status === "assigned_to_rider" && (
-                <button
-                  onClick={() => onUpdateStatus(order.id, "delivered")}
-                  disabled={loading}
-                  className="flex-1 bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
-                >
-                  {loading ? "Updating…" : "Mark Delivered"}
-                </button>
+                <span className="flex-1 text-center text-xs text-purple-600 font-semibold py-2 bg-purple-50 rounded-lg">
+                  Rider assigned
+                </span>
               )}
             </>
           )}
