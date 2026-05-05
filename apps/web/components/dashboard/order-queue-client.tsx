@@ -57,6 +57,9 @@ const TAB_STATUSES: Record<Tab, string[]> = {
 interface OrderQueueClientProps {
   restaurantId: string;
   initialOrders: OrderRow[];
+  /** Server-side exact count of delivered orders for this restaurant. Used as
+   *  the base for the "Completed" badge so it isn't capped by the row limit. */
+  initialCompletedTotal: number;
 }
 
 function formatTimeAgo(dateStr: string | null): string {
@@ -71,8 +74,16 @@ function formatTimeAgo(dateStr: string | null): string {
 export function OrderQueueClient({
   restaurantId,
   initialOrders,
+  initialCompletedTotal,
 }: OrderQueueClientProps) {
   const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
+
+  // Track which delivered orders were already counted in initialCompletedTotal
+  // so live transitions to "delivered" can be added on top without double-counting.
+  const initialDeliveredIds = useMemo(
+    () => new Set(initialOrders.filter((o) => o.status === "delivered").map((o) => o.id)),
+    [initialOrders]
+  );
   const [activeTab, setActiveTab] = useState<Tab>("new");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -258,10 +269,16 @@ export function OrderQueueClient({
     return groups;
   }, [activeTab, filteredOrders]);
 
+  // Completed badge = server-side total + any orders that became delivered live
+  // (i.e. weren't already counted in the initial server total).
+  const liveCompletedDelta = orders.filter(
+    (o) => o.status === "delivered" && !initialDeliveredIds.has(o.id)
+  ).length;
+
   const counts = {
     new: orders.filter((o) => TAB_STATUSES.new.includes(o.status)).length,
     in_progress: orders.filter((o) => TAB_STATUSES.in_progress.includes(o.status)).length,
-    completed: orders.filter((o) => TAB_STATUSES.completed.includes(o.status)).length,
+    completed: initialCompletedTotal + liveCompletedDelta,
   };
 
   const today = new Date().toLocaleDateString("en-NG", {

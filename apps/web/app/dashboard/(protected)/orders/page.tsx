@@ -12,23 +12,39 @@ export default async function DashboardOrdersPage() {
   const supabase = createServiceClient();
   const { restaurantId } = session;
 
-  const { data: orders, error } = await supabase
-    .from("orders")
-    .select(
+  // Fetch the recent rows (limited for display) AND a separate exact count of
+  // every delivered order (no row payload, head: true) so the "Completed" tab
+  // badge is the real total instead of capping at the row limit.
+  const [
+    { data: orders, error },
+    { count: completedTotal, error: countError },
+  ] = await Promise.all([
+    supabase
+      .from("orders")
+      .select(
+        `
+        id, order_number, status, payment_status, fulfillment_type,
+        customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
+        vat_kobo, service_fee_kobo, total_kobo, created_at,
+        special_instructions, delivery_address,
+        order_items (id, item_name, quantity, line_total_kobo, selected_options)
       `
-      id, order_number, status, payment_status, fulfillment_type,
-      customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
-      vat_kobo, service_fee_kobo, total_kobo, created_at,
-      special_instructions, delivery_address,
-      order_items (id, item_name, quantity, line_total_kobo, selected_options)
-    `
-    )
-    .eq("restaurant_id", restaurantId)
-    .order("created_at", { ascending: false })
-    .limit(100);
+      )
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "delivered"),
+  ]);
 
   if (error) {
     console.error("[dashboard/orders] orders fetch error:", error.message);
+  }
+  if (countError) {
+    console.error("[dashboard/orders] completed count error:", countError.message);
   }
 
   return (
@@ -36,6 +52,7 @@ export default async function DashboardOrdersPage() {
       restaurantId={restaurantId}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       initialOrders={(orders ?? []) as any}
+      initialCompletedTotal={completedTotal ?? 0}
     />
   );
 }

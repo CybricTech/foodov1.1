@@ -146,13 +146,23 @@ const COLUMN_CONFIG: Record<
 interface FrontlineOrdersClientProps {
   restaurantId: string;
   initialOrders: OrderRow[];
+  /** Server-side exact count of delivered orders for this restaurant. Used as
+   *  the base for the "Completed" count so it isn't capped by the row limit. */
+  initialCompletedTotal: number;
 }
 
 export function FrontlineOrdersClient({
   restaurantId,
   initialOrders,
+  initialCompletedTotal,
 }: FrontlineOrdersClientProps) {
   const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
+  // Track which delivered orders were already counted in initialCompletedTotal
+  // so live transitions to "delivered" can be added without double-counting.
+  const initialDeliveredIds = useMemo(
+    () => new Set(initialOrders.filter((o) => o.status === "delivered").map((o) => o.id)),
+    [initialOrders]
+  );
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -419,6 +429,13 @@ export function FrontlineOrdersClient({
     return result;
   }, [orders]);
 
+  // Completed count = server-side total + any orders that became delivered live
+  // (ones in `orders` whose IDs weren't already counted in initialCompletedTotal).
+  const completedCount = useMemo(() => {
+    const liveDelta = columns.completed.filter((o) => !initialDeliveredIds.has(o.id)).length;
+    return initialCompletedTotal + liveDelta;
+  }, [columns.completed, initialCompletedTotal, initialDeliveredIds]);
+
   // Stop alerting once all new orders have been accepted
   const newOrderCount = columns.new.length;
   useEffect(() => {
@@ -454,7 +471,7 @@ export function FrontlineOrdersClient({
             <div className="flex items-center gap-1.5 mt-0.5">
               <Clock size={12} className="text-black-400" />
               <p className="text-xs text-black-400">
-                {totalActive} active &middot; {columns.completed.length}{" "}
+                {totalActive} active &middot; {completedCount}{" "}
                 completed
               </p>
             </div>
@@ -618,7 +635,7 @@ export function FrontlineOrdersClient({
           <div className="flex overflow-x-auto scrollbar-none px-1 gap-0.5">
             {(["new", "in_progress", "in_transit", "completed"] as Column[]).map((col) => {
               const config = COLUMN_CONFIG[col];
-              const count = columns[col].length;
+              const count = col === "completed" ? completedCount : columns[col].length;
               const isActive = activeTab === col;
               return (
                 <button
@@ -695,6 +712,7 @@ export function FrontlineOrdersClient({
           {(["new", "in_progress", "in_transit", "completed"] as Column[]).map((col) => {
             const config = COLUMN_CONFIG[col];
             const colOrders = columns[col];
+            const colBadgeCount = col === "completed" ? completedCount : colOrders.length;
 
             return (
               <div key={col} className="flex flex-col min-h-0">
@@ -718,7 +736,7 @@ export function FrontlineOrdersClient({
                       {config.label}
                     </h2>
                   </div>
-                  {colOrders.length > 0 && (
+                  {colBadgeCount > 0 && (
                     <span
                       className={cn(
                         "text-[11px] font-bold min-w-[22px] h-[22px] px-1.5 rounded-full flex items-center justify-center",
@@ -726,7 +744,7 @@ export function FrontlineOrdersClient({
                         config.badgeText
                       )}
                     >
-                      {colOrders.length}
+                      {colBadgeCount}
                     </span>
                   )}
                 </div>
