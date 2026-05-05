@@ -43,6 +43,11 @@ export default function CheckoutPage() {
   const placesReadyRef = useRef(false);
   const predictionsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deliveryFeeAbortRef = useRef<AbortController | null>(null);
+  // Set in onSuccess so the empty-cart redirect below doesn't race the
+  // navigation to /orders/pending. Without this guard a slow live Paystack
+  // payment trips the 30s timeout (which flips loading → false), and when
+  // onSuccess later clears the cart the effect fires router.replace → storefront.
+  const paidRef = useRef(false);
 
   const [aptSuiteFloor, setAptSuiteFloor] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
@@ -216,7 +221,9 @@ export default function CheckoutPage() {
   }
 
   useEffect(() => {
-    if (items.length === 0 && !loading) router.replace(`/${restaurant.slug}`);
+    if (items.length === 0 && !loading && !paidRef.current) {
+      router.replace(`/${restaurant.slug}`);
+    }
   }, [items.length, restaurant.slug, router, loading]);
 
   if (items.length === 0) return null;
@@ -328,7 +335,15 @@ export default function CheckoutPage() {
       // access_code and opens a fresh inline transaction. v2 has dedicated
       // methods that don't share that footgun.
       const callbacks = {
+        // Fires as soon as the inline iframe finishes loading. Clearing the
+        // timeout here (instead of in onSuccess/onCancel/onError) means a slow
+        // live payment — 3DS, OTP delays, bank-app handoff — won't trip the
+        // "gateway timed out" path while the popup is open and working.
+        onLoad: () => {
+          clearPaystackTimeout();
+        },
         onSuccess: () => {
+          paidRef.current = true;
           clearPaystackTimeout();
           clearCart();
           router.push(`/${restaurant.slug}/orders/pending?ref=${initData.paystackRef}`);

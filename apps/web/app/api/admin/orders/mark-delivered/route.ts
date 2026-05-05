@@ -22,12 +22,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { order_id } = body as { order_id?: string };
+  const { order_id, delivery_cost_kobo } = body as {
+    order_id?: string;
+    delivery_cost_kobo?: number;
+  };
   if (!order_id) return NextResponse.json({ error: "order_id required" }, { status: 400 });
+
+  if (
+    typeof delivery_cost_kobo !== "number" ||
+    !Number.isFinite(delivery_cost_kobo) ||
+    !Number.isInteger(delivery_cost_kobo) ||
+    delivery_cost_kobo < 0
+  ) {
+    return NextResponse.json(
+      { error: "delivery_cost_kobo must be a non-negative integer (in kobo)" },
+      { status: 400 }
+    );
+  }
 
   const { error } = await serviceClient
     .from("orders")
-    .update({ status: "delivered" })
+    .update({ status: "delivered", delivery_cost_kobo })
     .eq("id", order_id)
     .eq("status", "assigned_to_rider");
 

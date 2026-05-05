@@ -50,6 +50,8 @@ export function RidersClient({
   const [toggling, setToggling] = useState<string | null>(null);
   const [delivering, setDelivering] = useState<string | null>(null);
   const [deliverError, setDeliverError] = useState<string | null>(null);
+  const [markingOrder, setMarkingOrder] = useState<DeliveryRow | null>(null);
+  const [costInput, setCostInput] = useState("");
 
   // Real-time: orders moving into or out of assigned_to_rider
   useEffect(() => {
@@ -109,16 +111,48 @@ export function RidersClient({
     setToggling(null);
   }
 
-  async function markDelivered(orderId: string) {
-    setDelivering(orderId);
+  function openMarkDelivered(delivery: DeliveryRow) {
+    setMarkingOrder(delivery);
+    setCostInput("");
+    setDeliverError(null);
+  }
+
+  function closeMarkDelivered() {
+    if (delivering) return;
+    setMarkingOrder(null);
+    setCostInput("");
+  }
+
+  // Parse the Naira input: allow digits and one optional decimal point. Returns
+  // kobo (integer) or null if the input is empty/invalid/negative.
+  function parseCostKobo(input: string): number | null {
+    const trimmed = input.trim().replace(/,/g, "");
+    if (!trimmed) return null;
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
+    const naira = Number(trimmed);
+    if (!Number.isFinite(naira) || naira < 0) return null;
+    return Math.round(naira * 100);
+  }
+
+  async function confirmMarkDelivered() {
+    if (!markingOrder) return;
+    const kobo = parseCostKobo(costInput);
+    if (kobo === null) {
+      setDeliverError("Enter a valid amount in ₦");
+      return;
+    }
+    setDelivering(markingOrder.id);
     setDeliverError(null);
     const res = await fetch("/api/admin/orders/mark-delivered", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order_id: orderId }),
+      body: JSON.stringify({ order_id: markingOrder.id, delivery_cost_kobo: kobo }),
     });
     if (res.ok) {
+      const orderId = markingOrder.id;
       setDeliveries((prev) => prev.filter((d) => d.id !== orderId));
+      setMarkingOrder(null);
+      setCostInput("");
     } else {
       const data = await res.json().catch(() => ({}));
       setDeliverError((data as { error?: string }).error ?? "Failed to mark delivered");
@@ -204,7 +238,7 @@ export function RidersClient({
                 </div>
 
                 <button
-                  onClick={() => markDelivered(d.id)}
+                  onClick={() => openMarkDelivered(d)}
                   disabled={delivering === d.id}
                   className="w-full bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-xs font-bold py-2.5 rounded-xl transition-colors cursor-pointer"
                 >
@@ -277,6 +311,76 @@ export function RidersClient({
           ))}
         </div>
       </section>
+
+      {/* ── Mark Delivered Modal ─────────────────────────────────────────── */}
+      {markingOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black-900/40 px-4"
+          onClick={closeMarkDelivered}
+        >
+          <div
+            className="bg-white rounded-2xl border border-black-200 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-5 space-y-4">
+              <div>
+                <h2 className="font-bold text-black-900">Mark order as delivered</h2>
+                <p className="text-sm text-black-500 mt-1">
+                  Order <span className="text-black-900 font-medium">#{markingOrder.order_number}</span>
+                  {markingOrder.restaurants?.name ? (
+                    <> &middot; {markingOrder.restaurants.name}</>
+                  ) : null}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-black-600 mb-1.5">
+                  Delivery cost <span className="text-black-400 font-normal">(paid to rider)</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black-400 text-sm">₦</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoFocus
+                    value={costInput}
+                    onChange={(e) => setCostInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !delivering) confirmMarkDelivered();
+                    }}
+                    placeholder="0.00"
+                    className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 bg-white focus:outline-none focus:ring-2 focus:ring-viridian-200 focus:border-viridian-400 placeholder:text-black-300"
+                  />
+                </div>
+                <p className="text-xs text-black-400 mt-1.5">
+                  Customer paid {formatKobo(markingOrder.total_kobo)} for this order
+                </p>
+              </div>
+
+              {deliverError && (
+                <p className="text-sm text-cinnabar-500">{deliverError}</p>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={closeMarkDelivered}
+                  disabled={!!delivering}
+                  className="flex-1 py-2.5 rounded-xl border border-black-200 text-sm text-black-500 hover:text-black-900 hover:border-black-400 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmMarkDelivered}
+                  disabled={!!delivering || parseCostKobo(costInput) === null}
+                  className="flex-1 py-2.5 rounded-xl bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-sm font-semibold transition-colors cursor-pointer"
+                >
+                  {delivering ? "Updating…" : "Mark Delivered"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

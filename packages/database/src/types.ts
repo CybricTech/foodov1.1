@@ -508,6 +508,7 @@ export type Database = {
           customer_phone: string | null
           delivered_at: string | null
           delivery_address: string | null
+          delivery_cost_kobo: number | null
           delivery_distance_km: number | null
           delivery_fee: number
           delivery_fee_kobo: number
@@ -548,6 +549,7 @@ export type Database = {
           customer_phone?: string | null
           delivered_at?: string | null
           delivery_address?: string | null
+          delivery_cost_kobo?: number | null
           delivery_distance_km?: number | null
           delivery_fee?: number
           delivery_fee_kobo?: number
@@ -588,6 +590,7 @@ export type Database = {
           customer_phone?: string | null
           delivered_at?: string | null
           delivery_address?: string | null
+          delivery_cost_kobo?: number | null
           delivery_distance_km?: number | null
           delivery_fee?: number
           delivery_fee_kobo?: number

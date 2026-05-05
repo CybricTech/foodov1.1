@@ -101,8 +101,14 @@ export default function OrderTrackingPage() {
       ? ORDER_PROGRESS_STEPS_DELIVERY
       : ORDER_PROGRESS_STEPS_PICKUP;
 
+  // assigned_to_rider is an internal dispatch state; from the customer's POV it
+  // is the same step as in_transit ("On the way"). Map it before indexing so
+  // the stepper lights up and the headline reads naturally.
+  const customerFacingStatus =
+    order.status === "assigned_to_rider" ? "in_transit" : order.status;
+
   const currentStepIndex = progressSteps.indexOf(
-    order.status as (typeof progressSteps)[number]
+    customerFacingStatus as (typeof progressSteps)[number]
   );
 
   const isCancelled = order.status === "cancelled";
@@ -162,7 +168,7 @@ export default function OrderTrackingPage() {
               "text-lg font-black",
               isCancelled ? "text-cinnabar-600" : "text-black-900"
             )}>
-              {statusLabel(order.status)}
+              {statusLabel(customerFacingStatus)}
             </p>
             {order.status === "cancelled" && order.cancellation_reason && (
               <p className="text-sm text-black-400 mt-1 leading-relaxed">
