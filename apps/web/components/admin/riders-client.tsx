@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@foodo/ui";
 import { Bike, MapPin, Phone, Clock } from "lucide-react";
 import { formatKobo } from "@foodo/utils";
@@ -49,6 +50,45 @@ export function RidersClient({
   const [toggling, setToggling] = useState<string | null>(null);
   const [delivering, setDelivering] = useState<string | null>(null);
   const [deliverError, setDeliverError] = useState<string | null>(null);
+
+  // Real-time: orders moving into or out of assigned_to_rider
+  useEffect(() => {
+    const supabase = createBrowserClient();
+
+    const channel = supabase
+      .channel("admin-rider-deliveries")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "orders" },
+        async (payload) => {
+          const updated = payload.new as { id: string; status: string };
+
+          if (updated.status === "assigned_to_rider") {
+            // Fetch full row (realtime payload lacks joined restaurant name)
+            const { data } = await supabase
+              .from("orders")
+              .select(
+                "id, order_number, customer_name, customer_phone, delivery_address, total_kobo, created_at, restaurants (name)"
+              )
+              .eq("id", updated.id)
+              .single();
+            if (data) {
+              setDeliveries((prev) =>
+                prev.some((d) => d.id === data.id)
+                  ? prev
+                  : [data as unknown as DeliveryRow, ...prev]
+              );
+            }
+          } else {
+            // Order left assigned_to_rider (delivered, cancelled, etc.) — remove it
+            setDeliveries((prev) => prev.filter((d) => d.id !== updated.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { channel.unsubscribe(); };
+  }, []);
 
   async function toggleActive(userId: string, current: boolean) {
     setToggling(userId);
