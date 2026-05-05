@@ -172,19 +172,38 @@ export function MerchantSettlementDetailClient({
       .map(([date, dayOrders]) => {
         // Sum per-order values so the daily Net Payout equals the sum of the
         // per-order "Merchant Net" column on the parent settlement page.
+        // Foodo's revenue is split into two streams for display:
+        //   - serviceMerchantCharge: customer service fee + merchant charge
+        //   - deliveryFees: dispatch-aware delivery commission
+        //     (100% of platform-rider fees, 10% of own/third-party fees)
         let gross = 0;
         let merchantCharge = 0;
-        let commission = 0;
+        let serviceFee = 0;
+        let deliveryFees = 0;
         for (const o of dayOrders) {
           gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
           merchantCharge += Math.round(paystackTotal(o) * merchantChargePct);
-          commission += deliveryCommissionFor(o, deliveryCommissionPct);
+          serviceFee += o.service_fee_kobo ?? 0;
+          deliveryFees += deliveryCommissionFor(o, deliveryCommissionPct);
         }
-        const net = gross - merchantCharge - commission;
+        const serviceMerchantCharge = serviceFee + merchantCharge;
+        const net = gross - merchantCharge - deliveryFees;
         const allSettled = dayOrders.every((o) => o.settlement_id != null);
         const hasUnsettled = dayOrders.some((o) => o.settlement_id == null);
 
-        return { date, orders: dayOrders, orderCount: dayOrders.length, gross, merchantCharge, commission, net, allSettled, hasUnsettled };
+        return {
+          date,
+          orders: dayOrders,
+          orderCount: dayOrders.length,
+          gross,
+          merchantCharge,
+          serviceFee,
+          serviceMerchantCharge,
+          deliveryFees,
+          net,
+          allSettled,
+          hasUnsettled,
+        };
       });
   }, [orders, merchantChargePct, deliveryCommissionPct]);
 
@@ -302,8 +321,11 @@ export function MerchantSettlementDetailClient({
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Merchant Charge</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Delivery Commission</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
+                  <span className="block">Service +</span>
+                  <span className="block">Merchant Charge</span>
+                </th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Delivery Fees</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Net Payout</th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Status</th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Actions</th>
@@ -326,8 +348,8 @@ export function MerchantSettlementDetailClient({
                       <td className="px-4 py-2.5 font-medium text-black-900 whitespace-nowrap">{dateLabel}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{day.orderCount}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{formatKobo(day.gross)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.merchantCharge)}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.commission)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.serviceMerchantCharge)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.deliveryFees)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-black-900">{formatKobo(day.net)}</td>
                       <td className="px-4 py-2.5 text-center">
                         {day.allSettled ? (
@@ -446,12 +468,12 @@ export function MerchantSettlementDetailClient({
                   <span className="tabular-nums font-medium">{formatKobo(modalDay.gross)}</span>
                 </div>
                 <div className="flex justify-between text-purple-600">
-                  <span>− Merchant Charge (1% of total)</span>
+                  <span>− Merchant Charge</span>
                   <span className="tabular-nums">({formatKobo(modalDay.merchantCharge)})</span>
                 </div>
                 <div className="flex justify-between text-purple-600">
-                  <span>− Delivery Commission</span>
-                  <span className="tabular-nums">({formatKobo(modalDay.commission)})</span>
+                  <span>− Delivery Fees</span>
+                  <span className="tabular-nums">({formatKobo(modalDay.deliveryFees)})</span>
                 </div>
                 <div className="border-t border-black-200 pt-1.5 flex justify-between font-bold text-black-900">
                   <span>= Net Payout</span>
