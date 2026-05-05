@@ -444,7 +444,7 @@ export default function CheckoutPage() {
                 }}
                 placeholder="e.g. 0812 345 6789"
                 className={cn(
-                  "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
+                  "w-full px-4 py-3 rounded-xl border text-base text-black-900 bg-white",
                   "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
                   "placeholder:text-black-300 transition-colors",
                   "border-black-200"
@@ -861,7 +861,7 @@ function Field({
 
 function inputClass(hasError: boolean) {
   return cn(
-    "w-full px-4 py-3 rounded-xl border text-sm text-black-900 bg-white",
+    "w-full px-4 py-3 rounded-xl border text-base text-black-900 bg-white",
     "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary",
     "placeholder:text-black-300 transition-colors",
     hasError ? "border-cinnabar-400 bg-cinnabar-50/30" : "border-black-200"
