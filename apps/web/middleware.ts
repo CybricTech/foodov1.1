@@ -86,6 +86,19 @@ export async function middleware(request: NextRequest) {
     return res;
   }
 
+  // If Supabase definitively reported "no user" but the request carries auth
+  // cookies, the cookies are poisoned — clear them so the user isn't trapped
+  // in a permanent 403 state. (Skip when authCheckFailed: that's a Supabase
+  // outage, not a bad cookie, so don't punish the user for it.)
+  function clearPoisonedAuthCookies(res: NextResponse) {
+    if (user || authCheckFailed) return;
+    for (const c of request.cookies.getAll()) {
+      if (c.name.startsWith("sb-")) {
+        res.cookies.set(c.name, "", { maxAge: 0, path: "/" });
+      }
+    }
+  }
+
   // ─── Subdomain routing ─────────────────────────────────────────────────────
   const isDashboardSub = hostname === "dashboard.kitchyn.app";
   const isAdminSub     = hostname === "admin.kitchyn.app";
@@ -119,7 +132,9 @@ export async function middleware(request: NextRequest) {
     if (!user && !authCheckFailed) {
       const loginUrl = new URL("/dashboard/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
-      return withSessionCookies(NextResponse.redirect(loginUrl));
+      const redirectRes = withSessionCookies(NextResponse.redirect(loginUrl));
+      clearPoisonedAuthCookies(redirectRes);
+      return redirectRes;
     }
   }
 
@@ -128,7 +143,9 @@ export async function middleware(request: NextRequest) {
     if (!user && !authCheckFailed) {
       const loginUrl = new URL("/admin/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
-      return withSessionCookies(NextResponse.redirect(loginUrl));
+      const redirectRes = withSessionCookies(NextResponse.redirect(loginUrl));
+      clearPoisonedAuthCookies(redirectRes);
+      return redirectRes;
     }
   }
 
