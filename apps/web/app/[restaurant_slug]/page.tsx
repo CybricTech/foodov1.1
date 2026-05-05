@@ -93,7 +93,7 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
           )}
           <Link
             href={`/${params.restaurant_slug}/orders/track`}
-            className="bg-white/15 backdrop-blur-sm text-white text-xs font-semibold px-3 py-2 rounded-full border border-white/30 hover:bg-white/25 transition-colors"
+            className="bg-white text-gray-900 text-xs font-semibold px-3 py-2 rounded-full border border-white/30 shadow-xl hover:bg-gray-100 transition-colors"
           >
             Track order
           </Link>
