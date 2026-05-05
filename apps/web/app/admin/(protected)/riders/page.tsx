@@ -43,7 +43,9 @@ export default async function AdminRidersPage() {
 
   return (
     <RidersClient
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       initialRiders={(ridersData as unknown as any[]) ?? []}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       initialDeliveries={(activeDeliveries as unknown as any[]) ?? []}
     />
   );
