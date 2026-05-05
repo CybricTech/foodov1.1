@@ -31,7 +31,7 @@ function PendingOrderContent() {
           // JSON parse failure — treat as a transient error and keep polling.
           setAttempts((a) => {
             const next = a + 1;
-            if (next >= 15) {
+            if (next >= 90) {
               setTimedOut(true);
               return next;
             }
@@ -54,7 +54,7 @@ function PendingOrderContent() {
 
         setAttempts((a) => {
           const next = a + 1;
-          if (next >= 15) {
+          if (next >= 90) {
             setTimedOut(true);
             return next;
           }
@@ -67,7 +67,7 @@ function PendingOrderContent() {
         // connectivity blip.
         setAttempts((a) => {
           const next = a + 1;
-          if (next >= 15) {
+          if (next >= 90) {
             setTimedOut(true);
             return next;
           }

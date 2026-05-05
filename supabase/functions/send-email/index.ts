@@ -21,6 +21,7 @@ interface OrderEmailProps {
   fulfillmentType: "delivery" | "pickup";
   deliveryAddress?: string | null;
   specialInstructions?: string | null;
+  dispatchMethod?: string | null;
   items: OrderItem[];
   subtotalKobo: number;
   deliveryFeeKobo: number;
@@ -122,6 +123,23 @@ function buildOrderEmailHtml(props: OrderEmailProps, isAdmin: boolean): { subjec
 
   const fulfillmentLabel = props.fulfillmentType === "delivery" ? "🛵 Delivery" : "🏪 Pickup";
 
+  const dispatchLabel = props.dispatchMethod === "platform_rider"
+    ? "🛵 Platform Rider"
+    : props.dispatchMethod === "own_rider"
+    ? "🧑 In-House Rider"
+    : props.dispatchMethod === "third_party"
+    ? "📦 Third Party"
+    : null;
+
+  const dispatchRow = isAdmin && props.fulfillmentType === "delivery" && dispatchLabel
+    ? `<tr>
+        <td style="padding:4px 0;color:#555;font-size:14px;width:130px">Dispatch method</td>
+        <td style="padding:4px 0;font-size:14px;font-weight:600;color:#1a1a2e">
+          <span style="background:${props.dispatchMethod === "platform_rider" ? "#f3e8ff" : "#f3f4f6"};color:${props.dispatchMethod === "platform_rider" ? "#7c3aed" : "#111827"};padding:2px 8px;border-radius:99px;font-size:12px;font-weight:700">${dispatchLabel}</span>
+        </td>
+      </tr>`
+    : "";
+
   const deliveryRow = props.fulfillmentType === "delivery" && props.deliveryAddress
     ? `<tr><td style="padding:6px 0;color:#555;font-size:14px;width:130px">Delivery address</td><td style="padding:6px 0;font-size:14px;color:#1a1a2e">${props.deliveryAddress}</td></tr>`
     : "";
@@ -173,6 +191,7 @@ function buildOrderEmailHtml(props: OrderEmailProps, isAdmin: boolean): { subjec
               <td style="padding:4px 0;color:#555;font-size:14px">Fulfillment</td>
               <td style="padding:4px 0;font-size:14px;color:#1a1a2e">${fulfillmentLabel}</td>
             </tr>
+            ${dispatchRow}
             ${deliveryRow}
           </table>
         </div>

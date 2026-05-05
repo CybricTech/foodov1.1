@@ -3,17 +3,431 @@ import { createServiceClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
   const ref = request.nextUrl.searchParams.get("ref");
-  if (!ref) {
-    return NextResponse.json({ error: "Missing ref" }, { status: 400 });
-  }
+  if (!ref) return NextResponse.json({ error: "Missing ref" }, { status: 400 });
 
   const supabase = createServiceClient();
-  const { data } = await supabase
+
+  // ── Fast path: webhook already processed ─────────────────────────────────
+  const { data: payment } = await supabase
     .from("payments")
-    .select("order_id")
+    .select("id, order_id, paystack_status, restaurant_id, metadata")
     .eq("paystack_ref", ref)
-    .eq("paystack_status", "success")
     .maybeSingle();
 
-  return NextResponse.json({ orderId: data?.order_id ?? null });
+  if (!payment) return NextResponse.json({ orderId: null });
+  if (payment.order_id) return NextResponse.json({ orderId: payment.order_id });
+
+  // ── Webhook hasn't fired yet — verify with Paystack directly ─────────────
+  // This catches the common live-key race where Paystack redirects the customer
+  // back before the webhook fires (can be 30–90 s on live keys).
+  let verifyChannel: string | undefined;
+  let verifyFees: number | undefined;
+
+  try {
+    const verifyRes = await fetch(
+      `https://api.paystack.co/transaction/verify/${encodeURIComponent(ref)}`,
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
+    );
+    if (!verifyRes.ok) return NextResponse.json({ orderId: null });
+    const vd = (await verifyRes.json()) as {
+      data?: { status?: string; channel?: string; fees?: number };
+    };
+    if (vd.data?.status !== "success") return NextResponse.json({ orderId: null });
+    verifyChannel = vd.data.channel;
+    verifyFees = vd.data.fees;
+  } catch {
+    return NextResponse.json({ orderId: null });
+  }
+
+  // ── Atomically claim processing rights ───────────────────────────────────
+  // Only proceed if the payment is still "pending". If the Paystack webhook
+  // beat us here it will have already set paystack_status → "success", so the
+  // conditional update matches 0 rows and we fall through to re-check order_id.
+  const { data: claimed } = await supabase
+    .from("payments")
+    .update({
+      paystack_status: "success",
+      paid_at: new Date().toISOString(),
+      metadata: {
+        ...((payment.metadata as Record<string, unknown>) ?? {}),
+        paystack_channel: verifyChannel,
+        paystack_fees: verifyFees,
+      },
+    })
+    .eq("id", payment.id)
+    .eq("paystack_status", "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (!claimed) {
+    // Webhook beat us to it — return whatever order_id it just set (may still be null
+    // if it's mid-flight; the pending page will pick it up on the next poll).
+    const { data: latest } = await supabase
+      .from("payments")
+      .select("order_id")
+      .eq("id", payment.id)
+      .single();
+    return NextResponse.json({ orderId: latest?.order_id ?? null });
+  }
+
+  // ── We own this payment — create the order now ────────────────────────────
+  // Mirrors the webhook's charge.success handler exactly. When the Paystack
+  // webhook eventually fires it will find paystack_status="success" AND
+  // order_id IS SET and return early (idempotency guard on line 60 of the
+  // webhook route), so nothing is duplicated.
+
+  const meta = payment.metadata as Record<string, unknown>;
+  const restaurantId = payment.restaurant_id;
+
+  const orderPayload = {
+    restaurant_id: restaurantId,
+    payment_id: payment.id,
+    customer_phone: meta.customer_phone as string,
+    customer_name: meta.customer_name as string,
+    customer_email: (meta.customer_email as string) || null,
+    fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
+    delivery_address: (meta.delivery_address as string) || null,
+    special_instructions: (meta.special_instructions as string) || null,
+    status: "confirmed" as const,
+    payment_status: "paid" as const,
+    subtotal_kobo: meta.subtotal_kobo as number,
+    delivery_fee_kobo: meta.delivery_fee_kobo as number,
+    vat_kobo: (meta.vat_kobo as number) || 0,
+    service_fee_kobo: (meta.service_fee_kobo as number) || 0,
+    total_kobo:
+      (meta.subtotal_kobo as number) +
+      (meta.delivery_fee_kobo as number) +
+      ((meta.vat_kobo as number) || 0) +
+      ((meta.service_fee_kobo as number) || 0),
+    subtotal: meta.subtotal_kobo as number,
+    total_amount:
+      (meta.subtotal_kobo as number) +
+      (meta.delivery_fee_kobo as number) +
+      ((meta.vat_kobo as number) || 0) +
+      ((meta.service_fee_kobo as number) || 0),
+    delivery_distance_km: (meta.delivery_distance_km as number) || null,
+    delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
+    order_number: `FD-${Date.now()}`,
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orderResult = await supabase
+    .from("orders")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .insert(orderPayload as any)
+    .select("id, order_number")
+    .single();
+
+  if (orderResult.error || !orderResult.data) {
+    console.error("[status] Order creation failed:", orderResult.error);
+    return NextResponse.json({ orderId: null });
+  }
+
+  const order = orderResult.data;
+
+  // Order items
+  const items = (meta.items as Array<{
+    menuItemId: string;
+    name: string;
+    priceKobo: number;
+    quantity: number;
+    selectedOptions: Array<{
+      optionId: string;
+      optionName: string;
+      choices: Array<{ choiceId: string; choiceName: string; priceModifierKobo: number; quantity?: number }>;
+    }>;
+  }>) ?? [];
+
+  if (items.length > 0) {
+    await supabase.from("order_items").insert(
+      items.map((item) => ({
+        order_id: order.id,
+        restaurant_id: restaurantId,
+        menu_item_id: item.menuItemId,
+        item_name: item.name,
+        item_price: item.priceKobo,
+        item_price_kobo: item.priceKobo,
+        quantity: item.quantity,
+        selected_options: item.selectedOptions as import("@foodo/database").Json,
+        line_total: item.priceKobo * item.quantity,
+        line_total_kobo: item.priceKobo * item.quantity,
+      }))
+    );
+  }
+
+  // ETA
+  const menuItemIds = items.map((i) => i.menuItemId);
+  const { data: menuItems } = await supabase
+    .from("menu_items")
+    .select("id, prep_time_minutes")
+    .in("id", menuItemIds);
+  const menuPrepMap = new Map(
+    (menuItems ?? []).map((m) => [
+      m.id,
+      (m as unknown as { prep_time_minutes?: number | null }).prep_time_minutes ?? null,
+    ])
+  );
+  const prepTimes = items
+    .map((i) => menuPrepMap.get(i.menuItemId))
+    .filter((p): p is number => p != null);
+  const maxPrepMinutes = prepTimes.length > 0 ? Math.max(...prepTimes) : 20;
+  const bufferMinutes = meta.fulfillment_type === "delivery" ? 30 : 0;
+  const estimatedDeliveryAt = new Date(
+    Date.now() + (maxPrepMinutes + bufferMinutes) * 60 * 1000
+  ).toISOString();
+
+  // ETA update + link payment → order (parallel, non-blocking for client response)
+  await Promise.all([
+    supabase
+      .from("orders")
+      .update({ estimated_delivery_at: estimatedDeliveryAt })
+      .eq("id", order.id),
+    supabase
+      .from("payments")
+      .update({ order_id: order.id })
+      .eq("id", payment.id),
+  ]);
+
+  // CRM
+  const totalKobo =
+    (meta.subtotal_kobo as number) +
+    (meta.delivery_fee_kobo as number) +
+    ((meta.vat_kobo as number) || 0) +
+    ((meta.service_fee_kobo as number) || 0);
+
+  await supabase.rpc("upsert_customer", {
+    p_restaurant_id: restaurantId,
+    p_phone: meta.customer_phone as string,
+    p_full_name: meta.customer_name as string,
+    p_email: (meta.customer_email as string) || undefined,
+    p_order_total_kobo: totalKobo,
+  });
+
+  // Save delivery address
+  const deliveryAddress = (meta.delivery_address as string) || null;
+  if (deliveryAddress) {
+    const { data: customerRow } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("phone", meta.customer_phone as string)
+      .single();
+    if (customerRow) {
+      await supabase.from("customer_addresses").upsert(
+        {
+          customer_id: customerRow.id,
+          restaurant_id: restaurantId,
+          address: deliveryAddress,
+        },
+        { onConflict: "customer_id, address" }
+      );
+    }
+  }
+
+  // Wallet
+  const [{ data: settings }, { data: restaurantRow }] = await Promise.all([
+    supabase
+      .from("platform_settings")
+      .select(
+        "service_charge_pct, service_charge_fixed_kobo, merchant_charge_pct, settlement_hold_hours, admin_alert_email"
+      )
+      .single(),
+    supabase
+      .from("restaurants")
+      .select("name, notification_email")
+      .eq("id", restaurantId)
+      .single(),
+  ]);
+
+  const pct = settings?.service_charge_pct ?? 0.03;
+  const fixedFee = settings?.service_charge_fixed_kobo ?? 0;
+  const merchantChargePct = Number(settings?.merchant_charge_pct ?? 0.01);
+  const holdHours = settings?.settlement_hold_hours ?? 24;
+  const subtotalKobo = meta.subtotal_kobo as number;
+  const deliveryFeeKobo = meta.delivery_fee_kobo as number;
+  const vatKobo = (meta.vat_kobo as number) || 0;
+  const metaServiceFeeKobo = (meta.service_fee_kobo as number) || 0;
+  const customerPaidServiceFee = metaServiceFeeKobo > 0;
+
+  const serviceChargeKobo = customerPaidServiceFee
+    ? metaServiceFeeKobo
+    : Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
+
+  const orderTotalKobo =
+    subtotalKobo +
+    deliveryFeeKobo +
+    vatKobo +
+    (customerPaidServiceFee ? metaServiceFeeKobo : 0);
+  const merchantChargeKobo = Math.round(orderTotalKobo * merchantChargePct);
+
+  const restaurantCreditKobo = customerPaidServiceFee
+    ? subtotalKobo + vatKobo - merchantChargeKobo
+    : subtotalKobo + vatKobo - serviceChargeKobo - merchantChargeKobo;
+
+  const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
+
+  await supabase
+    .from("restaurant_wallets")
+    .upsert({ restaurant_id: restaurantId }, { onConflict: "restaurant_id" });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const walletRows: any[] = [
+    {
+      restaurant_id: restaurantId,
+      order_id: order.id,
+      type: "order_credit",
+      direction: "credit",
+      amount_kobo: restaurantCreditKobo,
+      status: "pending",
+      available_at: availableAt,
+      description: `Order #${order.order_number} — net revenue (subtotal${vatKobo > 0 ? " + VAT" : ""})`,
+    },
+    ...(customerPaidServiceFee
+      ? []
+      : [
+          {
+            restaurant_id: restaurantId,
+            order_id: order.id,
+            type: "service_charge",
+            direction: "debit",
+            amount_kobo: serviceChargeKobo,
+            status: "settled",
+            description: `Platform fee (${(Number(pct) * 100).toFixed(1)}% + ₦${(Number(fixedFee) / 100).toFixed(0)} fixed) on Order #${order.order_number}`,
+          },
+        ]),
+    ...(merchantChargeKobo > 0
+      ? [
+          {
+            restaurant_id: restaurantId,
+            order_id: order.id,
+            type: "merchant_charge",
+            direction: "debit",
+            amount_kobo: merchantChargeKobo,
+            status: "settled",
+            description: `Merchant charge (${(merchantChargePct * 100).toFixed(1)}%) on Order #${order.order_number}`,
+          },
+        ]
+      : []),
+  ];
+
+  await supabase.from("wallet_transactions").insert(walletRows);
+  await supabase.rpc("increment_wallet_pending", {
+    p_restaurant_id: restaurantId,
+    p_amount_kobo: restaurantCreditKobo,
+  });
+
+  // Notifications — fire-and-forget (must still be awaited before serverless exits)
+  const edgeFnUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-sms`;
+  const edgeEmailUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-email`;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const restaurantName =
+    (restaurantRow as unknown as { name?: string } | null)?.name ?? "Your Restaurant";
+  const adminAlertEmail =
+    (settings as unknown as { admin_alert_email?: string | null } | null)?.admin_alert_email ??
+    null;
+
+  let merchantEmail: string | null =
+    (restaurantRow as unknown as { notification_email?: string | null } | null)
+      ?.notification_email ?? null;
+  if (!merchantEmail) {
+    const { data: ownerProfile } = await supabase
+      .from("user_profiles")
+      .select("email")
+      .eq("restaurant_id", restaurantId)
+      .eq("role", "merchant_owner")
+      .single();
+    merchantEmail =
+      (ownerProfile as unknown as { email?: string | null } | null)?.email ?? null;
+  }
+
+  const metaItems = (meta.items as Array<{
+    menuItemId: string;
+    name: string;
+    priceKobo: number;
+    quantity: number;
+    selectedOptions: Array<{
+      optionId: string;
+      optionName: string;
+      choices: Array<{ choiceId: string; choiceName: string; priceModifierKobo: number; quantity?: number }>;
+    }>;
+  }>) ?? [];
+
+  const orderEmailProps = {
+    restaurantName,
+    orderNumber: order.order_number,
+    customerName: meta.customer_name as string,
+    customerPhone: meta.customer_phone as string,
+    fulfillmentType: meta.fulfillment_type as "delivery" | "pickup",
+    deliveryAddress: (meta.delivery_address as string) ?? null,
+    specialInstructions: (meta.special_instructions as string) ?? null,
+    items: metaItems.map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      price: item.priceKobo,
+      options: item.selectedOptions?.length
+        ? item.selectedOptions.map((opt) => ({
+            optionName: opt.optionName,
+            choices: opt.choices.map((c) => ({
+              choiceName: c.choiceName,
+              priceModifier: c.priceModifierKobo,
+              quantity: c.quantity,
+            })),
+          }))
+        : undefined,
+    })),
+    subtotalKobo: meta.subtotal_kobo as number,
+    deliveryFeeKobo: meta.delivery_fee_kobo as number,
+    vatKobo: (meta.vat_kobo as number) || 0,
+    serviceFeeKobo: (meta.service_fee_kobo as number) || 0,
+    totalKobo,
+    createdAt: new Date().toISOString(),
+  };
+
+  const notifications: Promise<unknown>[] = [
+    fetch(edgeFnUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurantId,
+        phone: meta.customer_phone,
+        eventType: "order_confirmed",
+        orderId: order.id,
+        orderNumber: order.order_number,
+      }),
+    }).catch(console.error),
+    fetch(edgeFnUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurantId,
+        eventType: "new_order_merchant",
+        orderId: order.id,
+        orderNumber: order.order_number,
+      }),
+    }).catch(console.error),
+  ];
+
+  if (merchantEmail) {
+    notifications.push(
+      fetch(edgeEmailUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ template: "new_order_merchant", to: merchantEmail, props: orderEmailProps }),
+      }).catch(console.error)
+    );
+  }
+
+  if (adminAlertEmail) {
+    notifications.push(
+      fetch(edgeEmailUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ template: "new_order_admin", to: adminAlertEmail, props: orderEmailProps }),
+      }).catch(console.error)
+    );
+  }
+
+  await Promise.allSettled(notifications);
+
+  return NextResponse.json({ orderId: order.id });
 }

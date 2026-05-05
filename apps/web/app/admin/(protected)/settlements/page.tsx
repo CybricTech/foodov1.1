@@ -29,8 +29,9 @@ export default async function AdminSettlementsPage() {
         settlement_id,
         fulfillment_type,
         status,
+        dispatch_type,
         created_at,
-        restaurants (name, logistics_default),
+        restaurants (name),
         delivery_assignments (dispatch_type)
       `
       )
@@ -105,15 +106,17 @@ export default async function AdminSettlementsPage() {
       .single(),
   ]);
 
-  // Normalize: resolve dispatch_type from delivery_assignments join or restaurant default
+  // Resolve dispatch_type. Order of preference:
+  //   1. orders.dispatch_type (set by the dispatch route — source of truth)
+  //   2. delivery_assignments.dispatch_type (legacy / fallback)
+  //   3. null → un-dispatched delivery order (UI shows "Pending")
   const normalizedOrders = (orders ?? []).map((o: Record<string, unknown>) => {
     const assignments = o.delivery_assignments as Array<{ dispatch_type: string }> | null;
-    const restaurant = o.restaurants as { name: string; logistics_default: string } | null;
+    const restaurant = o.restaurants as { name: string } | null;
 
     const dispatch_type =
-      assignments && assignments.length > 0
-        ? assignments[0].dispatch_type
-        : restaurant?.logistics_default ?? null;
+      (o.dispatch_type as string | null) ??
+      (assignments && assignments.length > 0 ? assignments[0].dispatch_type : null);
 
     return {
       id: o.id as string,

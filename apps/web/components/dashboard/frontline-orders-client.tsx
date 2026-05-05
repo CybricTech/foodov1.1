@@ -18,6 +18,9 @@ import {
   RefreshCw,
   Phone,
   MapPin,
+  Radio,
+  UserCheck,
+  X,
 } from "lucide-react";
 import type { Database } from "@foodo/database";
 
@@ -157,6 +160,13 @@ export function FrontlineOrdersClient({
   const [activeTab, setActiveTab] = useState<Column>("new");
   const [alertActive, setAlertActive] = useState(false);
   const [, setTick] = useState(0);
+  const [dispatchModal, setDispatchModal] = useState<{
+    order: OrderRow;
+    step: "select" | "confirm";
+    selectedType: "platform_rider" | "own_rider" | null;
+  } | null>(null);
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
   const supabase = createBrowserClient();
   const { reportRealtimeStatus, onReconnect } = useConnection();
@@ -340,6 +350,51 @@ export function FrontlineOrdersClient({
     [initialOrders]
   );
 
+  const openDispatchModal = useCallback((order: OrderRow) => {
+    setDispatchModal({ order, step: "select", selectedType: null });
+    setDispatchError(null);
+  }, []);
+
+  const handleDispatchConfirm = useCallback(async () => {
+    if (!dispatchModal?.selectedType) return;
+    setDispatchLoading(true);
+    setDispatchError(null);
+
+    try {
+      const statusRes = await fetch("/api/dashboard/orders/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: dispatchModal.order.id, status: "ready_for_pickup" }),
+      });
+      if (!statusRes.ok) {
+        const data = await statusRes.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to update status");
+      }
+
+      const dispatchRes = await fetch("/api/dashboard/orders/dispatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: dispatchModal.order.id, dispatch_type: dispatchModal.selectedType }),
+      });
+      if (!dispatchRes.ok) {
+        const data = await dispatchRes.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to dispatch order");
+      }
+
+      const newStatus = dispatchModal.selectedType === "platform_rider" ? "assigned_to_rider" : "in_transit";
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === dispatchModal.order.id ? { ...o, status: newStatus as OrderRow["status"] } : o
+        )
+      );
+      setDispatchModal(null);
+    } catch (err) {
+      setDispatchError(err instanceof Error ? err.message : "Failed to dispatch order");
+    } finally {
+      setDispatchLoading(false);
+    }
+  }, [dispatchModal]);
+
   // Column data
   const columns = useMemo(() => {
     const result: Record<Column, OrderRow[]> = {
@@ -455,6 +510,107 @@ export function FrontlineOrdersClient({
         </div>
       )}
 
+      {/* Dispatch modal */}
+      {dispatchModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            {dispatchModal.step === "select" ? (
+              <>
+                <div className="px-5 pt-5 pb-3 flex items-start justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-black-900">Choose Delivery Method</h3>
+                    <p className="text-xs text-black-400 mt-0.5">Order #{dispatchModal.order.order_number}</p>
+                  </div>
+                  <button
+                    onClick={() => setDispatchModal(null)}
+                    className="text-black-400 hover:text-black-600 cursor-pointer p-1 -mt-1 -mr-1"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="px-5 pb-5 grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setDispatchModal({ ...dispatchModal, selectedType: "platform_rider", step: "confirm" })}
+                    className="flex flex-col items-center gap-2.5 p-4 rounded-xl border-2 border-purple-200 bg-purple-50 hover:bg-purple-100 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Radio size={26} className="text-purple-600" />
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-purple-700">Platform Rider</p>
+                      <p className="text-[10px] text-purple-500 mt-0.5">Request from app</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setDispatchModal({ ...dispatchModal, selectedType: "own_rider", step: "confirm" })}
+                    className="flex flex-col items-center gap-2.5 p-4 rounded-xl border-2 border-black-200 bg-black-50 hover:bg-black-100 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <UserCheck size={26} className="text-black-700" />
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-black-900">In-House Rider</p>
+                      <p className="text-[10px] text-black-500 mt-0.5">Your own rider</p>
+                    </div>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="px-5 pt-5 pb-3">
+                  <h3 className="text-base font-bold text-black-900">Confirm Dispatch</h3>
+                  <p className="text-xs text-black-400 mt-0.5">Order #{dispatchModal.order.order_number}</p>
+                </div>
+                <div className="px-5 pb-2">
+                  <div
+                    className={cn(
+                      "rounded-xl p-4 flex items-center gap-3",
+                      dispatchModal.selectedType === "platform_rider" ? "bg-purple-50" : "bg-black-50"
+                    )}
+                  >
+                    {dispatchModal.selectedType === "platform_rider" ? (
+                      <Radio size={22} className="text-purple-600 flex-shrink-0" />
+                    ) : (
+                      <UserCheck size={22} className="text-black-700 flex-shrink-0" />
+                    )}
+                    <div>
+                      <p className={cn("text-sm font-bold", dispatchModal.selectedType === "platform_rider" ? "text-purple-700" : "text-black-900")}>
+                        {dispatchModal.selectedType === "platform_rider" ? "Platform Rider" : "In-House Rider"}
+                      </p>
+                      <p className="text-xs text-black-500 mt-0.5">
+                        {dispatchModal.selectedType === "platform_rider"
+                          ? "A rider will be requested from the app"
+                          : "Your own rider will handle delivery"}
+                      </p>
+                    </div>
+                  </div>
+                  {dispatchError && (
+                    <p className="text-xs text-cinnabar-500 mt-3">{dispatchError}</p>
+                  )}
+                </div>
+                <div className="px-5 pb-5 pt-3 flex gap-3">
+                  <button
+                    onClick={() => setDispatchModal({ ...dispatchModal, step: "select" })}
+                    disabled={dispatchLoading}
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-black-200 text-sm font-semibold text-black-700 hover:bg-black-50 disabled:opacity-60 transition-colors cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleDispatchConfirm}
+                    disabled={dispatchLoading}
+                    className={cn(
+                      "flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60 transition-colors cursor-pointer",
+                      dispatchModal.selectedType === "platform_rider"
+                        ? "bg-purple-500 hover:bg-purple-400"
+                        : "bg-black-900 hover:bg-black-700"
+                    )}
+                  >
+                    {dispatchLoading ? "Dispatching…" : "Confirm"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Mobile tab view */}
       <div className="lg:hidden">
         {/* Tab bar */}
@@ -523,6 +679,7 @@ export function FrontlineOrdersClient({
                   column={activeTab}
                   isNew={newOrderIds.has(order.id)}
                   onUpdateStatus={updateStatus}
+                  onDispatchReady={openDispatchModal}
                   loading={actionLoading === order.id}
                   alwaysExpanded
                 />
@@ -609,6 +766,7 @@ export function FrontlineOrdersClient({
                           column={col}
                           isNew={newOrderIds.has(order.id)}
                           onUpdateStatus={updateStatus}
+                          onDispatchReady={openDispatchModal}
                           loading={actionLoading === order.id}
                         />
                       ))}
@@ -633,6 +791,7 @@ function FrontlineOrderCard({
   column,
   isNew,
   onUpdateStatus,
+  onDispatchReady,
   loading,
   alwaysExpanded = false,
 }: {
@@ -640,6 +799,7 @@ function FrontlineOrderCard({
   column: Column;
   isNew: boolean;
   onUpdateStatus: (id: string, status: string) => void;
+  onDispatchReady?: (order: OrderRow) => void;
   loading: boolean;
   alwaysExpanded?: boolean;
 }) {
@@ -694,18 +854,69 @@ function FrontlineOrderCard({
               disabled={loading}
               className="flex-1 bg-dixie-500 hover:bg-dixie-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
             >
-              {loading ? "Updating..." : "Accept"}
+              {loading ? "Updating…" : "Accept"}
             </button>
           )}
 
           {column === "in_progress" && (
-            <button
-              onClick={() => onUpdateStatus(order.id, "ready_for_pickup")}
-              disabled={loading}
-              className="flex-1 bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
-            >
-              {loading ? "Updating..." : "Ready"}
-            </button>
+            order.fulfillment_type === "delivery" ? (
+              <button
+                onClick={() => onDispatchReady?.(order)}
+                disabled={loading}
+                className="flex-1 bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
+              >
+                {loading ? "Updating…" : "Ready → Dispatch"}
+              </button>
+            ) : (
+              <button
+                onClick={() => onUpdateStatus(order.id, "ready_for_pickup")}
+                disabled={loading}
+                className="flex-1 bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
+              >
+                {loading ? "Updating…" : "Ready"}
+              </button>
+            )
+          )}
+
+          {column === "in_transit" && (
+            <>
+              {order.status === "ready_for_pickup" && order.fulfillment_type === "delivery" && (
+                <button
+                  onClick={() => onDispatchReady?.(order)}
+                  disabled={loading}
+                  className="flex-1 bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
+                >
+                  Assign Rider
+                </button>
+              )}
+              {order.status === "ready_for_pickup" && order.fulfillment_type === "pickup" && (
+                <button
+                  onClick={() => onUpdateStatus(order.id, "delivered")}
+                  disabled={loading}
+                  className="flex-1 bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
+                >
+                  {loading ? "Updating…" : "Mark Collected"}
+                </button>
+              )}
+              {order.status === "in_transit" && (
+                <button
+                  onClick={() => onUpdateStatus(order.id, "delivered")}
+                  disabled={loading}
+                  className="flex-1 bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
+                >
+                  {loading ? "Updating…" : "Mark Delivered"}
+                </button>
+              )}
+              {order.status === "assigned_to_rider" && (
+                <button
+                  onClick={() => onUpdateStatus(order.id, "delivered")}
+                  disabled={loading}
+                  className="flex-1 bg-viridian-500 hover:bg-viridian-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
+                >
+                  {loading ? "Updating…" : "Mark Delivered"}
+                </button>
+              )}
+            </>
           )}
 
           {/* View toggle — hidden when always expanded */}

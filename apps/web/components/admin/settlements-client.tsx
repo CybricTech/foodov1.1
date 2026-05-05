@@ -81,6 +81,24 @@ function paystackTotal(o: OrderRow): number {
   );
 }
 
+/**
+ * Delivery fee split depends on who handled the delivery:
+ *   - platform_rider → Foodo provided the rider, keeps 100% of the delivery fee
+ *   - own_rider / third_party → restaurant provided the rider, Foodo keeps the
+ *     configured commission percentage (default 10%)
+ *   - null (un-dispatched) → no commission yet; dispatch route writes the
+ *     wallet rows once the merchant picks the rider type
+ */
+function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
+  const fee = o.delivery_fee_kobo ?? 0;
+  if (fee === 0) return 0;
+  if (o.dispatch_type === "platform_rider") return fee;
+  if (o.dispatch_type === "own_rider" || o.dispatch_type === "third_party") {
+    return Math.round(fee * defaultPct);
+  }
+  return 0;
+}
+
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-dixie-100 text-dixie-600",
   processing: "bg-purple-100 text-purple-600",
@@ -119,19 +137,18 @@ export function SettlementsClient({
 
   const revenue = useMemo(() => {
     let grossVolume = 0;
-    let totalDeliveryFees = 0;
     let totalMerchantCharge = 0;
     let totalCustomerServiceFees = 0;
+    let totalCommissions = 0;
 
     for (const o of completedOrders) {
       const pTotal = paystackTotal(o);
       grossVolume += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-      totalDeliveryFees += o.delivery_fee_kobo ?? 0;
       totalMerchantCharge += Math.round(pTotal * merchantChargePct);
       totalCustomerServiceFees += o.service_fee_kobo ?? 0;
+      totalCommissions += deliveryCommissionFor(o, deliveryCommissionPct);
     }
 
-    const totalCommissions = Math.round(totalDeliveryFees * deliveryCommissionPct);
     const totalFoodoRevenue = totalMerchantCharge + totalCommissions + totalCustomerServiceFees;
     const netSettled = settlements
       .filter((s) => s.status === "paid")
@@ -160,15 +177,14 @@ export function SettlementsClient({
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([date, dayOrders]) => {
         let gross = 0;
-        let deliveryTotal = 0;
         let merchantChargeTotal = 0;
+        let commission = 0;
         for (const o of dayOrders) {
           const pTotal = paystackTotal(o);
           gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-          deliveryTotal += o.delivery_fee_kobo ?? 0;
           merchantChargeTotal += Math.round(pTotal * merchantChargePct);
+          commission += deliveryCommissionFor(o, deliveryCommissionPct);
         }
-        const commission = Math.round(deliveryTotal * deliveryCommissionPct);
         const net = gross - merchantChargeTotal - commission;
         const allSettled = dayOrders.every((o) => o.settlement_id != null);
 
@@ -288,7 +304,7 @@ export function SettlementsClient({
         <SummaryCard
           label="Delivery Commission"
           value={formatKobo(revenue.totalCommissions)}
-          sublabel={`${(deliveryCommissionPct * 100).toFixed(0)}% on all deliveries`}
+          sublabel={`100% platform · ${(deliveryCommissionPct * 100).toFixed(0)}% in-house`}
         />
         <SummaryCard
           label="Customer Svc Fees"
@@ -307,229 +323,6 @@ export function SettlementsClient({
           <p className="text-[10px] text-black-400 mt-0.5">Next payout: {nextSettlement}</p>
         </div>
       </div>
-
-      {/* ── Daily Payout Summary ──────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-black-200">
-          <h2 className="font-bold text-black-900 text-sm">Daily Payout Summary</h2>
-          <p className="text-xs text-black-400 mt-0.5">
-            {dailyGroups.length} days · Click to expand merchant breakdown
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-black-100 bg-black-50">
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500 w-8" />
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Merchant Charge</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
-                  Delivery Commission
-                </th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Net Payout</th>
-                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Status</th>
-                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black-50">
-              {dailyGroups.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="text-center py-10 text-black-400 text-sm">
-                    No completed orders found
-                  </td>
-                </tr>
-              ) : (
-                dailyGroups.map((day) => {
-                  const expanded = expandedDays.has(day.date);
-                  return (
-                    <DailyRow
-                      key={day.date}
-                      day={day}
-                      expanded={expanded}
-                      onToggle={() => toggleDay(day.date)}
-                      onExport={() => exportCSV(day.date)}
-                      exporting={exportingDate === day.date}
-                    />
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ── Per-Order Fee Breakdown ───────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-black-200">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <h2 className="font-bold text-black-900 text-sm">Per-Order Fee Breakdown</h2>
-              <p className="text-xs text-black-400 mt-0.5">
-                {filteredOrderBreakdown.length} of {completedOrders.length} orders · Every fee
-                component per transaction
-              </p>
-            </div>
-            <div className="flex gap-2 flex-wrap items-center">
-              <input
-                type="text"
-                value={orderSearch}
-                onChange={(e) => setOrderSearch(e.target.value)}
-                placeholder="Search order or restaurant…"
-                className="px-3 py-1.5 text-xs rounded-lg border border-black-200 text-black-900 focus:outline-none focus:border-purple-500 w-52"
-              />
-              {(["all", "settled", "unsettled"] as const).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setOrderFilter(f)}
-                  className={`px-3 py-1 text-xs rounded-lg font-medium border capitalize transition-colors ${
-                    orderFilter === f
-                      ? "bg-purple-500 text-white border-purple-500"
-                      : "bg-white text-black-500 border-black-200 hover:bg-black-50"
-                  }`}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-black-100 bg-black-50">
-                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  Order #
-                </th>
-                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  Restaurant
-                </th>
-                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  Date
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  Subtotal
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  VAT
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  Del. Fee
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  Cust. Svc Fee
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-black-900 whitespace-nowrap">
-                  Paystack Total
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-purple-600 whitespace-nowrap">
-                  Merch. Charge ({(merchantChargePct * 100).toFixed(0)}%)
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-purple-600 whitespace-nowrap">
-                  Del. Commission ({(deliveryCommissionPct * 100).toFixed(0)}%)
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-viridian-600 whitespace-nowrap">
-                  Foodo Revenue
-                </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  Merchant Net
-                </th>
-                <th className="text-center px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
-                  Settled
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black-50">
-              {filteredOrderBreakdown.length === 0 ? (
-                <tr>
-                  <td colSpan={13} className="text-center py-8 text-black-400">
-                    No orders found
-                  </td>
-                </tr>
-              ) : (
-                filteredOrderBreakdown.slice(0, 200).map((o) => {
-                  const pTotal = paystackTotal(o);
-                  const merchantCharge = Math.round(pTotal * merchantChargePct);
-                  const delCommission = Math.round((o.delivery_fee_kobo ?? 0) * deliveryCommissionPct);
-                  const foodoRevenue = merchantCharge + delCommission + (o.service_fee_kobo ?? 0);
-                  const grossToMerchant =
-                    (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-                  const merchantNet = grossToMerchant - merchantCharge - delCommission;
-                  const dateLabel = new Date(o.created_at).toLocaleDateString("en-NG", {
-                    day: "numeric",
-                    month: "short",
-                  });
-                  const timeLabel = new Date(o.created_at).toLocaleTimeString("en-NG", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
-
-                  return (
-                    <tr key={o.id} className="hover:bg-black-25 transition-colors">
-                      <td className="px-3 py-2.5 font-mono text-black-700 whitespace-nowrap">
-                        {o.order_number ?? "—"}
-                      </td>
-                      <td className="px-3 py-2.5 text-black-700 max-w-[140px] truncate">
-                        {o.restaurants?.name ?? "Unknown"}
-                      </td>
-                      <td className="px-3 py-2.5 text-black-500 whitespace-nowrap">
-                        {dateLabel} {timeLabel}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
-                        {formatKobo(o.subtotal_kobo)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-black-500">
-                        {formatKobo(o.vat_kobo)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
-                        {formatKobo(o.delivery_fee_kobo)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-black-500">
-                        {formatKobo(o.service_fee_kobo)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-black-900">
-                        {formatKobo(pTotal)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-purple-600">
-                        {formatKobo(merchantCharge)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-purple-600">
-                        {formatKobo(delCommission)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-viridian-600">
-                        {formatKobo(foodoRevenue)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
-                        {formatKobo(merchantNet)}
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        <span
-                          className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                            o.settlement_id
-                              ? "bg-viridian-100 text-viridian-600"
-                              : "bg-dixie-100 text-dixie-600"
-                          }`}
-                        >
-                          {o.settlement_id ? "Yes" : "No"}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-          {filteredOrderBreakdown.length > 200 && (
-            <p className="text-xs text-black-400 text-center py-3 border-t border-black-100">
-              Showing 200 of {filteredOrderBreakdown.length} orders
-            </p>
-          )}
-        </div>
-      </div>
-
       {/* ── Merchant Settlements ──────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-black-200">
@@ -635,6 +428,59 @@ export function SettlementsClient({
         </div>
       </div>
 
+      {/* ── Daily Payout Summary ──────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <h2 className="font-bold text-black-900 text-sm">Daily Payout Summary</h2>
+          <p className="text-xs text-black-400 mt-0.5">
+            {dailyGroups.length} days · Click to expand merchant breakdown
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-black-100 bg-black-50">
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500 w-8" />
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Merchant Charge</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Delivery Commission
+                </th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Net Payout</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Status</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black-50">
+              {dailyGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-black-400 text-sm">
+                    No completed orders found
+                  </td>
+                </tr>
+              ) : (
+                dailyGroups.map((day) => {
+                  const expanded = expandedDays.has(day.date);
+                  return (
+                    <DailyRow
+                      key={day.date}
+                      day={day}
+                      expanded={expanded}
+                      onToggle={() => toggleDay(day.date)}
+                      onExport={() => exportCSV(day.date)}
+                      exporting={exportingDate === day.date}
+                    />
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* ── Settlement History ────────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-black-200 flex flex-wrap gap-2 items-center justify-between">
@@ -709,6 +555,198 @@ export function SettlementsClient({
             ))}
           </div>
         )}
+      </div>
+
+      {/* ── Per-Order Fee Breakdown ───────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-black-900 text-sm">Per-Order Fee Breakdown</h2>
+              <p className="text-xs text-black-400 mt-0.5">
+                {filteredOrderBreakdown.length} of {completedOrders.length} orders · Every fee
+                component per transaction
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap items-center">
+              <input
+                type="text"
+                value={orderSearch}
+                onChange={(e) => setOrderSearch(e.target.value)}
+                placeholder="Search order or restaurant…"
+                className="px-3 py-1.5 text-xs rounded-lg border border-black-200 text-black-900 focus:outline-none focus:border-purple-500 w-52"
+              />
+              {(["all", "settled", "unsettled"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setOrderFilter(f)}
+                  className={`px-3 py-1 text-xs rounded-lg font-medium border capitalize transition-colors ${
+                    orderFilter === f
+                      ? "bg-purple-500 text-white border-purple-500"
+                      : "bg-white text-black-500 border-black-200 hover:bg-black-50"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-black-100 bg-black-50">
+                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Order #
+                </th>
+                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Restaurant
+                </th>
+                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Date
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Subtotal
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  VAT
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Del. Fee
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Cust. Svc Fee
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-900 whitespace-nowrap">
+                  Paystack Total
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-purple-600 whitespace-nowrap">
+                  Merch. Charge ({(merchantChargePct * 100).toFixed(0)}%)
+                </th>
+                <th className="text-left px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Dispatch
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-purple-600 whitespace-nowrap">
+                  Del. Commission
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-viridian-600 whitespace-nowrap">
+                  Foodo Revenue
+                </th>
+                <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Merchant Net
+                </th>
+                <th className="text-center px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
+                  Settled
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black-50">
+              {filteredOrderBreakdown.length === 0 ? (
+                <tr>
+                  <td colSpan={14} className="text-center py-8 text-black-400">
+                    No orders found
+                  </td>
+                </tr>
+              ) : (
+                filteredOrderBreakdown.slice(0, 200).map((o) => {
+                  const pTotal = paystackTotal(o);
+                  const merchantCharge = Math.round(pTotal * merchantChargePct);
+                  const delCommission = deliveryCommissionFor(o, deliveryCommissionPct);
+                  const foodoRevenue = merchantCharge + delCommission + (o.service_fee_kobo ?? 0);
+                  const grossToMerchant =
+                    (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+                  const merchantNet = grossToMerchant - merchantCharge - delCommission;
+                  const dispatchLabel =
+                    o.fulfillment_type !== "delivery"
+                      ? null
+                      : o.dispatch_type === "platform_rider"
+                      ? { text: "Platform", pct: "100%", style: "bg-purple-100 text-purple-700" }
+                      : o.dispatch_type === "own_rider"
+                      ? { text: "In-House", pct: `${(deliveryCommissionPct * 100).toFixed(0)}%`, style: "bg-black-100 text-black-700" }
+                      : o.dispatch_type === "third_party"
+                      ? { text: "3rd Party", pct: `${(deliveryCommissionPct * 100).toFixed(0)}%`, style: "bg-blue-100 text-blue-700" }
+                      : { text: "Pending", pct: "", style: "bg-dixie-100 text-dixie-700" };
+                  const dateLabel = new Date(o.created_at).toLocaleDateString("en-NG", {
+                    day: "numeric",
+                    month: "short",
+                  });
+                  const timeLabel = new Date(o.created_at).toLocaleTimeString("en-NG", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+
+                  return (
+                    <tr key={o.id} className="hover:bg-black-25 transition-colors">
+                      <td className="px-3 py-2.5 font-mono text-black-700 whitespace-nowrap">
+                        {o.order_number ?? "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-black-700 max-w-[140px] truncate">
+                        {o.restaurants?.name ?? "Unknown"}
+                      </td>
+                      <td className="px-3 py-2.5 text-black-500 whitespace-nowrap">
+                        {dateLabel} {timeLabel}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
+                        {formatKobo(o.subtotal_kobo)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-500">
+                        {formatKobo(o.vat_kobo)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
+                        {formatKobo(o.delivery_fee_kobo)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-500">
+                        {formatKobo(o.service_fee_kobo)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-black-900">
+                        {formatKobo(pTotal)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-purple-600">
+                        {formatKobo(merchantCharge)}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {dispatchLabel ? (
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ${dispatchLabel.style}`}>
+                            {dispatchLabel.text}
+                            {dispatchLabel.pct && <span className="opacity-70">· {dispatchLabel.pct}</span>}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-black-300">Pickup</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-purple-600">
+                        {formatKobo(delCommission)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-viridian-600">
+                        {formatKobo(foodoRevenue)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-black-700">
+                        {formatKobo(merchantNet)}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <span
+                          className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                            o.settlement_id
+                              ? "bg-viridian-100 text-viridian-600"
+                              : "bg-dixie-100 text-dixie-600"
+                          }`}
+                        >
+                          {o.settlement_id ? "Yes" : "No"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+          {filteredOrderBreakdown.length > 200 && (
+            <p className="text-xs text-black-400 text-center py-3 border-t border-black-100">
+              Showing 200 of {filteredOrderBreakdown.length} orders
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

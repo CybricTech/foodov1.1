@@ -263,7 +263,7 @@ export async function POST(request: NextRequest) {
       .single(),
     supabase
       .from("restaurants")
-      .select("name, notification_email, logistics_default")
+      .select("name, notification_email")
       .eq("id", restaurantId)
       .single(),
   ]);
@@ -288,20 +288,7 @@ export async function POST(request: NextRequest) {
     ? metaServiceFeeKobo
     : Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
 
-  // Determine delivery dispatch type for this order
-  const restaurantLogisticsDefault = (restaurantRow as unknown as { logistics_default?: string } | null)?.logistics_default ?? 'own_rider';
-  const dispatchType = restaurantLogisticsDefault;
-  const foodoHandlesDelivery = dispatchType === 'platform_rider';
-
-  // Delivery fee split per revenue model:
-  // - Foodo delivers: Foodo keeps 100% → restaurant gets ₦0 of delivery fee
-  // - Restaurant delivers: Foodo keeps 10% → restaurant gets 90%
-  const foodoDeliveryCut = foodoHandlesDelivery
-    ? deliveryFeeKobo
-    : Math.round(deliveryFeeKobo * 0.1);
-  const restaurantDeliveryShare = deliveryFeeKobo - foodoDeliveryCut;
-
-  // Merchant charge: 1% of the total Paystack transaction amount
+  // Merchant charge: % of the total Paystack transaction amount.
   // This is the merchant's share of payment processing costs, deducted at settlement.
   const orderTotalKobo =
     subtotalKobo +
@@ -310,13 +297,16 @@ export async function POST(request: NextRequest) {
     (customerPaidServiceFee ? metaServiceFeeKobo : 0);
   const merchantChargeKobo = Math.round(orderTotalKobo * merchantChargePct);
 
-  // Restaurant credit = subtotal + VAT + their share of delivery fee − merchant charge
+  // Restaurant credit at payment time = subtotal + VAT − merchant charge.
+  // The delivery fee split is intentionally deferred: the merchant picks the
+  // dispatch type (platform_rider vs own_rider) per-order from the frontline,
+  // and the dispatch route writes the corresponding wallet rows at that point.
   // - VAT is collected on behalf of the restaurant (they remit to FIRS)
   // - Customer service fee goes to Foodo directly; not deducted from restaurant
   // - Legacy orders (no service_fee in meta): deduct service charge from restaurant instead
   const restaurantCreditKobo = customerPaidServiceFee
-    ? subtotalKobo + vatKobo + restaurantDeliveryShare - merchantChargeKobo
-    : subtotalKobo + vatKobo + restaurantDeliveryShare - serviceChargeKobo - merchantChargeKobo;
+    ? subtotalKobo + vatKobo - merchantChargeKobo
+    : subtotalKobo + vatKobo - serviceChargeKobo - merchantChargeKobo;
 
   const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
 
@@ -336,7 +326,7 @@ export async function POST(request: NextRequest) {
       amount_kobo: restaurantCreditKobo,
       status: "pending",
       available_at: availableAt,
-      description: `Order #${order.order_number} — net revenue (subtotal${vatKobo > 0 ? ' + VAT' : ''}${restaurantDeliveryShare > 0 ? ' + delivery share' : ''})`,
+      description: `Order #${order.order_number} — net revenue (subtotal${vatKobo > 0 ? ' + VAT' : ''})`,
     },
     // Service charge debit (only when merchant bears the fee in legacy orders)
     ...(customerPaidServiceFee
@@ -352,20 +342,9 @@ export async function POST(request: NextRequest) {
             description: `Platform fee (${(Number(pct) * 100).toFixed(1)}% + ₦${(Number(fixedFee) / 100).toFixed(0)} fixed) on Order #${order.order_number}`,
           },
         ]),
-    // Foodo's delivery fee cut
-    ...(foodoDeliveryCut > 0
-      ? [
-          {
-            restaurant_id: restaurantId,
-            order_id: order.id,
-            type: "logistics_fee",
-            direction: "debit",
-            amount_kobo: foodoDeliveryCut,
-            status: "settled",
-            description: `Delivery fee${foodoHandlesDelivery ? '' : ' commission (10%)'} — Order #${order.order_number}`,
-          },
-        ]
-      : []),
+    // NOTE: logistics_fee (delivery fee split) is NOT created here.
+    // It is deferred to the dispatch route, which writes it once the merchant
+    // picks the dispatch type (platform_rider vs own_rider) for this order.
     // Merchant's share of payment processing (% of total Paystack amount)
     ...(merchantChargeKobo > 0
       ? [
