@@ -53,6 +53,7 @@ type OrderRow = {
   delivery_fee_kobo: number;
   service_fee_kobo: number;
   vat_kobo: number;
+  total_kobo: number;
   settlement_id: string | null;
   dispatch_type: string | null;
   fulfillment_type: string;
@@ -74,6 +75,33 @@ function toWATDate(iso: string): string {
   const d = new Date(iso);
   const wat = new Date(d.getTime() + 60 * 60 * 1000);
   return wat.toISOString().slice(0, 10);
+}
+
+/** Total the customer was charged (what Paystack received). */
+function paystackTotal(o: OrderRow): number {
+  return (
+    o.total_kobo ||
+    (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0)
+  );
+}
+
+/**
+ * Foodo's slice of the delivery fee, dispatch-aware:
+ *   - platform_rider → Foodo provided the rider, keeps 100% of the fee
+ *   - own_rider / third_party → restaurant delivered, Foodo keeps the configured % commission
+ *   - null → un-dispatched, no commission yet
+ *
+ * Mirrors the per-order logic in settlements-client.tsx so the daily blocks
+ * here equal the sum of "Merchant Net" in the per-order breakdown.
+ */
+function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
+  const fee = o.delivery_fee_kobo ?? 0;
+  if (fee === 0) return 0;
+  if (o.dispatch_type === "platform_rider") return fee;
+  if (o.dispatch_type === "own_rider" || o.dispatch_type === "third_party") {
+    return Math.round(fee * defaultPct);
+  }
+  return 0;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -110,19 +138,17 @@ export function MerchantSettlementDetailClient({
 
   const totals = useMemo(() => {
     let grossRevenue = 0;
-    let totalDeliveryFees = 0;
     let totalMerchantCharge = 0;
+    let totalCommissions = 0;
     let unsettledCount = 0;
 
     for (const o of orders) {
-      const orderTotal = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0);
       grossRevenue += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-      totalDeliveryFees += o.delivery_fee_kobo ?? 0;
-      totalMerchantCharge += Math.round(orderTotal * merchantChargePct);
+      totalMerchantCharge += Math.round(paystackTotal(o) * merchantChargePct);
+      totalCommissions += deliveryCommissionFor(o, deliveryCommissionPct);
       if (!o.settlement_id) unsettledCount++;
     }
 
-    const totalCommissions = Math.round(totalDeliveryFees * deliveryCommissionPct);
     const totalFoodoFees = totalMerchantCharge + totalCommissions;
 
     const totalPaid = settlements
@@ -144,16 +170,16 @@ export function MerchantSettlementDetailClient({
     return Object.entries(groups)
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([date, dayOrders]) => {
+        // Sum per-order values so the daily Net Payout equals the sum of the
+        // per-order "Merchant Net" column on the parent settlement page.
         let gross = 0;
-        let deliveryTotal = 0;
         let merchantCharge = 0;
+        let commission = 0;
         for (const o of dayOrders) {
-          const orderTotal = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0);
           gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-          deliveryTotal += o.delivery_fee_kobo ?? 0;
-          merchantCharge += Math.round(orderTotal * merchantChargePct);
+          merchantCharge += Math.round(paystackTotal(o) * merchantChargePct);
+          commission += deliveryCommissionFor(o, deliveryCommissionPct);
         }
-        const commission = Math.round(deliveryTotal * deliveryCommissionPct);
         const net = gross - merchantCharge - commission;
         const allSettled = dayOrders.every((o) => o.settlement_id != null);
         const hasUnsettled = dayOrders.some((o) => o.settlement_id == null);

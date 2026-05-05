@@ -59,8 +59,10 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
         delivery_fee_kobo,
         service_fee_kobo,
         vat_kobo,
+        total_kobo,
         settlement_id,
         fulfillment_type,
+        dispatch_type,
         status,
         created_at,
         delivery_assignments (dispatch_type)
@@ -79,13 +81,18 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
       .single(),
   ]);
 
-  // Normalize orders with dispatch_type
+  // Resolve dispatch_type. Order of preference (matches settlements-client):
+  //   1. orders.dispatch_type (set by the dispatch route — source of truth)
+  //   2. delivery_assignments.dispatch_type (legacy / fallback)
+  //   3. restaurant.logistics_default
+  //   4. null → un-dispatched delivery order
   const normalizedOrders = (orders ?? []).map((o: Record<string, unknown>) => {
     const assignments = o.delivery_assignments as Array<{ dispatch_type: string }> | null;
     const dispatch_type =
-      assignments && assignments.length > 0
-        ? assignments[0].dispatch_type
-        : restaurant.logistics_default ?? null;
+      (o.dispatch_type as string | null) ??
+      (assignments && assignments.length > 0 ? assignments[0].dispatch_type : null) ??
+      restaurant.logistics_default ??
+      null;
 
     return {
       id: o.id as string,
@@ -94,6 +101,7 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
       delivery_fee_kobo: (o.delivery_fee_kobo as number) ?? 0,
       service_fee_kobo: (o.service_fee_kobo as number) ?? 0,
       vat_kobo: (o.vat_kobo as number) ?? 0,
+      total_kobo: (o.total_kobo as number) ?? 0,
       settlement_id: (o.settlement_id as string) ?? null,
       dispatch_type,
       fulfillment_type: o.fulfillment_type as string,
