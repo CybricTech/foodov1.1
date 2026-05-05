@@ -51,6 +51,10 @@ export default function CheckoutPage() {
   const [serviceChargeFixedKobo, setServiceChargeFixedKobo] = useState(0);
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
     fetch("/api/checkout/service-fee")
       .then((r) => r.json())
       .then((d) => {
