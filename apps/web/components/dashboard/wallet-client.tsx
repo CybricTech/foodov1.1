@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { formatKobo } from "@foodo/utils";
-import { Clock, TrendingUp, ArrowDownCircle, X, ChevronRight } from "lucide-react";
+import { Clock, ShoppingBag, ArrowDownCircle, BarChart2, X, ChevronRight } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -141,7 +141,7 @@ export function WalletClient({
   // Compute all monetary stats from orders using the same formula as the admin settlement page.
   // This guarantees wallet and admin are always consistent, regardless of what was stored in
   // wallet_transactions or settlements.amount_kobo at the time of recording.
-  const { netBySettlement, totalEarned, pendingBalance, totalWithdrawn } = useMemo(() => {
+  const { netBySettlement, pendingBalance, totalWithdrawn, totalOrders, avgOrderNet } = useMemo(() => {
     const map: Record<string, number> = {};
     let totalEarned = 0;
     let pendingBalance = 0;
@@ -161,7 +161,8 @@ export function WalletClient({
       .filter((s) => s.status === "paid")
       .reduce((sum, s) => sum + (map[s.id] ?? s.amount_kobo), 0);
 
-    return { netBySettlement: map, totalEarned, pendingBalance, totalWithdrawn };
+    const avgOrderNet = orders.length > 0 ? Math.round(totalEarned / orders.length) : 0;
+    return { netBySettlement: map, pendingBalance, totalWithdrawn, totalOrders: orders.length, avgOrderNet };
   }, [orders, settlements, merchantChargePct, deliveryCommissionPct]);
 
   // Group orders by settlement_id for the detail modal
@@ -216,7 +217,7 @@ export function WalletClient({
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-3 px-4 md:px-0 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-4 md:px-0 mb-6">
         <StatCard
           icon={<Clock className="w-4 h-4 text-dixie-500" />}
           label="Awaiting Payout"
@@ -232,11 +233,18 @@ export function WalletClient({
           color="bg-purple-50 border-purple-100"
         />
         <StatCard
-          icon={<TrendingUp className="w-4 h-4 text-black-400" />}
-          label="Total Earned"
-          value={formatKobo(totalEarned)}
-          sub="Lifetime earnings"
+          icon={<ShoppingBag className="w-4 h-4 text-black-400" />}
+          label="Total Orders"
+          value={totalOrders.toLocaleString()}
+          sub="All time"
           color="bg-black-50 border-black-100"
+        />
+        <StatCard
+          icon={<BarChart2 className="w-4 h-4 text-viridian-500" />}
+          label="Avg Order Value"
+          value={formatKobo(avgOrderNet)}
+          sub="Net per order"
+          color="bg-viridian-50 border-viridian-100"
         />
       </div>
 
