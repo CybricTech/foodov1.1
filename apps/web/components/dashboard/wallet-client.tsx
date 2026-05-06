@@ -67,10 +67,6 @@ interface WalletClientProps {
 /*  Fee helpers — mirrors merchant-settlement-detail-client exactly     */
 /* ------------------------------------------------------------------ */
 
-function paystackTotal(o: OrderRow): number {
-  return o.total_kobo || (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0);
-}
-
 function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
   const fee = o.delivery_fee_kobo ?? 0;
   if (fee === 0) return 0;
@@ -148,7 +144,7 @@ export function WalletClient({
 
     for (const o of orders) {
       const gross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-      const merchantCharge = Math.round(paystackTotal(o) * merchantChargePct);
+      const merchantCharge = Math.round(gross * merchantChargePct);
       const deliveryFees = deliveryCommissionFor(o, deliveryCommissionPct);
       const net = gross - merchantCharge - deliveryFees;
 
@@ -157,9 +153,13 @@ export function WalletClient({
       else map[o.settlement_id] = (map[o.settlement_id] ?? 0) + net;
     }
 
+    // Use the stored settlement amount (what was actually transferred), not the
+    // amount re-derived from orders with today's fee rates. The two diverge
+    // whenever fee percentages change between when a settlement was recorded and
+    // now — and using stored amounts keeps this number consistent with admin.
     const totalWithdrawn = settlements
       .filter((s) => s.status === "paid")
-      .reduce((sum, s) => sum + (map[s.id] ?? s.amount_kobo), 0);
+      .reduce((sum, s) => sum + s.amount_kobo, 0);
 
     const avgOrderNet = orders.length > 0 ? Math.round(totalEarned / orders.length) : 0;
     return { netBySettlement: map, pendingBalance, totalWithdrawn, totalOrders: orders.length, avgOrderNet };
@@ -497,8 +497,9 @@ function PayoutDetailModal({
   let merchantChargeTotal = 0;
   let deliveryFeesTotal = 0;
   for (const o of orders) {
-    gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-    merchantChargeTotal += Math.round(paystackTotal(o) * merchantChargePct);
+    const oGrossLocal = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+    gross += oGrossLocal;
+    merchantChargeTotal += Math.round(oGrossLocal * merchantChargePct);
     deliveryFeesTotal += deliveryCommissionFor(o, deliveryCommissionPct);
   }
   // Fall back to settlement's stored gross if orders aren't available
@@ -579,7 +580,7 @@ function PayoutDetailModal({
               <div className="space-y-2">
                 {orders.map((o) => {
                   const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-                  const oMC = Math.round(paystackTotal(o) * merchantChargePct);
+                  const oMC = Math.round(oGross * merchantChargePct);
                   const oDC = deliveryCommissionFor(o, deliveryCommissionPct);
                   const oNet = oGross - oMC - oDC;
                   return (
@@ -598,7 +599,7 @@ function PayoutDetailModal({
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-sm font-bold text-black-900">{formatKobo(oNet)}</p>
-                        <p className="text-[10px] text-black-400">of {formatKobo(o.total_kobo)}</p>
+                        <p className="text-[10px] text-black-400">of {formatKobo(oGross)}</p>
                       </div>
                     </div>
                   );

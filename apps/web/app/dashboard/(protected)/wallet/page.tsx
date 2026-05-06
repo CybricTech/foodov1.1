@@ -26,7 +26,8 @@ export default async function WalletPage() {
       .order("created_at", { ascending: false })
       .limit(50),
 
-    // Payouts tab: settlement records with full detail
+    // Payouts tab: all settlements — no limit so totalWithdrawn accounts for
+    // every payout, not just the most recent 50
     supabase
       .from("settlements")
       .select(
@@ -37,8 +38,7 @@ export default async function WalletPage() {
          failure_reason, initiated_at, paid_at, created_at`
       )
       .eq("restaurant_id", session.restaurantId)
-      .order("created_at", { ascending: false })
-      .limit(50),
+      .order("created_at", { ascending: false }),
 
     // Orders with dispatch info — same query as admin settlement detail so all
     // stats (earned, pending, paid out) use the exact same formula on both sides

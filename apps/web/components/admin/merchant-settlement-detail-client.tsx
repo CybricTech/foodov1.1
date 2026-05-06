@@ -77,14 +77,6 @@ function toWATDate(iso: string): string {
   return wat.toISOString().slice(0, 10);
 }
 
-/** Total the customer was charged (what Paystack received). */
-function paystackTotal(o: OrderRow): number {
-  return (
-    o.total_kobo ||
-    (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0)
-  );
-}
-
 /**
  * Foodo's slice of the delivery fee, dispatch-aware:
  *   - platform_rider → Foodo provided the rider, keeps 100% of the fee
@@ -143,8 +135,9 @@ export function MerchantSettlementDetailClient({
     let unsettledCount = 0;
 
     for (const o of orders) {
-      grossRevenue += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-      totalMerchantCharge += Math.round(paystackTotal(o) * merchantChargePct);
+      const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+      grossRevenue += oGross;
+      totalMerchantCharge += Math.round(oGross * merchantChargePct);
       totalCommissions += deliveryCommissionFor(o, deliveryCommissionPct);
       if (!o.settlement_id) unsettledCount++;
     }
@@ -181,8 +174,9 @@ export function MerchantSettlementDetailClient({
         let serviceFee = 0;
         let deliveryFees = 0;
         for (const o of dayOrders) {
-          gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-          merchantCharge += Math.round(paystackTotal(o) * merchantChargePct);
+          const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+          gross += oGross;
+          merchantCharge += Math.round(oGross * merchantChargePct);
           serviceFee += o.service_fee_kobo ?? 0;
           deliveryFees += deliveryCommissionFor(o, deliveryCommissionPct);
         }
