@@ -4,6 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
+const TELEGRAM_CHAT_ID = Deno.env.get("TELEGRAM_CHAT_ID");
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -26,11 +28,31 @@ async function sendPushNotification(
   }).catch(console.error);
 }
 
+function sendTelegramAlert(text: string) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML" }),
+  }).catch((e) => console.error("[telegram]", e));
+}
+
 async function dispatchPlatformRider(
-  orderId: string,
-  restaurantId: string,
-  orderNumber: string | number
+  order: {
+    id: string;
+    order_number: string | number;
+    restaurant_id: string;
+    customer_name: string | null;
+    customer_phone: string | null;
+    delivery_address: string | null;
+    total_kobo: number | null;
+    delivery_fee_kobo: number | null;
+    order_items: Array<{ item_name: string; quantity: number }> | null;
+  },
+  restaurantName: string
 ) {
+  const { id: orderId, order_number: orderNumber, restaurant_id: restaurantId } = order;
+
   // Find best available platform rider (lowest active deliveries)
   const { data: rider } = await supabase
     .from("platform_riders")
@@ -67,6 +89,11 @@ async function dispatchPlatformRider(
         }),
       }).catch(console.error);
     }
+
+    sendTelegramAlert(
+      `⚠️ <b>No Rider Available</b>\n\nOrder <b>#${orderNumber}</b> · ${restaurantName}\nCould not find an available platform rider.\nPlease assign manually from the admin portal.`
+    );
+
     return { mode: "platform_rider", assigned: false };
   }
 
@@ -85,7 +112,7 @@ async function dispatchPlatformRider(
     .update({ active_deliveries: rider.active_deliveries + 1 })
     .eq("id", rider.id);
 
-  // Push notification to rider
+  // Push notification to rider (Expo app — currently inactive but kept for future)
   if (rider.expo_push_token) {
     await sendPushNotification(
       rider.expo_push_token,
@@ -94,6 +121,24 @@ async function dispatchPlatformRider(
       { orderId, type: "new_assignment" }
     );
   }
+
+  // Telegram alert — fire-and-forget
+  const items = (order.order_items ?? [])
+    .map((i) => `  • ${i.quantity}× ${i.item_name}`)
+    .join("\n");
+  const totalNaira = order.total_kobo != null ? `₦${(order.total_kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}` : "—";
+  const deliveryNaira = order.delivery_fee_kobo != null ? `₦${(order.delivery_fee_kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}` : "—";
+  const timeWAT = new Date(Date.now() + 60 * 60 * 1000).toLocaleTimeString("en-NG", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+  sendTelegramAlert(
+    `🔔 <b>Rider Request</b>\n\n` +
+    `📦 Order <b>#${orderNumber}</b> · ${restaurantName}\n` +
+    `👤 ${order.customer_name ?? "—"}  |  ${order.customer_phone ?? "—"}\n` +
+    `📍 ${order.delivery_address ?? "—"}\n\n` +
+    (items ? `🛒\n${items}\n\n` : "") +
+    `💰 ${totalNaira} total  ·  ${deliveryNaira} delivery\n` +
+    `⏰ ${timeWAT} WAT`
+  );
 
   return { mode: "platform_rider", assigned: true, riderId: rider.user_id };
 }
@@ -209,10 +254,15 @@ serve(async (req) => {
     );
   }
 
-  // Fetch order + restaurant
+  // Fetch order + restaurant — include customer/delivery fields for Telegram
   const { data: order } = await supabase
     .from("orders")
-    .select("id, order_number, restaurant_id, status")
+    .select(`
+      id, order_number, restaurant_id, status,
+      customer_name, customer_phone, delivery_address,
+      total_kobo, delivery_fee_kobo,
+      order_items (item_name, quantity)
+    `)
     .eq("id", orderId)
     .single();
 
@@ -232,7 +282,7 @@ serve(async (req) => {
 
   const { data: restaurant } = await supabase
     .from("restaurants")
-    .select("logistics_default")
+    .select("logistics_default, name")
     .eq("id", order.restaurant_id)
     .single();
 
@@ -241,11 +291,7 @@ serve(async (req) => {
   let result: Record<string, unknown>;
 
   if (mode === "platform_rider") {
-    result = await dispatchPlatformRider(
-      orderId,
-      order.restaurant_id,
-      order.order_number
-    );
+    result = await dispatchPlatformRider(order, restaurant?.name ?? "Unknown");
   } else if (mode === "own_rider") {
     result = await dispatchOwnRider(orderId, order.restaurant_id);
   } else {
