@@ -124,9 +124,9 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
         </div>
       </nav>
 
-      {/* ── Mobile bottom nav ────────────────────────────────────────────── */}
+      {/* ── Mobile bottom nav — all items except Settings ───────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-black-100 z-30 flex">
-        {NAV_ITEMS.slice(0, 5).map((item) => {
+        {NAV_ITEMS.filter((item) => item.href !== "/dashboard/settings").map((item) => {
           const isActive = item.exact
             ? pathname === item.href
             : pathname.startsWith(item.href);
@@ -136,19 +136,30 @@ export function DashboardNav({ restaurantId: _restaurantId, userName, role: _rol
               key={item.href}
               href={item.href}
               className={cn(
-                "flex-1 flex flex-col items-center justify-center py-3 gap-1 cursor-pointer transition-colors duration-150 relative",
+                "flex-1 flex flex-col items-center justify-center py-3 gap-0.5 cursor-pointer transition-colors duration-150 relative",
                 isActive ? "text-purple-600" : "text-black-400"
               )}
             >
               {isActive && (
-                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-purple-500" />
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full bg-purple-500" />
               )}
-              <Icon size={20} strokeWidth={isActive ? 2.5 : 1.75} />
-              <span className="text-[10px] font-semibold">{item.label}</span>
+              <Icon size={19} strokeWidth={isActive ? 2.5 : 1.75} />
+              <span className="text-[9px] font-semibold">{item.label}</span>
             </Link>
           );
         })}
       </nav>
+
+      {/* ── Floating settings gear — home page only, mobile only ─────────── */}
+      {pathname === "/dashboard" && (
+        <Link
+          href="/dashboard/settings"
+          className="md:hidden fixed bottom-[72px] right-4 z-40 w-11 h-11 bg-white rounded-full shadow-lg border border-black-100 flex items-center justify-center transition-transform active:scale-90"
+          aria-label="Settings"
+        >
+          <Settings size={20} strokeWidth={1.75} className="text-black-500" />
+        </Link>
+      )}
     </>
   );
 }
