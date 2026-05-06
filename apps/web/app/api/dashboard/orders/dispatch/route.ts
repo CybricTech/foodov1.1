@@ -25,13 +25,6 @@ async function sendTelegramRiderAlert(
       .single(),
   ]);
 
-  const items = ((order?.order_items as Array<{ item_name: string; quantity: number }> | null) ?? [])
-    .map((i) => `  • ${i.quantity}× ${i.item_name}`)
-    .join("\n");
-
-  const naira = (kobo: number | null) =>
-    kobo != null ? `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}` : "—";
-
   const text =
     `🔔 <b>New Rider Request</b>\n\n` +
     `Pickup restaurant: ${restaurant?.name ?? "—"}\n` +
