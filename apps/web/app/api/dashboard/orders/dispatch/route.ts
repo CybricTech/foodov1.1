@@ -262,9 +262,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: statusErr.message }, { status: 500 });
   }
 
-  // Telegram notification — fire-and-forget, never blocks the response
+  // Telegram notification — awaited so serverless doesn't kill it on response return
   if (dispatch_type === "platform_rider") {
-    sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number).catch(console.error);
+    await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number).catch(console.error);
   }
 
   return NextResponse.json({ ok: true, status: newStatus, dispatch_type });
