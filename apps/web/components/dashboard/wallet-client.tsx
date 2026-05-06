@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { formatKobo } from "@foodo/utils";
-import { Clock, ShoppingBag, ArrowDownCircle, BarChart2, X, ChevronRight } from "lucide-react";
+import { Clock, X, ChevronRight } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -210,42 +210,103 @@ export function WalletClient({
 
   return (
     <div className="md:p-6 pb-24">
-      {/* Header */}
-      <div className="bg-white md:rounded-2xl border-b md:border border-black-100 px-4 py-4 mb-6">
-        <h1 className="font-bold text-black-900 text-lg">Wallet</h1>
-        <p className="text-xs text-black-400 mt-0.5">Earnings and settlement history</p>
+      <style>{`
+        @keyframes walletFadeUp {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes blobFloat {
+          0%, 100% { transform: translate(0px, 0px) scale(1); }
+          50%       { transform: translate(-10px, -12px) scale(1.04); }
+        }
+        @keyframes blobFloat2 {
+          0%, 100% { transform: translate(0px, 0px) scale(1); }
+          50%       { transform: translate(8px, -8px) scale(1.06); }
+        }
+        @keyframes statFadeUp {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {/* Page label */}
+      <div className="px-4 md:px-0 pt-4 md:pt-0 mb-3">
+        <p className="text-xs font-semibold text-black-400 uppercase tracking-widest">Wallet</p>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-4 md:px-0 mb-6">
-        <StatCard
-          icon={<Clock className="w-4 h-4 text-dixie-500" />}
-          label="Awaiting Payout"
-          value={formatKobo(pendingBalance)}
-          sub="Next settlement"
-          color="bg-dixie-50 border-dixie-100"
+      {/* Balance card — full-bleed on mobile, rounded on desktop */}
+      <div
+        className="mx-4 md:mx-0 mb-4 rounded-3xl overflow-hidden relative"
+        style={{
+          background: "linear-gradient(140deg, #10002B 0%, #3C096C 55%, #7B2CBF 100%)",
+          animation: "walletFadeUp 0.45s cubic-bezier(0.22,1,0.36,1) both",
+        }}
+      >
+        {/* Decorative blobs */}
+        <div
+          className="absolute -top-12 -right-12 w-52 h-52 rounded-full pointer-events-none"
+          style={{ background: "rgba(255,255,255,0.06)", animation: "blobFloat 7s ease-in-out infinite" }}
         />
-        <StatCard
-          icon={<ArrowDownCircle className="w-4 h-4 text-purple-500" />}
-          label="Total Paid Out"
-          value={formatKobo(totalWithdrawn)}
-          sub="Lifetime settlements"
-          color="bg-purple-50 border-purple-100"
+        <div
+          className="absolute -bottom-14 -right-8 w-60 h-60 rounded-full pointer-events-none"
+          style={{ background: "rgba(255,255,255,0.04)", animation: "blobFloat2 9s ease-in-out infinite" }}
         />
-        <StatCard
-          icon={<ShoppingBag className="w-4 h-4 text-black-400" />}
-          label="Total Orders"
-          value={totalOrders.toLocaleString()}
-          sub="All time"
-          color="bg-black-50 border-black-100"
+        <div
+          className="absolute top-1/2 -left-16 w-36 h-36 rounded-full pointer-events-none"
+          style={{ background: "rgba(255,255,255,0.03)", animation: "blobFloat 11s ease-in-out infinite reverse" }}
         />
-        <StatCard
-          icon={<BarChart2 className="w-4 h-4 text-viridian-500" />}
-          label="Avg Order Value"
-          value={formatKobo(avgOrderNet)}
-          sub="Net per order"
-          color="bg-viridian-50 border-viridian-100"
-        />
+
+        <div className="relative px-6 pt-8 pb-7">
+          {/* Label */}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] mb-3" style={{ color: "rgba(255,255,255,0.45)" }}>
+            Expected Payout
+          </p>
+
+          {/* Balance — hero */}
+          <p className="text-5xl font-black text-white tracking-tight leading-none">
+            {formatKobo(pendingBalance)}
+          </p>
+          <p className="text-xs mt-2.5" style={{ color: "rgba(255,255,255,0.38)" }}>
+            Earnings awaiting your next settlement
+          </p>
+
+          {/* Footer row */}
+          <div
+            className="mt-7 pt-4 flex items-center justify-between"
+            style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}
+          >
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-3 h-3 flex-shrink-0" style={{ color: "rgba(255,255,255,0.35)" }} />
+              <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                {totalOrders.toLocaleString()} orders processed
+              </span>
+            </div>
+            <span className="text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.25)" }}>
+              KITCHYN
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Secondary stats — 3 equal columns */}
+      <div className="grid grid-cols-3 gap-2.5 px-4 md:px-0 mb-6">
+        {[
+          { label: "Total Paid Out", value: formatKobo(totalWithdrawn), sub: "Lifetime" },
+          { label: "Total Orders",   value: totalOrders.toLocaleString(), sub: "All time" },
+          { label: "Avg Order",      value: formatKobo(avgOrderNet),      sub: "Net per order" },
+        ].map(({ label, value, sub }, i) => (
+          <div
+            key={label}
+            className="bg-white rounded-2xl border border-black-100 px-3 py-3 text-center"
+            style={{ animation: `statFadeUp 0.35s cubic-bezier(0.22,1,0.36,1) ${0.1 + i * 0.06}s both` }}
+          >
+            <p className="text-[10px] font-semibold text-black-400 uppercase tracking-wide leading-none mb-1.5 truncate">
+              {label}
+            </p>
+            <p className="text-sm font-extrabold text-black-900 leading-none truncate">{value}</p>
+            <p className="text-[10px] text-black-400 mt-1 truncate">{sub}</p>
+          </div>
+        ))}
       </div>
 
       {/* Tabs + content */}
@@ -554,23 +615,6 @@ function PayoutDetailModal({
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                      */
 /* ------------------------------------------------------------------ */
-
-function StatCard({
-  icon, label, value, sub, color,
-}: {
-  icon: React.ReactNode; label: string; value: string; sub: string; color: string;
-}) {
-  return (
-    <div className={`rounded-2xl border px-4 py-4 ${color}`}>
-      <div className="flex items-center gap-2 mb-2">
-        {icon}
-        <p className="text-xs font-semibold text-black-500 uppercase tracking-wide">{label}</p>
-      </div>
-      <p className="text-lg font-extrabold text-black-900 leading-none">{value}</p>
-      <p className="text-xs text-black-400 mt-1">{sub}</p>
-    </div>
-  );
-}
 
 function TxnStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
