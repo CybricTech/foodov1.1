@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clearing session...</title>
+  <style>
+    body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f9fafb; }
+    .card { background: white; border-radius: 12px; padding: 32px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08); max-width: 360px; }
+    h2 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 24px; color: #6b7280; font-size: 14px; }
+    a { display: inline-block; padding: 10px 24px; background: #111; color: white; text-decoration: none; border-radius: 8px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Session cleared</h2>
+    <p>Your browser session has been reset. You can now reload the page.</p>
+    <a id="back" href="/">Go back</a>
+  </div>
+  <script>
+    // Clear all Supabase auth cookies for this domain
+    document.cookie.split(";").forEach(function(c) {
+      var name = c.trim().split("=")[0];
+      if (name.startsWith("sb-")) {
+        document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+      }
+    });
+
+    // If a ?to= param was passed, use it as the back link
+    var to = new URLSearchParams(location.search).get("to");
+    if (to) document.getElementById("back").href = to;
+  </script>
+</body>
+</html>

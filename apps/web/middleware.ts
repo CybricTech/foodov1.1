@@ -149,6 +149,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Clear poisoned cookies on all routes (including storefront) so a stale
+  // Supabase session on *.kitchyn.app doesn't keep sending large cookie headers
+  // that trigger Vercel's WAF — the root cause of the recurring storefront 403.
+  clearPoisonedAuthCookies(supabaseResponse);
   return supabaseResponse;
 }
 
