@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { formatKobo } from "@foodo/utils";
-import { Clock, TrendingUp, ArrowDownCircle } from "lucide-react";
+import { Clock, TrendingUp, ArrowDownCircle, X, ChevronRight } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -57,8 +57,6 @@ type ActiveTab = "activity" | "payouts";
 
 interface WalletClientProps {
   restaurantId: string;
-  pendingBalanceKobo: number;
-  totalEarnedKobo: number;
   transactions: TxnRow[];
   settlements: SettlementRow[];
   orders: OrderRow[];
@@ -129,8 +127,6 @@ function extractBankRef(bankRef: string | null, paystackRef: string | null): str
 
 export function WalletClient({
   restaurantId: _restaurantId,
-  pendingBalanceKobo,
-  totalEarnedKobo,
   transactions,
   settlements,
   orders,
@@ -138,26 +134,49 @@ export function WalletClient({
 }: WalletClientProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("activity");
   const [exporting, setExporting] = useState(false);
+  const [selectedSettlement, setSelectedSettlement] = useState<SettlementRow | null>(null);
 
   const { merchantChargePct, deliveryCommissionPct } = platformSettings;
 
-  // Compute net payout per settlement from orders — same formula as admin settlement page.
-  // This ensures the wallet shows the exact same amounts as the admin's Daily Settlement Blocks.
-  const { netBySettlement, totalWithdrawn } = useMemo(() => {
+  // Compute all monetary stats from orders using the same formula as the admin settlement page.
+  // This guarantees wallet and admin are always consistent, regardless of what was stored in
+  // wallet_transactions or settlements.amount_kobo at the time of recording.
+  const { netBySettlement, totalEarned, pendingBalance, totalWithdrawn } = useMemo(() => {
     const map: Record<string, number> = {};
+    let totalEarned = 0;
+    let pendingBalance = 0;
+
     for (const o of orders) {
-      if (!o.settlement_id) continue;
       const gross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
       const merchantCharge = Math.round(paystackTotal(o) * merchantChargePct);
       const deliveryFees = deliveryCommissionFor(o, deliveryCommissionPct);
       const net = gross - merchantCharge - deliveryFees;
-      map[o.settlement_id] = (map[o.settlement_id] ?? 0) + net;
+
+      totalEarned += net;
+      if (!o.settlement_id) pendingBalance += net;
+      else map[o.settlement_id] = (map[o.settlement_id] ?? 0) + net;
     }
+
     const totalWithdrawn = settlements
       .filter((s) => s.status === "paid")
       .reduce((sum, s) => sum + (map[s.id] ?? s.amount_kobo), 0);
-    return { netBySettlement: map, totalWithdrawn };
+
+    return { netBySettlement: map, totalEarned, pendingBalance, totalWithdrawn };
   }, [orders, settlements, merchantChargePct, deliveryCommissionPct]);
+
+  // Group orders by settlement_id for the detail modal
+  const ordersBySettlement = useMemo(() => {
+    const map: Record<string, OrderRow[]> = {};
+    for (const o of orders) {
+      if (!o.settlement_id) continue;
+      if (!map[o.settlement_id]) map[o.settlement_id] = [];
+      map[o.settlement_id].push(o);
+    }
+    for (const id of Object.keys(map)) {
+      map[id].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+    return map;
+  }, [orders]);
 
   const activityItems = transactions.filter((t) => t.type === "order_credit");
   const activityGroups = groupByDate(activityItems);
@@ -201,7 +220,7 @@ export function WalletClient({
         <StatCard
           icon={<Clock className="w-4 h-4 text-dixie-500" />}
           label="Awaiting Payout"
-          value={formatKobo(pendingBalanceKobo)}
+          value={formatKobo(pendingBalance)}
           sub="Next settlement"
           color="bg-dixie-50 border-dixie-100"
         />
@@ -215,7 +234,7 @@ export function WalletClient({
         <StatCard
           icon={<TrendingUp className="w-4 h-4 text-black-400" />}
           label="Total Earned"
-          value={formatKobo(totalEarnedKobo)}
+          value={formatKobo(totalEarned)}
           sub="Lifetime earnings"
           color="bg-black-50 border-black-100"
         />
@@ -290,6 +309,7 @@ export function WalletClient({
                           key={s.id}
                           settlement={s}
                           computedNet={netBySettlement[s.id] ?? s.amount_kobo}
+                          onClick={() => setSelectedSettlement(s)}
                         />
                       ))}
                     </div>
@@ -300,6 +320,17 @@ export function WalletClient({
           </div>
         )}
       </div>
+
+      {selectedSettlement && (
+        <PayoutDetailModal
+          settlement={selectedSettlement}
+          computedNet={netBySettlement[selectedSettlement.id] ?? selectedSettlement.amount_kobo}
+          orders={ordersBySettlement[selectedSettlement.id] ?? []}
+          merchantChargePct={merchantChargePct}
+          deliveryCommissionPct={deliveryCommissionPct}
+          onClose={() => setSelectedSettlement(null)}
+        />
+      )}
     </div>
   );
 }
@@ -333,9 +364,11 @@ function ActivityRow({ txn }: { txn: TxnRow }) {
 function SettlementPayoutRow({
   settlement,
   computedNet,
+  onClick,
 }: {
   settlement: SettlementRow;
   computedNet: number;
+  onClick?: () => void;
 }) {
   const ref = extractBankRef(settlement.bank_reference, settlement.paystack_transfer_ref);
   const date = new Date(settlement.initiated_at || settlement.created_at).toLocaleDateString("en-NG", {
@@ -343,7 +376,10 @@ function SettlementPayoutRow({
   });
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-black-25 transition-colors"
+    >
       <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0">
         <BankIcon />
       </div>
@@ -362,6 +398,146 @@ function SettlementPayoutRow({
       <div className="text-right flex-shrink-0 space-y-1">
         <p className="text-sm font-bold text-black-900">-{formatKobo(computedNet)}</p>
         <SettlementStatusBadge status={settlement.status} />
+      </div>
+      <ChevronRight size={16} className="text-black-300 flex-shrink-0" />
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Payout Detail Modal                                                 */
+/* ------------------------------------------------------------------ */
+
+function PayoutDetailModal({
+  settlement,
+  computedNet,
+  orders,
+  merchantChargePct,
+  deliveryCommissionPct,
+  onClose,
+}: {
+  settlement: SettlementRow;
+  computedNet: number;
+  orders: OrderRow[];
+  merchantChargePct: number;
+  deliveryCommissionPct: number;
+  onClose: () => void;
+}) {
+  // Recompute totals from orders for the breakdown
+  let gross = 0;
+  let merchantChargeTotal = 0;
+  let deliveryFeesTotal = 0;
+  for (const o of orders) {
+    gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+    merchantChargeTotal += Math.round(paystackTotal(o) * merchantChargePct);
+    deliveryFeesTotal += deliveryCommissionFor(o, deliveryCommissionPct);
+  }
+  // Fall back to settlement's stored gross if orders aren't available
+  if (orders.length === 0) gross = settlement.gross_total_kobo;
+
+  const dateLabel = new Date(settlement.created_at).toLocaleDateString("en-NG", {
+    weekday: "short", day: "numeric", month: "short", year: "numeric",
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-t-2xl md:rounded-2xl border border-black-200 w-full md:max-w-lg md:mx-4 max-h-[85vh] flex flex-col shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-black-100 flex-shrink-0">
+          <div>
+            <h3 className="font-bold text-black-900">Payout Details</h3>
+            <p className="text-xs text-black-400 mt-0.5">{dateLabel}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black-100 transition-colors">
+            <X size={18} className="text-black-400" />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto px-5 py-4 space-y-5">
+          {/* Amount + status */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-black-400">Net Payout</p>
+              <p className="text-2xl font-extrabold text-black-900">{formatKobo(computedNet)}</p>
+            </div>
+            <SettlementStatusBadge status={settlement.status} />
+          </div>
+
+          {/* Breakdown */}
+          {orders.length > 0 && (
+            <div className="bg-black-50 rounded-xl px-4 py-3 space-y-2 text-sm">
+              <div className="flex justify-between text-black-600">
+                <span>Gross Total</span>
+                <span className="tabular-nums font-medium">{formatKobo(gross)}</span>
+              </div>
+              <div className="flex justify-between text-purple-600">
+                <span>− Merchant Charge</span>
+                <span className="tabular-nums">({formatKobo(merchantChargeTotal)})</span>
+              </div>
+              <div className="flex justify-between text-purple-600">
+                <span>− Delivery Fees</span>
+                <span className="tabular-nums">({formatKobo(deliveryFeesTotal)})</span>
+              </div>
+              <div className="border-t border-black-200 pt-2 flex justify-between font-bold text-black-900">
+                <span>= Net Payout</span>
+                <span className="tabular-nums">{formatKobo(computedNet)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Reference */}
+          {(settlement.bank_reference || settlement.paystack_transfer_ref) && (
+            <div className="text-sm text-black-500">
+              Ref: <span className="font-medium text-black-700">{settlement.bank_reference ?? settlement.paystack_transfer_ref}</span>
+            </div>
+          )}
+
+          {/* Orders list */}
+          <div>
+            <p className="text-xs font-semibold text-black-400 uppercase tracking-wide mb-2">
+              Orders in this payout ({orders.length})
+            </p>
+            {orders.length === 0 ? (
+              <p className="text-sm text-black-400">No order details available.</p>
+            ) : (
+              <div className="space-y-2">
+                {orders.map((o) => {
+                  const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+                  const oMC = Math.round(paystackTotal(o) * merchantChargePct);
+                  const oDC = deliveryCommissionFor(o, deliveryCommissionPct);
+                  const oNet = oGross - oMC - oDC;
+                  return (
+                    <div
+                      key={o.id}
+                      className="flex items-center justify-between bg-white border border-black-100 rounded-xl px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-black-900">{o.order_number}</p>
+                        <p className="text-xs text-black-400">
+                          {new Date(o.created_at).toLocaleDateString("en-NG", {
+                            day: "numeric", month: "short",
+                            hour: "2-digit", minute: "2-digit",
+                          })}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-sm font-bold text-black-900">{formatKobo(oNet)}</p>
+                        <p className="text-[10px] text-black-400">of {formatKobo(o.total_kobo)}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

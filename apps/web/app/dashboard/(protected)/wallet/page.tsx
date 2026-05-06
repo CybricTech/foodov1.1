@@ -14,8 +14,6 @@ export default async function WalletPage() {
   const [
     { data: transactions },
     { data: settlements },
-    { data: allCredits },
-    { data: pendingCredits },
     { data: orders },
     { data: platformSettings },
     { data: restaurant },
@@ -42,23 +40,8 @@ export default async function WalletPage() {
       .order("created_at", { ascending: false })
       .limit(50),
 
-    // Total Earned: sum of all order_credit transactions (lifetime net credited)
-    supabase
-      .from("wallet_transactions")
-      .select("amount_kobo")
-      .eq("restaurant_id", session.restaurantId)
-      .eq("type", "order_credit"),
-
-    // Awaiting Payout: order_credit txns not yet settled
-    supabase
-      .from("wallet_transactions")
-      .select("amount_kobo")
-      .eq("restaurant_id", session.restaurantId)
-      .eq("type", "order_credit")
-      .neq("status", "settled"),
-
-    // Orders with dispatch info — same query as admin settlement detail so
-    // per-settlement net payout is computed identically on both sides
+    // Orders with dispatch info — same query as admin settlement detail so all
+    // stats (earned, pending, paid out) use the exact same formula on both sides
     supabase
       .from("orders")
       .select(
@@ -85,12 +68,6 @@ export default async function WalletPage() {
       .eq("id", session.restaurantId)
       .single(),
   ]);
-
-  const sumKobo = (rows: Array<{ amount_kobo: number }> | null) =>
-    (rows ?? []).reduce((s, r) => s + (r.amount_kobo ?? 0), 0);
-
-  const totalEarnedKobo = sumKobo(allCredits);
-  const pendingBalanceKobo = sumKobo(pendingCredits);
 
   // Resolve dispatch_type with same priority as admin settlement detail
   const normalizedOrders = (orders ?? []).map((o: Record<string, unknown>) => {
@@ -120,8 +97,6 @@ export default async function WalletPage() {
   return (
     <WalletClient
       restaurantId={session.restaurantId}
-      pendingBalanceKobo={pendingBalanceKobo}
-      totalEarnedKobo={totalEarnedKobo}
       transactions={transactions ?? []}
       settlements={settlements ?? []}
       orders={normalizedOrders}
