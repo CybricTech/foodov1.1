@@ -157,22 +157,27 @@ export function OrderQueueClient({
   async function updateStatus(orderId: string, newStatus: string) {
     setActionLoading(orderId);
     setActionError(null);
+    const previous = orders.find((x) => x.id === orderId)?.status;
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status: newStatus as OrderRow["status"] } : o))
     );
-    const { error } = await supabase
-      .from("orders")
-      .update({ status: newStatus as OrderRow["status"] })
-      .eq("id", orderId);
-    if (error) {
+    try {
+      const res = await fetch("/api/dashboard/orders/update-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, status: newStatus }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to update status");
+      }
+    } catch (err) {
       setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? { ...o, status: orders.find((x) => x.id === orderId)?.status ?? o.status }
-            : o
-        )
+        prev.map((o) => (o.id === orderId ? { ...o, status: previous ?? o.status } : o))
       );
-      setActionError("Failed to update order status. Please try again.");
+      setActionError(
+        err instanceof Error ? err.message : "Failed to update order status. Please try again."
+      );
     }
     setActionLoading(null);
   }
@@ -441,13 +446,19 @@ function OrderCard({
   const [showCancel, setShowCancel] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
 
+  // Once a Foodo platform rider has the order, completion is handled exclusively
+  // from the admin riders page. The merchant sees a status pill, not an action.
+  const platformRiderHandling =
+    order.dispatch_type === "platform_rider" &&
+    (order.status === "assigned_to_rider" || order.status === "in_transit");
+
   const nextStatus: Record<string, string | null> = {
     pending:           "confirmed",
     confirmed:         "preparing",
     preparing:         "ready_for_pickup",
     // ready_for_pickup is handled by the delivery choice UI for delivery orders
     ready_for_pickup:  "in_transit",
-    assigned_to_rider: "in_transit",
+    assigned_to_rider: null,
     in_transit:        "delivered",
     delivered:         null,
     cancelled:         null,
@@ -458,11 +469,10 @@ function OrderCard({
     confirmed:         "Start Preparing",
     preparing:         "Mark Ready",
     ready_for_pickup:  "Customer Collected",   // only shown for pickup orders
-    assigned_to_rider: "Mark Delivered",
     in_transit:        "Mark Delivered",
   };
 
-  const next = nextStatus[order.status];
+  const next = platformRiderHandling ? null : nextStatus[order.status];
   const canCancel = ["pending", "confirmed"].includes(order.status);
 
   // Show delivery method picker instead of the normal action button for delivery
@@ -654,8 +664,23 @@ function OrderCard({
             </div>
           )}
 
+          {/* ── Platform-rider handover indicator ── */}
+          {platformRiderHandling && !showCancel && (
+            <div className="px-4 py-3">
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-purple-50 border border-purple-100 text-purple-700">
+                <Radio size={14} className="flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs font-bold leading-tight">Kitchyn rider handling delivery</p>
+                  <p className="text-[11px] text-purple-500 mt-0.5 leading-snug">
+                    Order will be marked delivered as soon as customer collects order.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Normal action buttons (non-delivery-choice states) ── */}
-          {!needsDeliveryChoice && (next || canCancel) && !showCancel && (
+          {!platformRiderHandling && !needsDeliveryChoice && (next || canCancel) && !showCancel && (
             <div className="px-4 py-3 flex gap-2">
               {next && (
                 <button

@@ -74,6 +74,34 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Look up the order so we can enforce the platform-rider rule:
+  // once an order is being handled by a Foodo platform rider, only the admin
+  // riders page may complete it. Merchants can manage everything else.
+  const { data: order, error: lookupError } = await serviceClient
+    .from("orders")
+    .select("id, dispatch_type, status")
+    .eq("id", orderId)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (lookupError || !order) {
+    return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+
+  const PLATFORM_RIDER_LOCKED_TARGETS = new Set(["in_transit", "delivered", "completed"]);
+  if (
+    order.dispatch_type === "platform_rider" &&
+    PLATFORM_RIDER_LOCKED_TARGETS.has(status)
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "This order is assigned to a Foodo platform rider. Only the admin riders page can mark it delivered.",
+      },
+      { status: 403 }
+    );
+  }
+
   // Update the order — only allow updating orders that belong to this restaurant
   const { error: updateError } = await serviceClient
     .from("orders")

@@ -191,7 +191,7 @@ export function FrontlineOrdersClient({
         id, order_number, status, payment_status, fulfillment_type,
         customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
         vat_kobo, service_fee_kobo, total_kobo, created_at,
-        special_instructions, delivery_address,
+        special_instructions, delivery_address, dispatch_type,
         order_items (id, item_name, quantity, line_total_kobo, selected_options)
       `
       )
@@ -916,7 +916,7 @@ function FrontlineOrderCard({
                   {loading ? "Updating…" : "Mark Collected"}
                 </button>
               )}
-              {order.status === "in_transit" && (
+              {order.status === "in_transit" && order.dispatch_type !== "platform_rider" && (
                 <button
                   onClick={() => onUpdateStatus(order.id, "delivered")}
                   disabled={loading}
@@ -925,9 +925,10 @@ function FrontlineOrderCard({
                   {loading ? "Updating…" : "Mark Delivered"}
                 </button>
               )}
-              {order.status === "assigned_to_rider" && (
+              {(order.status === "assigned_to_rider" ||
+                (order.status === "in_transit" && order.dispatch_type === "platform_rider")) && (
                 <span className="flex-1 text-center text-xs text-purple-600 font-semibold py-2 bg-purple-50 rounded-lg">
-                  Rider assigned
+                  Kitchyn rider handling
                 </span>
               )}
             </>
