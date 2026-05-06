@@ -15,7 +15,7 @@ async function sendTelegramRiderAlert(
   const [{ data: order }, { data: restaurant }] = await Promise.all([
     supabase
       .from("orders")
-      .select("customer_name, customer_phone, delivery_address, total_kobo, order_items(item_name, quantity)")
+      .select("customer_name, customer_phone, delivery_address")
       .eq("id", orderId)
       .single(),
     supabase
