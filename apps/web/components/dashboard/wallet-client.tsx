@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { formatKobo } from "@foodo/utils";
 import { Clock, TrendingUp, ArrowDownCircle } from "lucide-react";
 
@@ -24,12 +24,32 @@ type SettlementRow = {
   id: string;
   amount_kobo: number;
   status: string;
+  settlement_type: string;
+  bank_reference: string | null;
+  receipt_url: string | null;
+  period_date: string | null;
+  order_count: number;
+  gross_total_kobo: number;
   paystack_transfer_code: string | null;
   paystack_transfer_ref: string | null;
-  bank_reference: string | null;
   failure_reason: string | null;
   initiated_at: string;
   paid_at: string | null;
+  created_at: string;
+};
+
+type OrderRow = {
+  id: string;
+  order_number: string;
+  subtotal_kobo: number;
+  delivery_fee_kobo: number;
+  service_fee_kobo: number;
+  vat_kobo: number;
+  total_kobo: number;
+  settlement_id: string | null;
+  dispatch_type: string | null;
+  fulfillment_type: string;
+  status: string;
   created_at: string;
 };
 
@@ -39,9 +59,28 @@ interface WalletClientProps {
   restaurantId: string;
   pendingBalanceKobo: number;
   totalEarnedKobo: number;
-  totalWithdrawnKobo: number;
   transactions: TxnRow[];
   settlements: SettlementRow[];
+  orders: OrderRow[];
+  platformSettings: { merchantChargePct: number; deliveryCommissionPct: number };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Fee helpers — mirrors merchant-settlement-detail-client exactly     */
+/* ------------------------------------------------------------------ */
+
+function paystackTotal(o: OrderRow): number {
+  return o.total_kobo || (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0);
+}
+
+function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
+  const fee = o.delivery_fee_kobo ?? 0;
+  if (fee === 0) return 0;
+  if (o.dispatch_type === "platform_rider") return fee;
+  if (o.dispatch_type === "own_rider" || o.dispatch_type === "third_party") {
+    return Math.round(fee * defaultPct);
+  }
+  return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -54,16 +93,10 @@ function formatDateGroup(dateStr: string): string {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
   if (d.getTime() === today.getTime()) return "Today";
   if (d.getTime() === yesterday.getTime()) return "Yesterday";
-  return date.toLocaleDateString("en-NG", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return date.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function groupByDate<T extends { created_at: string }>(items: T[]): Array<{ label: string; items: T[] }> {
@@ -71,16 +104,12 @@ function groupByDate<T extends { created_at: string }>(items: T[]): Array<{ labe
   for (const item of items) {
     const label = formatDateGroup(item.created_at);
     const existing = groups.get(label);
-    if (existing) {
-      existing.push(item);
-    } else {
-      groups.set(label, [item]);
-    }
+    if (existing) existing.push(item);
+    else groups.set(label, [item]);
   }
   return Array.from(groups.entries()).map(([label, items]) => ({ label, items }));
 }
 
-/** Extract order number from description like "Order #BY-1023 — net revenue..." */
 function extractOrderNumber(description: string | null, fallback: string | null): string {
   if (description) {
     const match = description.match(/#([A-Z0-9-]+)/);
@@ -90,15 +119,8 @@ function extractOrderNumber(description: string | null, fallback: string | null)
   return "Order";
 }
 
-/** Extract bank reference from settlement_debit description like "...· Ref: TRF-xxx" */
-function extractBankRef(description: string | null, bankRef: string | null, paystackRef: string | null): string | null {
-  if (bankRef) return bankRef;
-  if (paystackRef) return paystackRef;
-  if (description) {
-    const match = description.match(/Ref:\s*(.+)$/);
-    if (match) return match[1].trim();
-  }
-  return null;
+function extractBankRef(bankRef: string | null, paystackRef: string | null): string | null {
+  return bankRef ?? paystackRef ?? null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -109,26 +131,37 @@ export function WalletClient({
   restaurantId: _restaurantId,
   pendingBalanceKobo,
   totalEarnedKobo,
-  totalWithdrawnKobo,
   transactions,
   settlements,
+  orders,
+  platformSettings,
 }: WalletClientProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("activity");
   const [exporting, setExporting] = useState(false);
 
-  const pendingBalance = pendingBalanceKobo;
-  const totalEarned = totalEarnedKobo;
-  const totalWithdrawn = totalWithdrawnKobo;
+  const { merchantChargePct, deliveryCommissionPct } = platformSettings;
 
-  // Activity tab: only order_credit transactions
+  // Compute net payout per settlement from orders — same formula as admin settlement page.
+  // This ensures the wallet shows the exact same amounts as the admin's Daily Settlement Blocks.
+  const { netBySettlement, totalWithdrawn } = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const o of orders) {
+      if (!o.settlement_id) continue;
+      const gross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+      const merchantCharge = Math.round(paystackTotal(o) * merchantChargePct);
+      const deliveryFees = deliveryCommissionFor(o, deliveryCommissionPct);
+      const net = gross - merchantCharge - deliveryFees;
+      map[o.settlement_id] = (map[o.settlement_id] ?? 0) + net;
+    }
+    const totalWithdrawn = settlements
+      .filter((s) => s.status === "paid")
+      .reduce((sum, s) => sum + (map[s.id] ?? s.amount_kobo), 0);
+    return { netBySettlement: map, totalWithdrawn };
+  }, [orders, settlements, merchantChargePct, deliveryCommissionPct]);
+
   const activityItems = transactions.filter((t) => t.type === "order_credit");
-
-  // Payouts tab: settlement_debit transactions as source of truth (post-bug-fix)
-  // Fall back to showing settlements table rows if no settlement_debit txns exist yet
-  const payoutTxns = transactions.filter((t) => t.type === "settlement_debit");
-
   const activityGroups = groupByDate(activityItems);
-  const payoutGroups = groupByDate(payoutTxns);
+  const payoutGroups = groupByDate(settlements);
 
   async function handleExport() {
     setExporting(true);
@@ -168,7 +201,7 @@ export function WalletClient({
         <StatCard
           icon={<Clock className="w-4 h-4 text-dixie-500" />}
           label="Awaiting Payout"
-          value={formatKobo(pendingBalance)}
+          value={formatKobo(pendingBalanceKobo)}
           sub="Next settlement"
           color="bg-dixie-50 border-dixie-100"
         />
@@ -182,7 +215,7 @@ export function WalletClient({
         <StatCard
           icon={<TrendingUp className="w-4 h-4 text-black-400" />}
           label="Total Earned"
-          value={formatKobo(totalEarned)}
+          value={formatKobo(totalEarnedKobo)}
           sub="Lifetime earnings"
           color="bg-black-50 border-black-100"
         />
@@ -190,7 +223,6 @@ export function WalletClient({
 
       {/* Tabs + content */}
       <div className="px-4 md:px-0">
-        {/* Tab switcher */}
         <div className="flex gap-1 bg-black-100 rounded-xl p-1 w-fit mb-4">
           {(["activity", "payouts"] as const).map((tab) => (
             <button
@@ -219,7 +251,6 @@ export function WalletClient({
                 {exporting ? "Exporting…" : "Export CSV"}
               </button>
             </div>
-
             <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
               {activityItems.length === 0 ? (
                 <p className="text-black-400 text-sm text-center py-10">No earnings yet</p>
@@ -228,14 +259,10 @@ export function WalletClient({
                   {activityGroups.map(({ label, items }) => (
                     <div key={label}>
                       <div className="px-4 py-2 bg-black-50 border-b border-black-100">
-                        <p className="text-xs font-semibold text-black-400 uppercase tracking-wide">
-                          {label}
-                        </p>
+                        <p className="text-xs font-semibold text-black-400 uppercase tracking-wide">{label}</p>
                       </div>
                       <div className="divide-y divide-black-100">
-                        {items.map((t) => (
-                          <ActivityRow key={t.id} txn={t} />
-                        ))}
+                        {items.map((t) => <ActivityRow key={t.id} txn={t} />)}
                       </div>
                     </div>
                   ))}
@@ -245,33 +272,28 @@ export function WalletClient({
           </>
         )}
 
-        {/* Payouts tab */}
+        {/* Payouts tab — settlements table, net computed from orders */}
         {activeTab === "payouts" && (
           <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
-            {payoutTxns.length === 0 && settlements.length === 0 ? (
+            {settlements.length === 0 ? (
               <p className="text-black-400 text-sm text-center py-10">No payouts yet</p>
-            ) : payoutTxns.length > 0 ? (
+            ) : (
               <div>
                 {payoutGroups.map(({ label, items }) => (
                   <div key={label}>
                     <div className="px-4 py-2 bg-black-50 border-b border-black-100">
-                      <p className="text-xs font-semibold text-black-400 uppercase tracking-wide">
-                        {label}
-                      </p>
+                      <p className="text-xs font-semibold text-black-400 uppercase tracking-wide">{label}</p>
                     </div>
                     <div className="divide-y divide-black-100">
-                      {items.map((t) => (
-                        <PayoutRow key={t.id} txn={t} />
+                      {items.map((s) => (
+                        <SettlementPayoutRow
+                          key={s.id}
+                          settlement={s}
+                          computedNet={netBySettlement[s.id] ?? s.amount_kobo}
+                        />
                       ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              /* Fallback: show settlements table rows for pre-bug-fix data */
-              <div className="divide-y divide-black-100">
-                {settlements.map((s) => (
-                  <LegacySettlementRow key={s.id} settlement={s} />
                 ))}
               </div>
             )}
@@ -289,76 +311,35 @@ export function WalletClient({
 function ActivityRow({ txn }: { txn: TxnRow }) {
   const orderLabel = extractOrderNumber(txn.description, txn.order_id);
   const date = new Date(txn.created_at).toLocaleDateString("en-NG", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
-
   return (
     <div className="flex items-center gap-3 px-4 py-3">
-      {/* Icon */}
       <div className="w-9 h-9 rounded-full bg-viridian-50 flex items-center justify-center flex-shrink-0">
         <span className="text-viridian-600 text-sm font-bold">₦</span>
       </div>
-      {/* Text */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-black-900">{orderLabel}</p>
         <p className="text-xs text-black-400 mt-0.5">{date}</p>
       </div>
-      {/* Amount + status */}
       <div className="text-right flex-shrink-0 space-y-1">
-        <p className="text-sm font-bold text-viridian-600">
-          +{formatKobo(txn.amount_kobo)}
-        </p>
+        <p className="text-sm font-bold text-viridian-600">+{formatKobo(txn.amount_kobo)}</p>
         <TxnStatusBadge status={txn.status} />
       </div>
     </div>
   );
 }
 
-function PayoutRow({ txn }: { txn: TxnRow }) {
-  const ref = extractBankRef(txn.description, null, null);
-  const date = new Date(txn.created_at).toLocaleDateString("en-NG", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-
-  return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      {/* Icon */}
-      <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0">
-        <BankIcon />
-      </div>
-      {/* Text */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-black-900">Payout</p>
-        <p className="text-xs text-black-400 mt-0.5">
-          {date}
-          {ref ? ` · ${ref}` : ""}
-        </p>
-      </div>
-      {/* Amount + badge */}
-      <div className="text-right flex-shrink-0 space-y-1">
-        <p className="text-sm font-bold text-black-900">
-          -{formatKobo(txn.amount_kobo)}
-        </p>
-        <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-viridian-100 text-viridian-600">
-          Paid
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function LegacySettlementRow({ settlement }: { settlement: SettlementRow }) {
-  const ref = extractBankRef(null, settlement.bank_reference, settlement.paystack_transfer_ref);
-  const date = new Date(settlement.initiated_at).toLocaleDateString("en-NG", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
+function SettlementPayoutRow({
+  settlement,
+  computedNet,
+}: {
+  settlement: SettlementRow;
+  computedNet: number;
+}) {
+  const ref = extractBankRef(settlement.bank_reference, settlement.paystack_transfer_ref);
+  const date = new Date(settlement.initiated_at || settlement.created_at).toLocaleDateString("en-NG", {
+    day: "numeric", month: "short", year: "numeric",
   });
 
   return (
@@ -370,6 +351,8 @@ function LegacySettlementRow({ settlement }: { settlement: SettlementRow }) {
         <p className="text-sm font-semibold text-black-900">Payout</p>
         <p className="text-xs text-black-400 mt-0.5">
           {date}
+          {settlement.order_count ? ` · ${settlement.order_count} orders` : ""}
+          {settlement.period_date ? ` · ${settlement.period_date}` : ""}
           {ref ? ` · ${ref}` : ""}
         </p>
         {settlement.failure_reason && (
@@ -377,9 +360,7 @@ function LegacySettlementRow({ settlement }: { settlement: SettlementRow }) {
         )}
       </div>
       <div className="text-right flex-shrink-0 space-y-1">
-        <p className="text-sm font-bold text-black-900">
-          -{formatKobo(settlement.amount_kobo)}
-        </p>
+        <p className="text-sm font-bold text-black-900">-{formatKobo(computedNet)}</p>
         <SettlementStatusBadge status={settlement.status} />
       </div>
     </div>
@@ -391,17 +372,9 @@ function LegacySettlementRow({ settlement }: { settlement: SettlementRow }) {
 /* ------------------------------------------------------------------ */
 
 function StatCard({
-  icon,
-  label,
-  value,
-  sub,
-  color,
+  icon, label, value, sub, color,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub: string;
-  color: string;
+  icon: React.ReactNode; label: string; value: string; sub: string; color: string;
 }) {
   return (
     <div className={`rounded-2xl border px-4 py-4 ${color}`}>
@@ -421,17 +394,9 @@ function TxnStatusBadge({ status }: { status: string }) {
     available: "bg-viridian-100 text-viridian-600",
     settled: "bg-black-100 text-black-400",
   };
-  const labels: Record<string, string> = {
-    pending: "Pending",
-    available: "Available",
-    settled: "Paid",
-  };
+  const labels: Record<string, string> = { pending: "Pending", available: "Available", settled: "Paid" };
   return (
-    <span
-      className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${
-        styles[status] ?? "bg-black-100 text-black-400"
-      }`}
-    >
+    <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${styles[status] ?? "bg-black-100 text-black-400"}`}>
       {labels[status] ?? status}
     </span>
   );
@@ -445,17 +410,10 @@ function SettlementStatusBadge({ status }: { status: string }) {
     failed: "bg-cinnabar-100 text-cinnabar-500",
   };
   const labels: Record<string, string> = {
-    pending: "Pending",
-    processing: "Processing",
-    paid: "Paid",
-    failed: "Failed",
+    pending: "Pending", processing: "Processing", paid: "Paid", failed: "Failed",
   };
   return (
-    <span
-      className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full capitalize ${
-        styles[status] ?? "bg-black-100 text-black-400"
-      }`}
-    >
+    <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full capitalize ${styles[status] ?? "bg-black-100 text-black-400"}`}>
       {labels[status] ?? status}
     </span>
   );
