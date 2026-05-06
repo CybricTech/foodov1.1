@@ -120,7 +120,9 @@ export async function middleware(request: NextRequest) {
     const slug = hostname.replace(".kitchyn.app", "");
     if (!pathname.startsWith("/api") && !pathname.startsWith(`/${slug}`)) {
       const rewritePath = pathname === "/" ? `/${slug}` : `/${slug}${pathname}`;
-      return withSessionCookies(NextResponse.rewrite(new URL(rewritePath, request.url)));
+      const rewriteRes = withSessionCookies(NextResponse.rewrite(new URL(rewritePath, request.url)));
+      clearPoisonedAuthCookies(rewriteRes);
+      return rewriteRes;
     }
   }
 
