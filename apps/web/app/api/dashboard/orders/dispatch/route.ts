@@ -33,12 +33,12 @@ async function sendTelegramRiderAlert(
     kobo != null ? `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}` : "—";
 
   const text =
-    `🔔 <b>Rider Request — #${orderNumber}</b>\n\n` +
-    `🏪 <b>Pickup:</b> ${restaurant?.name ?? "—"}\n${restaurant?.address ? `${restaurant.address}\n` : ""}` +
-    `\n📍 <b>Delivery:</b> ${order?.delivery_address ?? "—"}\n` +
-    `👤 ${order?.customer_name ?? "—"}  ·  ${order?.customer_phone ?? "—"}\n` +
-    (items ? `\n🛒\n${items}\n` : "") +
-    `\n💰 ${naira(order?.total_kobo ?? null)}`;
+    `🔔 <b>New Rider Request</b>\n\n` +
+    `Pickup restaurant: ${restaurant?.name ?? "—"}\n` +
+    `Pickup code: #${orderNumber}\n` +
+    `Receivers address: ${order?.delivery_address ?? "—"}\n` +
+    `Receivers phone number: ${order?.customer_phone ?? "—"}\n` +
+    `Receivers name: ${order?.customer_name ?? "—"}`;
 
   await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
