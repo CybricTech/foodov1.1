@@ -1,5 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+async function sendTelegramRiderAlert(
+  supabase: SupabaseClient,
+  orderId: string,
+  restaurantId: string,
+  orderNumber: string | number
+) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+
+  const [{ data: order }, { data: restaurant }] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("customer_name, customer_phone, delivery_address, total_kobo, order_items(item_name, quantity)")
+      .eq("id", orderId)
+      .single(),
+    supabase
+      .from("restaurants")
+      .select("name, address")
+      .eq("id", restaurantId)
+      .single(),
+  ]);
+
+  const items = ((order?.order_items as Array<{ item_name: string; quantity: number }> | null) ?? [])
+    .map((i) => `  • ${i.quantity}× ${i.item_name}`)
+    .join("\n");
+
+  const naira = (kobo: number | null) =>
+    kobo != null ? `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}` : "—";
+
+  const text =
+    `🔔 <b>Rider Request — #${orderNumber}</b>\n\n` +
+    `🏪 <b>Pickup:</b> ${restaurant?.name ?? "—"}\n${restaurant?.address ? `${restaurant.address}\n` : ""}` +
+    `\n📍 <b>Delivery:</b> ${order?.delivery_address ?? "—"}\n` +
+    `👤 ${order?.customer_name ?? "—"}  ·  ${order?.customer_phone ?? "—"}\n` +
+    (items ? `\n🛒\n${items}\n` : "") +
+    `\n💰 ${naira(order?.total_kobo ?? null)}`;
+
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+  });
+}
 
 /**
  * POST /api/dashboard/orders/dispatch
@@ -221,6 +267,11 @@ export async function POST(request: NextRequest) {
 
   if (statusErr) {
     return NextResponse.json({ error: statusErr.message }, { status: 500 });
+  }
+
+  // Telegram notification — fire-and-forget, never blocks the response
+  if (dispatch_type === "platform_rider") {
+    sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number).catch(console.error);
   }
 
   return NextResponse.json({ ok: true, status: newStatus, dispatch_type });
