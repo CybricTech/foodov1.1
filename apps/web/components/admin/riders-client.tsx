@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@foodo/ui";
-import { Bike, MapPin, Phone, Clock, History } from "lucide-react";
+import { Bike, MapPin, Phone, Clock, History, RefreshCw } from "lucide-react";
 import { formatKobo } from "@foodo/utils";
 
 interface DeliveryRow {
@@ -69,12 +70,20 @@ export function RidersClient({
   initialDeliveries: DeliveryRow[];
   initialHistory: HistoryRow[];
 }) {
+  const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
   const [deliveries, setDeliveries] = useState(initialDeliveries);
   const [history, setHistory] = useState(initialHistory);
   const [delivering, setDelivering] = useState<string | null>(null);
   const [deliverError, setDeliverError] = useState<string | null>(null);
   const [markingOrder, setMarkingOrder] = useState<DeliveryRow | null>(null);
   const [costInput, setCostInput] = useState("");
+
+  // Sync local state from server props after a router.refresh()
+  useEffect(() => {
+    setDeliveries(initialDeliveries);
+    setHistory(initialHistory);
+  }, [initialDeliveries, initialHistory]);
 
   // Real-time: orders moving into or out of assigned_to_rider
   useEffect(() => {
@@ -197,12 +206,22 @@ export function RidersClient({
 
   return (
     <div className="p-6 pb-24 space-y-8">
-      <div>
-        <h1 className="text-2xl font-extrabold text-black-900">Riders</h1>
-        <p className="text-sm text-black-500 mt-1">
-          Platform delivery operations &middot; {deliveries.length} active{" "}
-          {deliveries.length === 1 ? "delivery" : "deliveries"}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-black-900">Riders</h1>
+          <p className="text-sm text-black-500 mt-1">
+            Platform delivery operations &middot; {deliveries.length} active{" "}
+            {deliveries.length === 1 ? "delivery" : "deliveries"}
+          </p>
+        </div>
+        <button
+          onClick={() => startRefresh(() => router.refresh())}
+          disabled={isRefreshing}
+          className="flex items-center gap-2 text-xs text-black-600 hover:text-black-900 px-3 py-2 rounded-xl border border-black-200 hover:border-black-400 transition-colors disabled:opacity-60 cursor-pointer"
+        >
+          <RefreshCw size={14} className={cn(isRefreshing && "animate-spin")} />
+          {isRefreshing ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
 
       {/* ── Active Deliveries ─────────────────────────────────────────────── */}
