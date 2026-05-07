@@ -85,6 +85,16 @@ export function RidersClient({
     setHistory(initialHistory);
   }, [initialDeliveries, initialHistory]);
 
+  // Auto-refresh server data every 10s. Pauses while the mark-delivered
+  // modal is open so we don't yank state out from under the user.
+  useEffect(() => {
+    if (markingOrder) return;
+    const id = setInterval(() => {
+      startRefresh(() => router.refresh());
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [router, markingOrder]);
+
   // Real-time: orders moving into or out of assigned_to_rider
   useEffect(() => {
     const supabase = createBrowserClient();
