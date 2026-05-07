@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { sendTelegramRiderAlert } from "@/lib/telegram";
 
 const VALID_STATUSES = [
   "pending",
@@ -115,6 +116,24 @@ export async function POST(req: NextRequest) {
       { error: "Failed to update order status" },
       { status: 500 }
     );
+  }
+
+  // Telegram alert when an order transitions into assigned_to_rider.
+  // Fires here as a safety net for any path that bypasses the dispatch route.
+  if (status === "assigned_to_rider" && order.status !== "assigned_to_rider") {
+    const { data: orderRow } = await serviceClient
+      .from("orders")
+      .select("order_number")
+      .eq("id", orderId)
+      .single();
+    if (orderRow?.order_number) {
+      await sendTelegramRiderAlert(
+        serviceClient,
+        orderId,
+        restaurantId,
+        orderRow.order_number
+      ).catch(console.error);
+    }
   }
 
   return NextResponse.json({ success: true });
