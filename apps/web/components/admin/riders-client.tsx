@@ -338,9 +338,23 @@ export function RidersClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {history.map((h) => {
+                  {[...history]
+                    .sort((a, b) => {
+                      const aTime = a.delivery_assignments?.[0]?.assigned_at
+                        ? new Date(a.delivery_assignments[0].assigned_at).getTime()
+                        : 0;
+                      const bTime = b.delivery_assignments?.[0]?.assigned_at
+                        ? new Date(b.delivery_assignments[0].assigned_at).getTime()
+                        : 0;
+                      return bTime - aTime;
+                    })
+                    .map((h) => {
                     const assignedAt = h.delivery_assignments?.[0]?.assigned_at ?? null;
-                    const deliveredAt = h.delivered_at ?? h.updated_at;
+                    // Duration is the gap between status->assigned and status->delivered.
+                    // For legacy orders without delivered_at this isn't reliably known —
+                    // updated_at gets touched by other writes (settlement, etc.) so we
+                    // explicitly skip rather than show a misleading number.
+                    const deliveredAt = h.delivered_at;
                     const durationMs =
                       assignedAt && deliveredAt
                         ? new Date(deliveredAt).getTime() - new Date(assignedAt).getTime()
@@ -378,7 +392,7 @@ export function RidersClient({
                           {formatDateTime(assignedAt)}
                         </td>
                         <td className="px-4 py-3 text-black-700 whitespace-nowrap">
-                          {formatDateTime(deliveredAt)}
+                          {deliveredAt ? formatDateTime(deliveredAt) : "—"}
                         </td>
                         <td className="px-4 py-3 text-black-700 whitespace-nowrap">
                           {formatDuration(durationMs)}
