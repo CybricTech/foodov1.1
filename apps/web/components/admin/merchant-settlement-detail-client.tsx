@@ -136,8 +136,9 @@ export function MerchantSettlementDetailClient({
 
     for (const o of orders) {
       const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+      const oTotal = oGross + (o.service_fee_kobo ?? 0);
       grossRevenue += oGross;
-      totalMerchantCharge += Math.round(oGross * merchantChargePct);
+      totalMerchantCharge += Math.round(oTotal * merchantChargePct);
       totalCommissions += deliveryCommissionFor(o, deliveryCommissionPct);
       if (!o.settlement_id) unsettledCount++;
     }
@@ -175,8 +176,9 @@ export function MerchantSettlementDetailClient({
         let deliveryFees = 0;
         for (const o of dayOrders) {
           const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+          const oTotal = oGross + (o.service_fee_kobo ?? 0);
           gross += oGross;
-          merchantCharge += Math.round(oGross * merchantChargePct);
+          merchantCharge += Math.round(oTotal * merchantChargePct);
           serviceFee += o.service_fee_kobo ?? 0;
           deliveryFees += deliveryCommissionFor(o, deliveryCommissionPct);
         }

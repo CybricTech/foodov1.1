@@ -80,8 +80,11 @@ async function main() {
     let serviceFee = 0;
     for (const o of orders) {
       const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+      const oTotal = oGross + (o.service_fee_kobo ?? 0);
       gross += oGross;
-      merchantCharge += Math.round(oGross * merchantPct);
+      // Merchant charge is 1% of the full Paystack total (includes service fee
+      // in the base, even though service fee itself goes to Foodo).
+      merchantCharge += Math.round(oTotal * merchantPct);
       deliveryCommission += deliveryCommissionFor(o, deliveryPct);
       serviceFee += o.service_fee_kobo ?? 0;
     }

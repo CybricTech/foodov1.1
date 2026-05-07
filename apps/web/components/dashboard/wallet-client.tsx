@@ -144,7 +144,8 @@ export function WalletClient({
 
     for (const o of orders) {
       const gross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-      const merchantCharge = Math.round(gross * merchantChargePct);
+      const total = gross + (o.service_fee_kobo ?? 0);
+      const merchantCharge = Math.round(total * merchantChargePct);
       const deliveryFees = deliveryCommissionFor(o, deliveryCommissionPct);
       const net = gross - merchantCharge - deliveryFees;
 
@@ -498,8 +499,9 @@ function PayoutDetailModal({
   let deliveryFeesTotal = 0;
   for (const o of orders) {
     const oGrossLocal = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+    const oTotalLocal = oGrossLocal + (o.service_fee_kobo ?? 0);
     gross += oGrossLocal;
-    merchantChargeTotal += Math.round(oGrossLocal * merchantChargePct);
+    merchantChargeTotal += Math.round(oTotalLocal * merchantChargePct);
     deliveryFeesTotal += deliveryCommissionFor(o, deliveryCommissionPct);
   }
   // Fall back to settlement's stored gross if orders aren't available
@@ -580,7 +582,8 @@ function PayoutDetailModal({
               <div className="space-y-2">
                 {orders.map((o) => {
                   const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-                  const oMC = Math.round(oGross * merchantChargePct);
+                  const oTotal = oGross + (o.service_fee_kobo ?? 0);
+                  const oMC = Math.round(oTotal * merchantChargePct);
                   const oDC = deliveryCommissionFor(o, deliveryCommissionPct);
                   const oNet = oGross - oMC - oDC;
                   return (
