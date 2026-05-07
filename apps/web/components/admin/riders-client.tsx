@@ -3,20 +3,8 @@
 import { useEffect, useState } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@foodo/ui";
-import { Bike, MapPin, Phone, Clock } from "lucide-react";
+import { Bike, MapPin, Phone, Clock, History } from "lucide-react";
 import { formatKobo } from "@foodo/utils";
-
-interface RiderRow {
-  id: string;
-  user_id: string;
-  vehicle_type: string | null;
-  is_online: boolean;
-  is_active: boolean;
-  active_deliveries: number;
-  total_deliveries: number;
-  last_seen_at: string | null;
-  user_profiles: { full_name: string | null; phone: string | null };
-}
 
 interface DeliveryRow {
   id: string;
@@ -29,6 +17,23 @@ interface DeliveryRow {
   restaurants: { name: string } | null;
 }
 
+interface HistoryRow {
+  id: string;
+  order_number: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  delivery_address: string | null;
+  delivery_fee_kobo: number | null;
+  delivery_cost_kobo: number | null;
+  delivery_distance_km: number | null;
+  total_kobo: number;
+  delivered_at: string | null;
+  updated_at: string;
+  created_at: string;
+  restaurants: { name: string } | null;
+  delivery_assignments: { assigned_at: string }[] | null;
+}
+
 function formatTimeAgo(dateStr: string | null): string {
   if (!dateStr) return "";
   const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -38,16 +43,34 @@ function formatTimeAgo(dateStr: string | null): string {
   return new Date(dateStr).toLocaleDateString("en-NG", { day: "numeric", month: "short" });
 }
 
+function formatDateTime(dateStr: string | null): string {
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleString("en-NG", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
+}
+
 export function RidersClient({
-  initialRiders,
   initialDeliveries,
+  initialHistory,
 }: {
-  initialRiders: RiderRow[];
   initialDeliveries: DeliveryRow[];
+  initialHistory: HistoryRow[];
 }) {
-  const [riders, setRiders] = useState(initialRiders);
   const [deliveries, setDeliveries] = useState(initialDeliveries);
-  const [toggling, setToggling] = useState<string | null>(null);
+  const [history, setHistory] = useState(initialHistory);
   const [delivering, setDelivering] = useState<string | null>(null);
   const [deliverError, setDeliverError] = useState<string | null>(null);
   const [markingOrder, setMarkingOrder] = useState<DeliveryRow | null>(null);
@@ -66,7 +89,6 @@ export function RidersClient({
           const updated = payload.new as { id: string; status: string };
 
           if (updated.status === "assigned_to_rider") {
-            // Fetch full row (realtime payload lacks joined restaurant name)
             const { data } = await supabase
               .from("orders")
               .select(
@@ -82,7 +104,6 @@ export function RidersClient({
               );
             }
           } else {
-            // Order left assigned_to_rider (delivered, cancelled, etc.) — remove it
             setDeliveries((prev) => prev.filter((d) => d.id !== updated.id));
           }
         }
@@ -91,25 +112,6 @@ export function RidersClient({
 
     return () => { channel.unsubscribe(); };
   }, []);
-
-  async function toggleActive(userId: string, current: boolean) {
-    setToggling(userId);
-    const res = await fetch("/api/admin/riders/toggle-active", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, isActive: !current }),
-    });
-    if (res.ok) {
-      setRiders((prev) =>
-        prev.map((r) =>
-          r.user_id === userId
-            ? { ...r, is_active: !current, is_online: !current ? false : r.is_online }
-            : r
-        )
-      );
-    }
-    setToggling(null);
-  }
 
   function openMarkDelivered(delivery: DeliveryRow) {
     setMarkingOrder(delivery);
@@ -123,8 +125,6 @@ export function RidersClient({
     setCostInput("");
   }
 
-  // Parse the Naira input: allow digits and one optional decimal point. Returns
-  // kobo (integer) or null if the input is empty/invalid/negative.
   function parseCostKobo(input: string): number | null {
     const trimmed = input.trim().replace(/,/g, "");
     if (!trimmed) return null;
@@ -150,7 +150,29 @@ export function RidersClient({
     });
     if (res.ok) {
       const orderId = markingOrder.id;
+      const justDelivered = markingOrder;
       setDeliveries((prev) => prev.filter((d) => d.id !== orderId));
+      // Optimistically prepend to history so it shows immediately
+      const nowIso = new Date().toISOString();
+      setHistory((prev) => [
+        {
+          id: orderId,
+          order_number: justDelivered.order_number,
+          customer_name: justDelivered.customer_name,
+          customer_phone: justDelivered.customer_phone,
+          delivery_address: justDelivered.delivery_address,
+          delivery_fee_kobo: null,
+          delivery_cost_kobo: kobo,
+          delivery_distance_km: null,
+          total_kobo: justDelivered.total_kobo,
+          delivered_at: nowIso,
+          updated_at: nowIso,
+          created_at: justDelivered.created_at,
+          restaurants: justDelivered.restaurants,
+          delivery_assignments: [{ assigned_at: justDelivered.created_at }],
+        },
+        ...prev,
+      ]);
       setMarkingOrder(null);
       setCostInput("");
     } else {
@@ -159,6 +181,19 @@ export function RidersClient({
     }
     setDelivering(null);
   }
+
+  // Aggregate totals across all history rows
+  const totals = history.reduce(
+    (acc, h) => {
+      const fee = h.delivery_fee_kobo ?? 0;
+      const cost = h.delivery_cost_kobo ?? 0;
+      acc.fee += fee;
+      acc.cost += cost;
+      acc.pl += fee - cost;
+      return acc;
+    },
+    { fee: 0, cost: 0, pl: 0 }
+  );
 
   return (
     <div className="p-6 pb-24 space-y-8">
@@ -250,65 +285,131 @@ export function RidersClient({
         )}
       </section>
 
-      {/* ── Rider Roster ──────────────────────────────────────────────────── */}
+      {/* ── Rider History ─────────────────────────────────────────────────── */}
       <section>
-        <h2 className="text-base font-bold text-black-900 mb-3">
-          Rider Roster ({riders.length})
-        </h2>
-        <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-          {riders.length === 0 && (
-            <div className="py-12 text-center text-black-400">
-              <div className="flex justify-center mb-2">
-                <Bike size={28} />
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-black-900">Rider History</h2>
+            <span className="bg-black-100 text-black-600 text-[11px] font-bold px-2 py-0.5 rounded-full">
+              {history.length}
+            </span>
+          </div>
+          {history.length > 0 && (
+            <div className="flex items-center gap-4 text-xs">
+              <div>
+                <span className="text-black-400">Customer paid: </span>
+                <span className="font-bold text-black-900">{formatKobo(totals.fee)}</span>
               </div>
-              <p className="text-sm">No riders yet</p>
+              <div>
+                <span className="text-black-400">Rider cost: </span>
+                <span className="font-bold text-black-900">{formatKobo(totals.cost)}</span>
+              </div>
+              <div>
+                <span className="text-black-400">Net: </span>
+                <span className={cn("font-bold", totals.pl >= 0 ? "text-viridian-500" : "text-cinnabar-500")}>
+                  {totals.pl >= 0 ? "+" : "−"}{formatKobo(Math.abs(totals.pl))}
+                </span>
+              </div>
             </div>
           )}
-          {riders.map((rider) => (
-            <div
-              key={rider.id}
-              className="flex items-center gap-4 px-4 py-4 border-b border-black-200 last:border-0"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-black-900 text-sm">
-                    {rider.user_profiles.full_name ?? "Unknown"}
-                  </p>
-                  {rider.is_online && (
-                    <span className="w-2 h-2 bg-viridian-500 rounded-full" />
-                  )}
-                </div>
-                <p className="text-xs text-black-500 mt-0.5">
-                  {rider.user_profiles.phone} ·{" "}
-                  {rider.vehicle_type ?? "no vehicle"} ·{" "}
-                  {rider.total_deliveries} deliveries
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span
-                  className={cn(
-                    "text-xs px-2 py-0.5 rounded-full font-medium",
-                    rider.is_active
-                      ? "bg-viridian-100 text-viridian-500"
-                      : "bg-cinnabar-100 text-cinnabar-500"
-                  )}
-                >
-                  {rider.is_active ? "Active" : "Suspended"}
-                </span>
-                <button
-                  onClick={() => toggleActive(rider.user_id, rider.is_active)}
-                  disabled={toggling === rider.user_id}
-                  className="text-xs text-black-500 hover:text-black-900 px-3 py-1.5 rounded-lg border border-black-200 hover:border-black-400 transition-colors disabled:opacity-50"
-                >
-                  {toggling === rider.user_id
-                    ? "…"
-                    : rider.is_active
-                    ? "Suspend"
-                    : "Approve"}
-                </button>
-              </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+          {history.length === 0 ? (
+            <div className="py-12 text-center text-black-400">
+              <History size={28} strokeWidth={1.5} className="mx-auto mb-2" />
+              <p className="text-sm">No completed rides yet</p>
             </div>
-          ))}
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-black-50 text-black-500 text-[11px] uppercase tracking-wide">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-semibold">Order</th>
+                    <th className="text-left px-4 py-3 font-semibold">Restaurant</th>
+                    <th className="text-left px-4 py-3 font-semibold">Customer</th>
+                    <th className="text-left px-4 py-3 font-semibold">Address</th>
+                    <th className="text-left px-4 py-3 font-semibold">Assigned</th>
+                    <th className="text-left px-4 py-3 font-semibold">Delivered</th>
+                    <th className="text-left px-4 py-3 font-semibold">Duration</th>
+                    <th className="text-right px-4 py-3 font-semibold">Customer paid</th>
+                    <th className="text-right px-4 py-3 font-semibold">Rider cost</th>
+                    <th className="text-right px-4 py-3 font-semibold">P/L</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((h) => {
+                    const assignedAt = h.delivery_assignments?.[0]?.assigned_at ?? null;
+                    const deliveredAt = h.delivered_at ?? h.updated_at;
+                    const durationMs =
+                      assignedAt && deliveredAt
+                        ? new Date(deliveredAt).getTime() - new Date(assignedAt).getTime()
+                        : NaN;
+                    const fee = h.delivery_fee_kobo ?? 0;
+                    const cost = h.delivery_cost_kobo ?? 0;
+                    const pl = fee - cost;
+
+                    return (
+                      <tr
+                        key={h.id}
+                        className="border-t border-black-100 hover:bg-black-50/50"
+                      >
+                        <td className="px-4 py-3 font-bold text-black-900">#{h.order_number}</td>
+                        <td className="px-4 py-3 text-black-700">
+                          {h.restaurants?.name ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 text-black-700">
+                          <div className="flex flex-col">
+                            <span>{h.customer_name ?? "—"}</span>
+                            {h.customer_phone && (
+                              <a
+                                href={`tel:${h.customer_phone}`}
+                                className="text-[11px] text-purple-600 hover:text-purple-700"
+                              >
+                                {h.customer_phone}
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-black-500 max-w-[220px] truncate" title={h.delivery_address ?? ""}>
+                          {h.delivery_address ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 text-black-700 whitespace-nowrap">
+                          {formatDateTime(assignedAt)}
+                        </td>
+                        <td className="px-4 py-3 text-black-700 whitespace-nowrap">
+                          {formatDateTime(deliveredAt)}
+                        </td>
+                        <td className="px-4 py-3 text-black-700 whitespace-nowrap">
+                          {formatDuration(durationMs)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-black-900 font-medium">
+                          {fee > 0 ? formatKobo(fee) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-right text-black-900 font-medium">
+                          {cost > 0 ? formatKobo(cost) : "—"}
+                        </td>
+                        <td
+                          className={cn(
+                            "px-4 py-3 text-right font-bold whitespace-nowrap",
+                            pl > 0
+                              ? "text-viridian-500"
+                              : pl < 0
+                              ? "text-cinnabar-500"
+                              : "text-black-400"
+                          )}
+                        >
+                          {pl === 0
+                            ? "—"
+                            : `${pl > 0 ? "+" : "−"}${formatKobo(Math.abs(pl))}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
 

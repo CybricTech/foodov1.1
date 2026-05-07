@@ -40,13 +40,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const deliveredAt = new Date().toISOString();
+
   const { error } = await serviceClient
     .from("orders")
-    .update({ status: "delivered", delivery_cost_kobo })
+    .update({ status: "delivered", delivery_cost_kobo, delivered_at: deliveredAt })
     .eq("id", order_id)
     .eq("status", "assigned_to_rider");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await serviceClient
+    .from("delivery_assignments")
+    .update({ status: "delivered", delivered_at: deliveredAt })
+    .eq("order_id", order_id);
 
   return NextResponse.json({ ok: true });
 }
