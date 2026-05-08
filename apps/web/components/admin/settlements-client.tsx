@@ -16,6 +16,7 @@ type OrderRow = {
   service_fee_kobo: number;
   vat_kobo: number;
   total_kobo: number;
+  delivery_cost_kobo: number | null;
   settlement_id: string | null;
   dispatch_type: string | null;
   fulfillment_type: string;
@@ -97,6 +98,14 @@ function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
     return Math.round(fee * defaultPct);
   }
   return 0;
+}
+
+// Paystack local-card pricing: 1.5% + ₦100 per transaction.
+// ₦100 flat is waived for txns under ₦2,500. Total fee capped at ₦2,000.
+function paystackFee(totalKobo: number): number {
+  const pct = Math.round(totalKobo * 0.015);
+  const flat = totalKobo < 250000 ? 0 : 10000;
+  return Math.min(pct + flat, 200000);
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -212,6 +221,65 @@ export function SettlementsClient({
       });
   }, [completedOrders, merchantChargePct, deliveryCommissionPct]);
 
+  /* ── Daily Foodo P&L ─────────────────────────────────────────────────────
+   * Per-day picture of money flow:
+   *   - Customer paid: total_kobo (what hits Paystack)
+   *   - Paystack fee:  what Paystack deducts before depositing
+   *   - Paystack payout: customer paid − fees (deposited next day)
+   *   - Service fees:  100% Foodo
+   *   - Merchant charge: 1% × customer total
+   *   - Delivery margin: customer-paid delivery fees − rider costs we paid
+   *   - Foodo net:     service + merchant_charge + delivery_margin − paystack_fee
+   */
+  const dailyPnl = useMemo(() => {
+    const groups: Record<string, OrderRow[]> = {};
+    for (const o of completedOrders) {
+      const day = toWATDate(o.created_at);
+      if (!groups[day]) groups[day] = [];
+      groups[day].push(o);
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, dayOrders]) => {
+        let customerTotal = 0;
+        let paystackFees = 0;
+        let serviceFees = 0;
+        let merchantCharge = 0;
+        let customerDeliveryFees = 0;
+        let riderCosts = 0;
+        for (const o of dayOrders) {
+          const pTotal = paystackTotal(o);
+          customerTotal += pTotal;
+          paystackFees += paystackFee(pTotal);
+          serviceFees += o.service_fee_kobo ?? 0;
+          merchantCharge += Math.round(pTotal * merchantChargePct);
+          customerDeliveryFees += o.delivery_fee_kobo ?? 0;
+          // Rider cost only matters when Foodo provided the rider; for own/third
+          // party the merchant pays the rider directly. Stored on order after
+          // mark-delivered.
+          if (o.dispatch_type === "platform_rider") {
+            riderCosts += o.delivery_cost_kobo ?? 0;
+          }
+        }
+        const paystackPayout = customerTotal - paystackFees;
+        const deliveryMargin = customerDeliveryFees - riderCosts;
+        const foodoNet = serviceFees + merchantCharge + deliveryMargin - paystackFees;
+        return {
+          date,
+          orderCount: dayOrders.length,
+          customerTotal,
+          paystackFees,
+          paystackPayout,
+          serviceFees,
+          merchantCharge,
+          customerDeliveryFees,
+          riderCosts,
+          deliveryMargin,
+          foodoNet,
+        };
+      });
+  }, [completedOrders, merchantChargePct]);
+
   /* ── Per-order breakdown filter ─────────────────────────────────────────── */
 
   const filteredOrderBreakdown = useMemo(() => {
@@ -287,49 +355,204 @@ export function SettlementsClient({
   /* ── Render ─────────────────────────────────────────────────────────────── */
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
 
-      {/* ── Revenue Dashboard ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <SummaryCard
-          label="Gross Volume"
-          value={formatKobo(revenue.grossVolume)}
-          sublabel="Subtotal + VAT + Delivery"
+      {/* ── Section 1: Revenue Overview ───────────────────────────────────── */}
+      <section className="space-y-3">
+        <SectionHeader
+          title="Revenue Overview"
+          subtitle="Lifetime totals across the platform"
         />
-        <SummaryCard
-          label="Merchant Charge"
-          value={formatKobo(revenue.totalMerchantCharge)}
-          sublabel={`${(merchantChargePct * 100).toFixed(0)}% of Paystack totals`}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <SummaryCard
+            label="Gross Volume"
+            value={formatKobo(revenue.grossVolume)}
+            sublabel="Subtotal + VAT + Delivery"
+          />
+          <SummaryCard
+            label="Merchant Charge"
+            value={formatKobo(revenue.totalMerchantCharge)}
+            sublabel={`${(merchantChargePct * 100).toFixed(0)}% of Paystack totals`}
+          />
+          <SummaryCard
+            label="Delivery Commission"
+            value={formatKobo(revenue.totalCommissions)}
+            sublabel={`100% platform · ${(deliveryCommissionPct * 100).toFixed(0)}% in-house`}
+          />
+          <SummaryCard
+            label="Customer Svc Fees"
+            value={formatKobo(revenue.totalCustomerServiceFees)}
+            sublabel="1% + ₦200 per order (customer)"
+          />
+          <SummaryCard
+            label="Total Foodo Revenue"
+            value={formatKobo(revenue.totalFoodoRevenue)}
+            sublabel="Merch charge + commission + svc fees"
+            highlight="green"
+          />
+          <div className="bg-white rounded-2xl border border-black-200 px-4 py-4 flex flex-col justify-between">
+            <p className="text-xs text-black-500 font-medium">Net Settled</p>
+            <p className="text-lg font-bold text-black-900 mt-1">{formatKobo(revenue.netSettled)}</p>
+            <p className="text-[10px] text-black-400 mt-0.5">Next payout: {nextSettlement}</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Section 2: Daily Foodo P&L ────────────────────────────────────── */}
+      <section className="space-y-3">
+        <SectionHeader
+          title="Daily Foodo P&L"
+          subtitle="What we made each day, what Paystack deposits next, and our delivery margin"
         />
-        <SummaryCard
-          label="Delivery Commission"
-          value={formatKobo(revenue.totalCommissions)}
-          sublabel={`100% platform · ${(deliveryCommissionPct * 100).toFixed(0)}% in-house`}
+        <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-black-100 bg-black-50">
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Customer Paid</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Paystack Fee</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Paystack → Us</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Service Fees</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Merchant Chg</th>
+                  <th
+                    className="text-right px-4 py-2.5 text-xs font-semibold text-black-500"
+                    title="Customer-paid delivery fees minus rider costs we paid (platform riders only)"
+                  >
+                    Delivery Margin
+                  </th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Foodo Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black-50">
+                {dailyPnl.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="text-center py-10 text-black-400 text-sm">
+                      No completed orders found
+                    </td>
+                  </tr>
+                ) : (
+                  dailyPnl.map((d) => (
+                    <tr key={d.date} className="hover:bg-black-25">
+                      <td className="px-4 py-3 text-black-900 font-medium whitespace-nowrap">
+                        {new Date(d.date).toLocaleDateString("en-NG", {
+                          weekday: "short",
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-black-700">{d.orderCount}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-black-900 font-medium">
+                        {formatKobo(d.customerTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-cinnabar-500">
+                        −{formatKobo(d.paystackFees)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-black-900 font-semibold">
+                        {formatKobo(d.paystackPayout)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-purple-600">
+                        {formatKobo(d.serviceFees)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-purple-600">
+                        {formatKobo(d.merchantCharge)}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-right tabular-nums font-medium ${
+                          d.deliveryMargin >= 0 ? "text-purple-600" : "text-cinnabar-500"
+                        }`}
+                        title={`Customer paid ${formatKobo(d.customerDeliveryFees)} · Rider cost ${formatKobo(d.riderCosts)}`}
+                      >
+                        {d.deliveryMargin >= 0 ? "" : "−"}
+                        {formatKobo(Math.abs(d.deliveryMargin))}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-right tabular-nums font-bold ${
+                          d.foodoNet >= 0 ? "text-viridian-600" : "text-cinnabar-500"
+                        }`}
+                      >
+                        {d.foodoNet >= 0 ? "" : "−"}
+                        {formatKobo(Math.abs(d.foodoNet))}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-2.5 border-t border-black-100 bg-black-50 text-[11px] text-black-400">
+            Paystack fee assumed at 1.5% + ₦100/order (₦100 waived under ₦2,500, capped at ₦2,000). Delivery margin uses rider costs from delivered platform-rider orders only.
+          </div>
+        </div>
+      </section>
+      {/* ── Section 3: Daily Payout Summary ───────────────────────────────── */}
+      <section className="space-y-3">
+        <SectionHeader
+          title="Daily Payout Summary"
+          subtitle="Per-day breakdown of merchant payouts · click any row to expand by merchant"
         />
-        <SummaryCard
-          label="Customer Svc Fees"
-          value={formatKobo(revenue.totalCustomerServiceFees)}
-          sublabel="1% + ₦200 per order (customer)"
-        />
-        <SummaryCard
-          label="Total Foodo Revenue"
-          value={formatKobo(revenue.totalFoodoRevenue)}
-          sublabel="Merch charge + commission + svc fees"
-          highlight="green"
-        />
-        <div className="bg-white rounded-2xl border border-black-200 px-4 py-4 flex flex-col justify-between">
-          <p className="text-xs text-black-500 font-medium">Net Settled</p>
-          <p className="text-lg font-bold text-black-900 mt-1">{formatKobo(revenue.netSettled)}</p>
-          <p className="text-[10px] text-black-400 mt-0.5">Next payout: {nextSettlement}</p>
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <p className="text-xs text-black-400">{dailyGroups.length} days</p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-black-100 bg-black-50">
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500 w-8" />
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Merchant Charge</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Delivery Commission
+                </th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Net Payout</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Status</th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black-50">
+              {dailyGroups.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="text-center py-10 text-black-400 text-sm">
+                    No completed orders found
+                  </td>
+                </tr>
+              ) : (
+                dailyGroups.map((day) => {
+                  const expanded = expandedDays.has(day.date);
+                  return (
+                    <DailyRow
+                      key={day.date}
+                      day={day}
+                      expanded={expanded}
+                      onToggle={() => toggleDay(day.date)}
+                      onExport={() => exportCSV(day.date)}
+                      exporting={exportingDate === day.date}
+                    />
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
-      {/* ── Merchant Settlements ──────────────────────────────────────────── */}
+      </section>
+
+      {/* ── Section 4: Merchant Directory ─────────────────────────────────── */}
+      <section className="space-y-3">
+        <SectionHeader
+          title="Merchant Directory"
+          subtitle="Per-merchant balances, paid-out totals, and bank-account status"
+        />
       <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-black-200">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h2 className="font-bold text-black-900 text-sm">Merchant Settlements</h2>
-              <p className="text-xs text-black-400 mt-0.5">
+              <p className="text-xs text-black-400">
                 {merchantSummaries.length} restaurants · Click to view details
               </p>
             </div>
@@ -427,66 +650,18 @@ export function SettlementsClient({
           </table>
         </div>
       </div>
+      </section>
 
-      {/* ── Daily Payout Summary ──────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-black-200">
-          <h2 className="font-bold text-black-900 text-sm">Daily Payout Summary</h2>
-          <p className="text-xs text-black-400 mt-0.5">
-            {dailyGroups.length} days · Click to expand merchant breakdown
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-black-100 bg-black-50">
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500 w-8" />
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Merchant Charge</th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
-                  Delivery Commission
-                </th>
-                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Net Payout</th>
-                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Status</th>
-                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black-50">
-              {dailyGroups.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="text-center py-10 text-black-400 text-sm">
-                    No completed orders found
-                  </td>
-                </tr>
-              ) : (
-                dailyGroups.map((day) => {
-                  const expanded = expandedDays.has(day.date);
-                  return (
-                    <DailyRow
-                      key={day.date}
-                      day={day}
-                      expanded={expanded}
-                      onToggle={() => toggleDay(day.date)}
-                      onExport={() => exportCSV(day.date)}
-                      exporting={exportingDate === day.date}
-                    />
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ── Settlement History ────────────────────────────────────────────── */}
+      {/* ── Section 5: Settlement History ─────────────────────────────────── */}
+      <section className="space-y-3">
+        <SectionHeader
+          title="Settlement History"
+          subtitle="Chronological log of every payout transfer to merchants"
+        />
       <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-black-200 flex flex-wrap gap-2 items-center justify-between">
           <div>
-            <h2 className="font-bold text-black-900 text-sm">Settlement History</h2>
-            <p className="text-xs text-black-400 mt-0.5">Recorded payouts to restaurants</p>
+            <p className="text-xs text-black-400">Recorded payouts to restaurants</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             {(["all", "pending", "processing", "paid", "failed"] as const).map((s) => (
@@ -556,16 +731,20 @@ export function SettlementsClient({
           </div>
         )}
       </div>
+      </section>
 
-      {/* ── Per-Order Fee Breakdown ───────────────────────────────────────── */}
+      {/* ── Section 6: Per-Order Fee Breakdown ────────────────────────────── */}
+      <section className="space-y-3">
+        <SectionHeader
+          title="Per-Order Fee Breakdown"
+          subtitle="Drill into every order and the exact fee components applied"
+        />
       <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-black-200">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h2 className="font-bold text-black-900 text-sm">Per-Order Fee Breakdown</h2>
-              <p className="text-xs text-black-400 mt-0.5">
-                {filteredOrderBreakdown.length} of {completedOrders.length} orders · Every fee
-                component per transaction
+              <p className="text-xs text-black-400">
+                {filteredOrderBreakdown.length} of {completedOrders.length} orders
               </p>
             </div>
             <div className="flex gap-2 flex-wrap items-center">
@@ -748,6 +927,7 @@ export function SettlementsClient({
           )}
         </div>
       </div>
+      </section>
     </div>
   );
 }
@@ -852,6 +1032,15 @@ function DailyRow({
 }
 
 /* ── Summary card subcomponent ─────────────────────────────────────────────── */
+
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div>
+      <h2 className="text-base font-extrabold text-black-900">{title}</h2>
+      {subtitle && <p className="text-xs text-black-500 mt-0.5">{subtitle}</p>}
+    </div>
+  );
+}
 
 function SummaryCard({
   label,
