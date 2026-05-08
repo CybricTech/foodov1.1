@@ -23,6 +23,7 @@ type OrderRow = {
   status: string;
   created_at: string;
   restaurants: { name: string } | null;
+  restaurant_has_paystack: boolean;
 };
 
 type SettlementRow = {
@@ -232,8 +233,13 @@ export function SettlementsClient({
    *   - Foodo net:     service + merchant_charge + delivery_margin − paystack_fee
    */
   const dailyPnl = useMemo(() => {
+    // Only count orders from merchants integrated with Foodo's Paystack.
+    // Test/non-Paystack merchants don't generate deposits to our account, so
+    // including them would inflate the "Paystack → Us" column and break the
+    // reconciliation against your Paystack settlement file.
+    const realOrders = completedOrders.filter((o) => o.restaurant_has_paystack);
     const groups: Record<string, OrderRow[]> = {};
-    for (const o of completedOrders) {
+    for (const o of realOrders) {
       const day = toWATDate(o.created_at);
       if (!groups[day]) groups[day] = [];
       groups[day].push(o);
@@ -482,7 +488,7 @@ export function SettlementsClient({
             </table>
           </div>
           <div className="px-4 py-2.5 border-t border-black-100 bg-black-50 text-[11px] text-black-400">
-            Paystack fee assumed at 1.5% + ₦100/order (₦100 waived under ₦2,500, capped at ₦2,000). Delivery margin uses rider costs from delivered platform-rider orders only.
+            Only includes orders from merchants integrated with Foodo&rsquo;s Paystack (test merchants excluded). Paystack fee: 1.5% + ₦100/order (₦100 waived under ₦2,500, capped at ₦2,000). Delivery margin uses rider costs from delivered platform-rider orders only.
           </div>
         </div>
       </section>

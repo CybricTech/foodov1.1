@@ -32,7 +32,7 @@ export default async function AdminSettlementsPage() {
         status,
         dispatch_type,
         created_at,
-        restaurants (name),
+        restaurants (name, paystack_recipient_code),
         delivery_assignments (dispatch_type)
       `
       )
@@ -113,7 +113,9 @@ export default async function AdminSettlementsPage() {
   //   3. null → un-dispatched delivery order (UI shows "Pending")
   const normalizedOrders = (orders ?? []).map((o: Record<string, unknown>) => {
     const assignments = o.delivery_assignments as Array<{ dispatch_type: string }> | null;
-    const restaurant = o.restaurants as { name: string } | null;
+    const restaurant = o.restaurants as
+      | { name: string; paystack_recipient_code: string | null }
+      | null;
 
     const dispatch_type =
       (o.dispatch_type as string | null) ??
@@ -135,6 +137,9 @@ export default async function AdminSettlementsPage() {
       status: o.status as string,
       created_at: o.created_at as string,
       restaurants: restaurant ? { name: restaurant.name } : null,
+      // True when the merchant is integrated with Foodo's Paystack — used by
+      // the Daily P&L to exclude test merchants whose orders never settle to us
+      restaurant_has_paystack: !!restaurant?.paystack_recipient_code,
     };
   });
 
