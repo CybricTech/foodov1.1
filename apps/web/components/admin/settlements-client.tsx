@@ -253,22 +253,33 @@ export function SettlementsClient({
         let merchantCharge = 0;
         let customerDeliveryFees = 0;
         let riderCosts = 0;
+        let ownCommission = 0;
+        let pendingPlatformDeliveries = 0;
         for (const o of dayOrders) {
           const pTotal = paystackTotal(o);
           customerTotal += pTotal;
           paystackFees += paystackFee(pTotal);
           serviceFees += o.service_fee_kobo ?? 0;
           merchantCharge += Math.round(pTotal * merchantChargePct);
-          customerDeliveryFees += o.delivery_fee_kobo ?? 0;
-          // Rider cost only matters when Foodo provided the rider; for own/third
-          // party the merchant pays the rider directly. Stored on order after
-          // mark-delivered.
+
+          const fee = o.delivery_fee_kobo ?? 0;
           if (o.dispatch_type === "platform_rider") {
-            riderCosts += o.delivery_cost_kobo ?? 0;
+            // Only recognise margin once the order is delivered — that's when
+            // the rider cost is known. Undelivered orders aren't realised P&L.
+            if (o.status === "delivered" && o.delivery_cost_kobo != null) {
+              customerDeliveryFees += fee;
+              riderCosts += o.delivery_cost_kobo;
+            } else {
+              pendingPlatformDeliveries++;
+            }
+          } else if (o.dispatch_type === "own_rider" || o.dispatch_type === "third_party") {
+            // Foodo's slice of own/third-party delivery: the configured commission.
+            // No rider cost on our side — the merchant pays the rider directly.
+            ownCommission += Math.round(fee * deliveryCommissionPct);
           }
         }
         const paystackPayout = customerTotal - paystackFees;
-        const deliveryMargin = customerDeliveryFees - riderCosts;
+        const deliveryMargin = customerDeliveryFees - riderCosts + ownCommission;
         const foodoNet = serviceFees + merchantCharge + deliveryMargin - paystackFees;
         return {
           date,
@@ -280,11 +291,13 @@ export function SettlementsClient({
           merchantCharge,
           customerDeliveryFees,
           riderCosts,
+          ownCommission,
           deliveryMargin,
+          pendingPlatformDeliveries,
           foodoNet,
         };
       });
-  }, [completedOrders, merchantChargePct]);
+  }, [completedOrders, merchantChargePct, deliveryCommissionPct]);
 
   /* ── Per-order breakdown filter ─────────────────────────────────────────── */
 
@@ -468,10 +481,17 @@ export function SettlementsClient({
                         className={`px-4 py-3 text-right tabular-nums font-medium ${
                           d.deliveryMargin >= 0 ? "text-purple-600" : "text-cinnabar-500"
                         }`}
-                        title={`Customer paid ${formatKobo(d.customerDeliveryFees)} · Rider cost ${formatKobo(d.riderCosts)}`}
+                        title={`Platform: customer paid ${formatKobo(d.customerDeliveryFees)}, rider cost ${formatKobo(d.riderCosts)} · Own/3rd commission ${formatKobo(d.ownCommission)}${d.pendingPlatformDeliveries > 0 ? ` · ${d.pendingPlatformDeliveries} platform order(s) pending delivery` : ""}`}
                       >
-                        {d.deliveryMargin >= 0 ? "" : "−"}
-                        {formatKobo(Math.abs(d.deliveryMargin))}
+                        <span>
+                          {d.deliveryMargin >= 0 ? "" : "−"}
+                          {formatKobo(Math.abs(d.deliveryMargin))}
+                        </span>
+                        {d.pendingPlatformDeliveries > 0 && (
+                          <span className="ml-1 text-[9px] text-dixie-500 font-normal">
+                            +{d.pendingPlatformDeliveries} pending
+                          </span>
+                        )}
                       </td>
                       <td
                         className={`px-4 py-3 text-right tabular-nums font-bold ${
