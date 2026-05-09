@@ -301,6 +301,7 @@ export default function CheckoutPage() {
               ? `${selectedPlaceAddress}, ${aptSuiteFloor.trim()}`
               : selectedPlaceAddress
             : undefined,
+          deliveryBaseAddress: selectedPlaceAddress || undefined,
           specialInstructions: deliveryInstructions.trim() || undefined,
           deliveryFeeKobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
           deliveryDistanceKm: distanceKm ?? undefined,
