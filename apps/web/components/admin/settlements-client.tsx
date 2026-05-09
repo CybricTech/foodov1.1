@@ -40,6 +40,8 @@ type SettlementRow = {
   delivery_commission_kobo: number;
   paystack_transfer_code: string | null;
   paystack_transfer_ref: string | null;
+  monnify_disbursement_reference?: string | null;
+  monnify_transaction_reference?: string | null;
   failure_reason: string | null;
   initiated_at: string;
   paid_at: string | null;
@@ -101,12 +103,12 @@ function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
   return 0;
 }
 
-// Paystack local-card pricing: 1.5% + ₦100 per transaction.
-// ₦100 flat is waived for txns under ₦2,500. Total fee capped at ₦2,000.
-function paystackFee(totalKobo: number): number {
-  const pct = Math.round(totalKobo * 0.015);
-  const flat = totalKobo < 250000 ? 0 : 10000;
-  return Math.min(pct + flat, 200000);
+// Monnify pricing: 1.5% capped at ₦2,000. No flat fee component.
+// Renamed from paystackFee → gatewayFee at the Monnify cutover; the variable
+// name is intentionally generic so future gateway swaps don't repeat the
+// rename churn.
+function gatewayFee(totalKobo: number): number {
+  return Math.min(Math.round(totalKobo * 0.015), 200000);
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -258,7 +260,7 @@ export function SettlementsClient({
         for (const o of dayOrders) {
           const pTotal = paystackTotal(o);
           customerTotal += pTotal;
-          paystackFees += paystackFee(pTotal);
+          paystackFees += gatewayFee(pTotal);
           serviceFees += o.service_fee_kobo ?? 0;
           merchantCharge += Math.round(pTotal * merchantChargePct);
 
@@ -734,7 +736,9 @@ export function SettlementsClient({
                       year: "numeric",
                     })}
                     {s.bank_reference ? ` · Ref: ${s.bank_reference}` : ""}
-                    {s.paystack_transfer_ref ? ` · ${s.paystack_transfer_ref}` : ""}
+                    {(s.monnify_disbursement_reference ?? s.paystack_transfer_ref)
+                      ? ` · ${s.monnify_disbursement_reference ?? s.paystack_transfer_ref}`
+                      : ""}
                   </p>
                   {s.failure_reason && (
                     <p className="text-xs text-cinnabar-500 mt-0.5">{s.failure_reason}</p>

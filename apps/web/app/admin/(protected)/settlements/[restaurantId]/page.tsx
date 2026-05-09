@@ -13,11 +13,26 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
   const supabase = createServiceClient();
 
   // Fetch restaurant details
-  const { data: restaurant } = await supabase
+  const restaurantRes = await (supabase
     .from("restaurants")
-    .select("id, name, slug, logistics_default, paystack_recipient_code, bank_account_name, bank_account_number, bank_code")
+    .select(
+      "id, name, slug, logistics_default, paystack_recipient_code, monnify_bank_verified_at, bank_account_name, bank_account_number, bank_code" as never
+    )
     .eq("id", restaurantId)
-    .single();
+    .single() as unknown as Promise<{
+      data: {
+        id: string;
+        name: string;
+        slug: string;
+        logistics_default: string | null;
+        paystack_recipient_code: string | null;
+        monnify_bank_verified_at: string | null;
+        bank_account_name: string | null;
+        bank_account_number: string | null;
+        bank_code: string | null;
+      } | null;
+    }>);
+  const restaurant = restaurantRes.data;
 
   if (!restaurant) return notFound();
 
@@ -43,10 +58,14 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
          period_date, order_count, gross_total_kobo, service_fee_total_kobo,
          merchant_charge_total_kobo, delivery_commission_kobo,
          paystack_transfer_code, paystack_transfer_ref,
-         failure_reason, initiated_at, paid_at, created_at`
+         monnify_disbursement_reference, monnify_transaction_reference,
+         failure_reason, initiated_at, paid_at, created_at` as never
       )
       .eq("restaurant_id", restaurantId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false }) as unknown as Promise<{
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: any[] | null;
+      }>,
 
     // All completed orders for this restaurant — with settlement_id
     supabase
@@ -118,7 +137,9 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
           name: restaurant.name,
           slug: restaurant.slug,
           logistics_default: restaurant.logistics_default,
-          has_bank_account: !!restaurant.paystack_recipient_code,
+          has_bank_account:
+            !!restaurant.paystack_recipient_code ||
+            !!restaurant.monnify_bank_verified_at,
           bank_account_name: restaurant.bank_account_name,
           bank_account_number: restaurant.bank_account_number,
           bank_code: restaurant.bank_code,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { verifyMonnifyTransaction, nairaToKobo } from "@/lib/monnify";
 
 export async function GET(request: NextRequest) {
   const ref = request.nextUrl.searchParams.get("ref");
@@ -10,52 +11,55 @@ export async function GET(request: NextRequest) {
   // ── Fast path: webhook already processed ─────────────────────────────────
   const { data: payment } = await supabase
     .from("payments")
-    .select("id, order_id, paystack_status, restaurant_id, metadata")
-    .eq("paystack_ref", ref)
+    .select("id, order_id, monnify_status, restaurant_id, metadata" as never)
+    .eq("monnify_ref" as never, ref)
     .maybeSingle();
 
   if (!payment) return NextResponse.json({ orderId: null });
-  if (payment.order_id) return NextResponse.json({ orderId: payment.order_id });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const paymentRow = payment as any;
+  if (paymentRow.order_id) return NextResponse.json({ orderId: paymentRow.order_id });
 
-  // ── Webhook hasn't fired yet — verify with Paystack directly ─────────────
-  // This catches the common live-key race where Paystack redirects the customer
-  // back before the webhook fires (can be 30–90 s on live keys).
+  // ── Webhook hasn't fired yet — verify with Monnify directly ──────────────
+  // This catches the race where Monnify redirects the customer back before
+  // the webhook fires.
   let verifyChannel: string | undefined;
-  let verifyFees: number | undefined;
+  let verifyFeesKobo: number | undefined;
+  let verifyTxnRef: string | undefined;
 
   try {
-    const verifyRes = await fetch(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(ref)}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
-    );
-    if (!verifyRes.ok) return NextResponse.json({ orderId: null });
-    const vd = (await verifyRes.json()) as {
-      data?: { status?: string; channel?: string; fees?: number };
-    };
-    if (vd.data?.status !== "success") return NextResponse.json({ orderId: null });
-    verifyChannel = vd.data.channel;
-    verifyFees = vd.data.fees;
-  } catch {
+    const verified = await verifyMonnifyTransaction(ref);
+    if (!verified || verified.paymentStatus !== "PAID") {
+      return NextResponse.json({ orderId: null });
+    }
+    verifyChannel = verified.paymentMethod ?? undefined;
+    verifyFeesKobo = verified.fee != null ? nairaToKobo(verified.fee) : undefined;
+    verifyTxnRef = verified.transactionReference;
+  } catch (err) {
+    console.error("[status] Monnify verify failed:", err);
     return NextResponse.json({ orderId: null });
   }
 
   // ── Atomically claim processing rights ───────────────────────────────────
-  // Only proceed if the payment is still "pending". If the Paystack webhook
-  // beat us here it will have already set paystack_status → "success", so the
+  // Only proceed if the payment is still "pending". If the Monnify webhook
+  // beat us here it will have already set monnify_status → "success", so the
   // conditional update matches 0 rows and we fall through to re-check order_id.
+  const claimPayload = {
+    monnify_status: "success",
+    paid_at: new Date().toISOString(),
+    metadata: {
+      ...((paymentRow.metadata as Record<string, unknown>) ?? {}),
+      monnify_channel: verifyChannel,
+      monnify_fees_kobo: verifyFeesKobo,
+      monnify_transaction_reference: verifyTxnRef,
+    },
+  } as unknown as Record<string, unknown>;
+
   const { data: claimed } = await supabase
     .from("payments")
-    .update({
-      paystack_status: "success",
-      paid_at: new Date().toISOString(),
-      metadata: {
-        ...((payment.metadata as Record<string, unknown>) ?? {}),
-        paystack_channel: verifyChannel,
-        paystack_fees: verifyFees,
-      },
-    })
-    .eq("id", payment.id)
-    .eq("paystack_status", "pending")
+    .update(claimPayload)
+    .eq("id", paymentRow.id)
+    .eq("monnify_status" as never, "pending")
     .select("id")
     .maybeSingle();
 
@@ -65,23 +69,23 @@ export async function GET(request: NextRequest) {
     const { data: latest } = await supabase
       .from("payments")
       .select("order_id")
-      .eq("id", payment.id)
+      .eq("id", paymentRow.id)
       .single();
     return NextResponse.json({ orderId: latest?.order_id ?? null });
   }
 
   // ── We own this payment — create the order now ────────────────────────────
-  // Mirrors the webhook's charge.success handler exactly. When the Paystack
-  // webhook eventually fires it will find paystack_status="success" AND
-  // order_id IS SET and return early (idempotency guard on line 60 of the
-  // webhook route), so nothing is duplicated.
+  // Mirrors the webhook's SUCCESSFUL_TRANSACTION handler exactly. When the
+  // Monnify webhook eventually fires it will find monnify_status="success" AND
+  // order_id IS SET and return early (idempotency guard in the webhook route),
+  // so nothing is duplicated.
 
-  const meta = payment.metadata as Record<string, unknown>;
-  const restaurantId = payment.restaurant_id;
+  const meta = paymentRow.metadata as Record<string, unknown>;
+  const restaurantId = paymentRow.restaurant_id;
 
   const orderPayload = {
     restaurant_id: restaurantId,
-    payment_id: payment.id,
+    payment_id: paymentRow.id,
     customer_phone: meta.customer_phone as string,
     customer_name: meta.customer_name as string,
     customer_email: (meta.customer_email as string) || null,
@@ -185,7 +189,7 @@ export async function GET(request: NextRequest) {
     supabase
       .from("payments")
       .update({ order_id: order.id })
-      .eq("id", payment.id),
+      .eq("id", paymentRow.id),
   ]);
 
   // CRM

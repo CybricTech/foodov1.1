@@ -30,7 +30,9 @@ export default async function AdminOverviewPage() {
     supabase
       .from("payments")
       .select("amount_kobo")
-      .eq("paystack_status", "success")
+      // Match either gateway: legacy paystack_status="success" OR new
+      // monnify_status="success". Both columns coexist post-migration.
+      .or("paystack_status.eq.success,monnify_status.eq.success")
       .gte("paid_at", thirtyDaysAgo),
     supabase
       .from("orders")

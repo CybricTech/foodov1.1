@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
       status,
       paystack_transfer_code,
       paystack_transfer_ref,
+      monnify_disbursement_reference,
+      monnify_transaction_reference,
       failure_reason,
       initiated_at,
       paid_at,

@@ -64,7 +64,8 @@ export default async function AdminAnalyticsPage({
     supabase
       .from("payments")
       .select("amount_kobo, restaurant_id")
-      .eq("paystack_status", "success")
+      // Match either gateway: legacy paystack_status OR new monnify_status.
+      .or("paystack_status.eq.success,monnify_status.eq.success")
       .gte("paid_at", thirtyDaysAgo),
 
     supabase

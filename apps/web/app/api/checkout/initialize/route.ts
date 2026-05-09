@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
+import { initMonnifyTransaction, koboToNaira } from "@/lib/monnify";
 import {
   DELIVERY_BASE_FEE_KOBO,
   DELIVERY_PER_KM_RATE_KOBO,
@@ -296,8 +297,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Generate Paystack reference
-  const paystackRef = `FD-${data.restaurantId.slice(0, 8)}-${Date.now()}`;
+  // Generate Monnify paymentReference (our internal id, sent on the request
+  // and echoed back in webhooks). Format kept identical to the legacy Paystack
+  // reference for log readability and downstream tooling compatibility.
+  const monnifyRef = `FD-${data.restaurantId.slice(0, 8)}-${Date.now()}`;
 
   // Create payment record (pending)
   const { data: payment, error: paymentError } = await supabase
@@ -305,9 +308,10 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .insert({
       restaurant_id: data.restaurantId,
-      paystack_ref: paystackRef,
+      monnify_ref: monnifyRef,
       amount_kobo: totalKobo,
-      paystack_status: "pending",
+      monnify_status: "pending",
+      payment_provider: "monnify",
       currency: "NGN",
       metadata: {
         customer_name: data.customerName,
@@ -338,46 +342,38 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Initialize Paystack transaction
-  const paystackRes = await fetch(
-    "https://api.paystack.co/transaction/initialize",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        "Content-Type": "application/json",
+  // Initialize Monnify transaction
+  let monnifyInit;
+  try {
+    monnifyInit = await initMonnifyTransaction({
+      amount: koboToNaira(totalKobo),
+      paymentReference: monnifyRef,
+      customerName: data.customerName,
+      customerEmail:
+        data.customerEmail ||
+        `${data.customerPhone.replace(/\D/g, "")}@foodo.ng`,
+      paymentDescription: `Order at ${restaurant.name}`,
+      metaData: {
+        payment_id: payment.id,
+        restaurant_id: data.restaurantId,
+        customer_phone: data.customerPhone,
       },
-      body: JSON.stringify({
-        reference: paystackRef,
-        amount: totalKobo,
-        email:
-          data.customerEmail ||
-          `${data.customerPhone.replace(/\D/g, "")}@foodo.ng`,
-        currency: "NGN",
-        metadata: {
-          payment_id: payment.id,
-          restaurant_id: data.restaurantId,
-          customer_name: data.customerName,
-          customer_phone: data.customerPhone,
-        },
-      }),
-    }
-  );
-
-  if (!paystackRes.ok) {
-    const errBody = await paystackRes.json().catch(() => ({}));
-    console.error("Paystack init error:", errBody);
+    });
+  } catch (err) {
+    console.error("Monnify init error:", err);
     return NextResponse.json(
       { error: "Payment gateway error" },
       { status: 502 }
     );
   }
 
-  const paystackData = await paystackRes.json();
-
   return NextResponse.json({
-    accessCode: paystackData.data.access_code,
-    paystackRef,
+    // Frontend SDK uses paymentReference to drive the inline checkout.
+    // checkoutUrl is provided as a fallback for environments where the SDK
+    // can't load (e.g. iframed contexts that block window.open).
+    monnifyRef,
+    transactionReference: monnifyInit.transactionReference,
+    checkoutUrl: monnifyInit.checkoutUrl,
     paymentId: payment.id,
     totalKobo,
     deliveryFeeKobo,

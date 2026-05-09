@@ -32,6 +32,8 @@ type SettlementRow = {
   gross_total_kobo: number;
   paystack_transfer_code: string | null;
   paystack_transfer_ref: string | null;
+  monnify_disbursement_reference?: string | null;
+  monnify_transaction_reference?: string | null;
   failure_reason: string | null;
   initiated_at: string;
   paid_at: string | null;
@@ -440,7 +442,10 @@ function SettlementPayoutRow({
   computedNet: number;
   onClick?: () => void;
 }) {
-  const ref = extractBankRef(settlement.bank_reference, settlement.paystack_transfer_ref);
+  const ref = extractBankRef(
+    settlement.bank_reference,
+    settlement.monnify_disbursement_reference ?? settlement.paystack_transfer_ref
+  );
   const date = new Date(settlement.initiated_at || settlement.created_at).toLocaleDateString("en-NG", {
     day: "numeric", month: "short", year: "numeric",
   });
@@ -565,9 +570,9 @@ function PayoutDetailModal({
           )}
 
           {/* Reference */}
-          {(settlement.bank_reference || settlement.paystack_transfer_ref) && (
+          {(settlement.bank_reference || settlement.monnify_disbursement_reference || settlement.paystack_transfer_ref) && (
             <div className="text-sm text-black-500">
-              Ref: <span className="font-medium text-black-700">{settlement.bank_reference ?? settlement.paystack_transfer_ref}</span>
+              Ref: <span className="font-medium text-black-700">{settlement.bank_reference ?? settlement.monnify_disbursement_reference ?? settlement.paystack_transfer_ref}</span>
             </div>
           )}
 

@@ -16,6 +16,7 @@ function BankAccountSection({ restaurantId, initialData }: {
     bank_account_number: string | null;
     bank_account_name: string | null;
     paystack_recipient_code: string | null;
+    monnify_bank_verified_at?: string | null;
   } | null;
 }) {
   const [banks, setBanks] = useState<PaystackBank[]>([]);
@@ -76,7 +77,7 @@ function BankAccountSection({ restaurantId, initialData }: {
             <p className="text-xs text-black-500 font-medium">Account number</p>
             <p className="text-sm font-semibold text-black-900 mt-0.5">{saved.bank_account_number}</p>
           </div>
-          {saved.paystack_recipient_code && (
+          {(saved.paystack_recipient_code || saved.monnify_bank_verified_at) && (
             <p className="text-xs text-viridian-500">
               Verified — ready for automatic settlement
             </p>
@@ -1093,6 +1094,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               bank_account_number: (r as RestaurantExtended & { bank_account_number?: string | null }).bank_account_number ?? null,
               bank_account_name: (r as RestaurantExtended & { bank_account_name?: string | null }).bank_account_name ?? null,
               paystack_recipient_code: (r as RestaurantExtended & { paystack_recipient_code?: string | null }).paystack_recipient_code ?? null,
+              monnify_bank_verified_at: (r as RestaurantExtended & { monnify_bank_verified_at?: string | null }).monnify_bank_verified_at ?? null,
             }}
           />
 

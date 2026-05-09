@@ -41,6 +41,7 @@ type Settlement = {
   paid_at: string | null;
   created_at: string;
   paystack_transfer_ref: string | null;
+  monnify_disbursement_reference?: string | null;
 };
 
 type Customer = {
@@ -1026,9 +1027,9 @@ function FinancialsTab({
                       </td>
                       <td
                         className="px-4 py-3 text-xs font-mono text-black-500 max-w-[120px] truncate"
-                        title={s.paystack_transfer_ref ?? ""}
+                        title={s.monnify_disbursement_reference ?? s.paystack_transfer_ref ?? ""}
                       >
-                        {s.paystack_transfer_ref ?? "---"}
+                        {s.monnify_disbursement_reference ?? s.paystack_transfer_ref ?? "---"}
                       </td>
                       <td className="px-4 py-3 text-xs text-black-400 whitespace-nowrap">
                         {s.paid_at
@@ -1081,9 +1082,15 @@ function SettingsTab({ restaurant }: { restaurant: Restaurant }) {
             muted={!restaurant.bank_account_name}
           />
           <InfoRow
-            label="Paystack Recipient"
-            value={restaurant.paystack_recipient_code ?? "Not configured"}
-            muted={!restaurant.paystack_recipient_code}
+            label="Payout Gateway"
+            value={
+              restaurant.paystack_recipient_code
+                ? `Paystack: ${restaurant.paystack_recipient_code}`
+                : restaurant.bank_account_number
+                  ? "Monnify (bank verified)"
+                  : "Not configured"
+            }
+            muted={!restaurant.paystack_recipient_code && !restaurant.bank_account_number}
             mono={!!restaurant.paystack_recipient_code}
           />
           <InfoRow

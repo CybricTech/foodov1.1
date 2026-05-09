@@ -32,7 +32,7 @@ export default async function AdminSettlementsPage() {
         status,
         dispatch_type,
         created_at,
-        restaurants (name, paystack_recipient_code),
+        restaurants (name, paystack_recipient_code, monnify_bank_verified_at),
         delivery_assignments (dispatch_type)
       `
       )
@@ -59,16 +59,22 @@ export default async function AdminSettlementsPage() {
         delivery_commission_kobo,
         paystack_transfer_code,
         paystack_transfer_ref,
+        monnify_disbursement_reference,
+        monnify_transaction_reference,
         failure_reason,
         initiated_at,
         paid_at,
         created_at,
         restaurants (name, slug)
-      `,
+      ` as never,
         { count: "exact" }
       )
       .order("created_at", { ascending: false })
-      .limit(100),
+      .limit(100) as unknown as Promise<{
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: any[] | null;
+        count: number | null;
+      }>,
 
     // ALL wallets for merchant settlement summary
     supabase
@@ -80,7 +86,7 @@ export default async function AdminSettlementsPage() {
         available_balance_kobo,
         total_earned_kobo,
         total_withdrawn_kobo,
-        restaurants (name, slug, paystack_recipient_code)
+        restaurants (name, slug, paystack_recipient_code, monnify_bank_verified_at)
       `
       )
       .order("total_earned_kobo", { ascending: false }),
@@ -114,7 +120,7 @@ export default async function AdminSettlementsPage() {
   const normalizedOrders = (orders ?? []).map((o: Record<string, unknown>) => {
     const assignments = o.delivery_assignments as Array<{ dispatch_type: string }> | null;
     const restaurant = o.restaurants as
-      | { name: string; paystack_recipient_code: string | null }
+      | { name: string; paystack_recipient_code: string | null; monnify_bank_verified_at: string | null }
       | null;
 
     const dispatch_type =
@@ -137,9 +143,12 @@ export default async function AdminSettlementsPage() {
       status: o.status as string,
       created_at: o.created_at as string,
       restaurants: restaurant ? { name: restaurant.name } : null,
-      // True when the merchant is integrated with Foodo's Paystack — used by
-      // the Daily P&L to exclude test merchants whose orders never settle to us
-      restaurant_has_paystack: !!restaurant?.paystack_recipient_code,
+      // True when the merchant is integrated with a payment gateway (legacy
+      // Paystack OR Monnify) — used by the Daily P&L to exclude test merchants
+      // whose orders never settle to us. Field name preserved to avoid touching
+      // downstream consumers.
+      restaurant_has_paystack:
+        !!restaurant?.paystack_recipient_code || !!restaurant?.monnify_bank_verified_at,
     };
   });
 
@@ -158,7 +167,7 @@ export default async function AdminSettlementsPage() {
   }
 
   const merchantSummaries = (allWallets ?? []).map((w: Record<string, unknown>) => {
-    const restaurant = w.restaurants as { name: string; slug: string; paystack_recipient_code: string | null } | null;
+    const restaurant = w.restaurants as { name: string; slug: string; paystack_recipient_code: string | null; monnify_bank_verified_at: string | null } | null;
     const rid = w.restaurant_id as string;
     const settlementData = restaurantSettlementMap[rid] ?? { totalPaid: 0, totalPending: 0, settlementCount: 0 };
 
@@ -166,7 +175,8 @@ export default async function AdminSettlementsPage() {
       restaurant_id: rid,
       restaurant_name: restaurant?.name ?? "Unknown",
       restaurant_slug: restaurant?.slug ?? "",
-      has_bank_account: !!restaurant?.paystack_recipient_code,
+      has_bank_account:
+        !!restaurant?.paystack_recipient_code || !!restaurant?.monnify_bank_verified_at,
       pending_balance_kobo: (w.pending_balance_kobo as number) ?? 0,
       available_balance_kobo: (w.available_balance_kobo as number) ?? 0,
       total_earned_kobo: (w.total_earned_kobo as number) ?? 0,

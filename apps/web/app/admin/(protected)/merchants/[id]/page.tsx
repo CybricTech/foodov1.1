@@ -93,10 +93,20 @@ export default async function MerchantDetailPage({
 
     supabase
       .from("settlements")
-      .select("id, amount_kobo, status, paid_at, created_at, paystack_transfer_ref")
+      .select("id, amount_kobo, status, paid_at, created_at, paystack_transfer_ref, monnify_disbursement_reference" as never)
       .eq("restaurant_id", id)
       .order("created_at", { ascending: false })
-      .limit(10),
+      .limit(10) as unknown as Promise<{
+        data: Array<{
+          id: string;
+          amount_kobo: number;
+          status: string;
+          paid_at: string | null;
+          created_at: string;
+          paystack_transfer_ref: string | null;
+          monnify_disbursement_reference: string | null;
+        }> | null;
+      }>,
   ]);
 
   if (!restaurant) {

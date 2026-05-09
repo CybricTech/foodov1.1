@@ -40,6 +40,8 @@ type Settlement = {
   delivery_commission_kobo: number;
   paystack_transfer_code: string | null;
   paystack_transfer_ref: string | null;
+  monnify_disbursement_reference?: string | null;
+  monnify_transaction_reference?: string | null;
   failure_reason: string | null;
   initiated_at: string;
   paid_at: string | null;
@@ -424,7 +426,9 @@ export function MerchantSettlementDetailClient({
                     {s.order_count > 0 ? `${s.order_count} orders · ` : ""}
                     {new Date(s.created_at).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                     {s.bank_reference ? ` · Ref: ${s.bank_reference}` : ""}
-                    {s.paystack_transfer_ref ? ` · ${s.paystack_transfer_ref}` : ""}
+                    {(s.monnify_disbursement_reference ?? s.paystack_transfer_ref)
+                      ? ` · ${s.monnify_disbursement_reference ?? s.paystack_transfer_ref}`
+                      : ""}
                   </p>
                   {s.gross_total_kobo > 0 && (
                     <p className="text-xs text-black-400 mt-0.5">

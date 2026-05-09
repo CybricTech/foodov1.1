@@ -17,7 +17,7 @@ export default function RestaurantBankingPage() {
   const [result, setResult] = useState<{
     bank_account_name: string;
     bank_account_number: string;
-    paystack_recipient_code: string;
+    monnify_bank_verified_at?: string | null;
   } | null>(null);
 
   async function loadBanks() {
@@ -66,7 +66,11 @@ export default function RestaurantBankingPage() {
           <p className="text-sm font-semibold text-viridian-700">Bank account registered</p>
           <p className="text-sm text-black-900">{result.bank_account_name}</p>
           <p className="text-sm text-black-500">{result.bank_account_number}</p>
-          <p className="text-xs text-black-400">Recipient: {result.paystack_recipient_code}</p>
+          {result.monnify_bank_verified_at && (
+            <p className="text-xs text-black-400">
+              Verified at: {new Date(result.monnify_bank_verified_at).toLocaleString("en-NG")}
+            </p>
+          )}
           <button
             onClick={() => setResult(null)}
             className="text-sm text-purple-500 font-medium hover:underline"

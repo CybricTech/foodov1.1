@@ -35,10 +35,14 @@ export default async function WalletPage() {
          period_date, order_count, gross_total_kobo, service_fee_total_kobo,
          merchant_charge_total_kobo, delivery_commission_kobo,
          paystack_transfer_code, paystack_transfer_ref,
-         failure_reason, initiated_at, paid_at, created_at`
+         monnify_disbursement_reference, monnify_transaction_reference,
+         failure_reason, initiated_at, paid_at, created_at` as never
       )
       .eq("restaurant_id", session.restaurantId)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false }) as unknown as Promise<{
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: any[] | null;
+      }>,
 
     // Orders with dispatch info — same query as admin settlement detail so all
     // stats (earned, pending, paid out) use the exact same formula on both sides
