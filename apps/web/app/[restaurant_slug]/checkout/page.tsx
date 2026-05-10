@@ -351,7 +351,7 @@ export default function CheckoutPage() {
           onLoadComplete: () => {
             clearMonnifyTimeout();
           },
-          onComplete: (response: { paymentStatus?: string }) => {
+          onComplete: (response: { paymentStatus?: string; paymentReference?: string }) => {
             clearMonnifyTimeout();
             // PAID is the success state; OVERPAID is also a success scenario.
             // Anything else (FAILED, EXPIRED, PENDING) we route to the same
@@ -363,7 +363,10 @@ export default function CheckoutPage() {
               paidRef.current = true;
               clearCart();
             }
-            router.push(`/${restaurant.slug}/orders/pending?ref=${initData.monnifyRef}`);
+            // Use the reference Monnify actually assigned (may differ from our
+            // pre-generated ref when the SDK re-initializes the transaction).
+            const actualRef = response?.paymentReference ?? initData.monnifyRef;
+            router.push(`/${restaurant.slug}/orders/pending?ref=${actualRef}&pid=${initData.paymentId}`);
           },
           onClose: (data: { paymentStatus?: string }) => {
             clearMonnifyTimeout();
@@ -908,6 +911,7 @@ type MonnifySDKConfig = {
     transactionReference?: string;
     paymentReference?: string;
     amountPaid?: number;
+    [key: string]: unknown;
   }) => void;
   onClose?: (data: { paymentStatus?: string; redirectUrl?: string }) => void;
 };
