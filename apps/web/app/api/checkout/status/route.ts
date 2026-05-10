@@ -6,14 +6,37 @@ export async function GET(request: NextRequest) {
   const ref = request.nextUrl.searchParams.get("ref");
   if (!ref) return NextResponse.json({ error: "Missing ref" }, { status: 400 });
 
+  const pid = request.nextUrl.searchParams.get("pid");
+
   const supabase = createServiceClient();
 
   // ── Fast path: webhook already processed ─────────────────────────────────
-  const { data: payment } = await supabase
+  let { data: payment } = await supabase
     .from("payments")
     .select("id, order_id, monnify_status, restaurant_id, metadata" as never)
     .eq("monnify_ref" as never, ref)
     .maybeSingle();
+
+  // ── Reference mismatch fallback ───────────────────────────────────────────
+  // The Monnify SDK may assign a different paymentReference than our pre-
+  // generated ref. The pending page now passes &pid=<paymentId> so we can
+  // look up by DB id and patch monnify_ref to the actual SDK reference.
+  if (!payment && pid) {
+    const { data: byId } = await supabase
+      .from("payments")
+      .select("id, order_id, monnify_status, restaurant_id, metadata" as never)
+      .eq("id", pid)
+      .maybeSingle();
+
+    if (byId) {
+      // Patch monnify_ref so webhook idempotency and future polls work correctly.
+      await supabase
+        .from("payments")
+        .update({ monnify_ref: ref } as never)
+        .eq("id", pid);
+      payment = byId;
+    }
+  }
 
   if (!payment) return NextResponse.json({ orderId: null });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

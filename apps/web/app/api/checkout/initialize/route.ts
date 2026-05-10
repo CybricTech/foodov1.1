@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
-import { initMonnifyTransaction, koboToNaira } from "@/lib/monnify";
 import {
   DELIVERY_BASE_FEE_KOBO,
   DELIVERY_PER_KM_RATE_KOBO,
@@ -33,6 +32,7 @@ const InitializeSchema = z.object({
   customerEmail: z.string().email().optional().or(z.literal("")),
   fulfillmentType: z.enum(["delivery", "pickup"]),
   deliveryAddress: z.string().optional(),
+  deliveryBaseAddress: z.string().optional(),
   specialInstructions: z.string().max(500).optional(),
   deliveryFeeKobo: z.number().int().min(0).optional(),
   deliveryDistanceKm: z.number().min(0).optional(),
@@ -228,7 +228,11 @@ export async function POST(request: NextRequest) {
 
       if (rest?.latitude && rest?.longitude) {
         const origin = `${rest.latitude},${rest.longitude}`;
-        const destination = encodeURIComponent(data.deliveryAddress);
+        // Use the raw Places result for geocoding — not the combined string that
+        // includes the apt/floor field, which can confuse Maps into resolving to
+        // a completely different location (e.g. "House 14a Addis Ababa" causes
+        // Maps to snap to Addis Ababa Crescent instead of the actual estate).
+        const destination = encodeURIComponent(data.deliveryBaseAddress ?? data.deliveryAddress ?? "");
         const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&units=metric&key=${process.env.GOOGLE_MAPS_API_KEY}`;
 
         const mapsRes = await fetch(mapsUrl);
@@ -342,38 +346,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Initialize Monnify transaction
-  let monnifyInit;
-  try {
-    monnifyInit = await initMonnifyTransaction({
-      amount: koboToNaira(totalKobo),
-      paymentReference: monnifyRef,
-      customerName: data.customerName,
-      customerEmail:
-        data.customerEmail ||
-        `${data.customerPhone.replace(/\D/g, "")}@foodo.ng`,
-      paymentDescription: `Order at ${restaurant.name}`,
-      metaData: {
-        payment_id: payment.id,
-        restaurant_id: data.restaurantId,
-        customer_phone: data.customerPhone,
-      },
-    });
-  } catch (err) {
-    console.error("Monnify init error:", err);
-    return NextResponse.json(
-      { error: "Payment gateway error" },
-      { status: 502 }
-    );
-  }
-
   return NextResponse.json({
-    // Frontend SDK uses paymentReference to drive the inline checkout.
-    // checkoutUrl is provided as a fallback for environments where the SDK
-    // can't load (e.g. iframed contexts that block window.open).
     monnifyRef,
-    transactionReference: monnifyInit.transactionReference,
-    checkoutUrl: monnifyInit.checkoutUrl,
     paymentId: payment.id,
     totalKobo,
     deliveryFeeKobo,
