@@ -103,7 +103,10 @@ export async function middleware(request: NextRequest) {
   const isDashboardSub = hostname === "dashboard.kitchyn.app";
   const isAdminSub     = hostname === "admin.kitchyn.app";
   const isStorefrontSub =
-    hostname.endsWith(".kitchyn.app") && !isDashboardSub && !isAdminSub;
+    hostname.endsWith(".kitchyn.app") &&
+    !isDashboardSub &&
+    !isAdminSub &&
+    hostname !== "www.kitchyn.app";
 
   // dashboard.kitchyn.app/ → redirect to /dashboard (all /dashboard/* paths work as-is)
   if (isDashboardSub && pathname === "/") {
