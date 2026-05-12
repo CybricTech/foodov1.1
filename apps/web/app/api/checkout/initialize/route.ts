@@ -301,40 +301,56 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Generate Monnify paymentReference (our internal id, sent on the request
-  // and echoed back in webhooks). Format kept identical to the legacy Paystack
-  // reference for log readability and downstream tooling compatibility.
-  const monnifyRef = `FD-${data.restaurantId.slice(0, 8)}-${Date.now()}`;
+  // PAYMENT_PROVIDER toggle (default monnify). Flip the env var on Vercel +
+  // redeploy to switch gateways without touching git history.
+  const provider: "monnify" | "paystack" =
+    process.env.PAYMENT_PROVIDER === "paystack" ? "paystack" : "monnify";
 
-  // Create payment record (pending)
+  // Reference format kept identical across providers for log readability.
+  const paymentRef = `FD-${data.restaurantId.slice(0, 8)}-${Date.now()}`;
+
+  const sharedMetadata = {
+    customer_name: data.customerName,
+    customer_phone: data.customerPhone,
+    customer_email: data.customerEmail || null,
+    fulfillment_type: data.fulfillmentType,
+    delivery_address: data.deliveryAddress || null,
+    special_instructions: data.specialInstructions || null,
+    items: verifiedItems as unknown as import("@foodo/database").Json,
+    subtotal_kobo: subtotalKobo,
+    delivery_fee_kobo: deliveryFeeKobo,
+    vat_kobo: vatKobo,
+    vat_percentage: vatPct,
+    service_fee_kobo: serviceFeeKobo,
+    service_charge_pct: serviceChargePct,
+    delivery_distance_km: data.deliveryDistanceKm ?? null,
+  } as import("@foodo/database").Json;
+
+  const paymentInsert =
+    provider === "paystack"
+      ? {
+          restaurant_id: data.restaurantId,
+          paystack_ref: paymentRef,
+          amount_kobo: totalKobo,
+          paystack_status: "pending",
+          payment_provider: "paystack",
+          currency: "NGN",
+          metadata: sharedMetadata,
+        }
+      : {
+          restaurant_id: data.restaurantId,
+          monnify_ref: paymentRef,
+          amount_kobo: totalKobo,
+          monnify_status: "pending",
+          payment_provider: "monnify",
+          currency: "NGN",
+          metadata: sharedMetadata,
+        };
+
   const { data: payment, error: paymentError } = await supabase
     .from("payments")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .insert({
-      restaurant_id: data.restaurantId,
-      monnify_ref: monnifyRef,
-      amount_kobo: totalKobo,
-      monnify_status: "pending",
-      payment_provider: "monnify",
-      currency: "NGN",
-      metadata: {
-        customer_name: data.customerName,
-        customer_phone: data.customerPhone,
-        customer_email: data.customerEmail || null,
-        fulfillment_type: data.fulfillmentType,
-        delivery_address: data.deliveryAddress || null,
-        special_instructions: data.specialInstructions || null,
-        items: verifiedItems as unknown as import("@foodo/database").Json,
-        subtotal_kobo: subtotalKobo,
-        delivery_fee_kobo: deliveryFeeKobo,
-        vat_kobo: vatKobo,
-        vat_percentage: vatPct,
-        service_fee_kobo: serviceFeeKobo,
-        service_charge_pct: serviceChargePct,
-        delivery_distance_km: data.deliveryDistanceKm ?? null,
-      } as import("@foodo/database").Json,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
+    .insert(paymentInsert as any)
     .select("id")
     .single();
 
@@ -346,8 +362,62 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (provider === "paystack") {
+    // Server-side init — binds the reference to our payment row before the
+    // SDK opens. The client then calls resumeTransaction(access_code).
+    const paystackRes = await fetch(
+      "https://api.paystack.co/transaction/initialize",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reference: paymentRef,
+          amount: totalKobo,
+          email:
+            data.customerEmail ||
+            `${data.customerPhone.replace(/\D/g, "")}@foodo.ng`,
+          currency: "NGN",
+          metadata: {
+            payment_id: payment.id,
+            restaurant_id: data.restaurantId,
+            customer_name: data.customerName,
+            customer_phone: data.customerPhone,
+          },
+        }),
+      }
+    );
+
+    if (!paystackRes.ok) {
+      const errBody = await paystackRes.json().catch(() => ({}));
+      console.error("Paystack init error:", errBody);
+      return NextResponse.json(
+        { error: "Payment gateway error" },
+        { status: 502 }
+      );
+    }
+
+    const paystackData = await paystackRes.json();
+
+    return NextResponse.json({
+      provider: "paystack",
+      accessCode: paystackData.data.access_code,
+      paystackRef: paymentRef,
+      paymentId: payment.id,
+      totalKobo,
+      deliveryFeeKobo,
+      vatKobo,
+      vatPercentage: vatPct,
+      serviceFeeKobo,
+      serviceChargePct,
+    });
+  }
+
   return NextResponse.json({
-    monnifyRef,
+    provider: "monnify",
+    monnifyRef: paymentRef,
     paymentId: payment.id,
     totalKobo,
     deliveryFeeKobo,

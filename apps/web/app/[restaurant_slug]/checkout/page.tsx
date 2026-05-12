@@ -322,16 +322,84 @@ export default function CheckoutPage() {
         return;
       }
 
+      const popupEmail = email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`;
+
+      if (initData.provider === "paystack") {
+        // ── Paystack inline.js v2 flow ────────────────────────────────────
+        const PaystackPop = await loadPaystackScript();
+        let paystackTimeout: ReturnType<typeof setTimeout> | null = null;
+        const clearPaystackTimeout = () => {
+          if (paystackTimeout) clearTimeout(paystackTimeout);
+        };
+
+        const callbacks = {
+          // Fires when the inline iframe finishes loading — clears the
+          // safety-net timeout so a slow 3DS/OTP handoff doesn't trip it.
+          onLoad: () => {
+            clearPaystackTimeout();
+          },
+          onSuccess: () => {
+            paidRef.current = true;
+            clearPaystackTimeout();
+            clearCart();
+            router.push(
+              `/${restaurant.slug}/orders/pending?ref=${initData.paystackRef}&provider=paystack`
+            );
+          },
+          onCancel: () => {
+            clearPaystackTimeout();
+            setError("Payment was cancelled. You can try again.");
+            setLoading(false);
+          },
+          onError: (err: { message: string }) => {
+            clearPaystackTimeout();
+            console.error("[Checkout] Paystack onError:", err);
+            setError(err.message || "Payment gateway error. Please try again.");
+            setLoading(false);
+          },
+        };
+
+        try {
+          const popup = new PaystackPop();
+          if (initData.accessCode) {
+            popup.resumeTransaction(initData.accessCode, callbacks);
+          } else {
+            popup.newTransaction({
+              key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
+              email: popupEmail,
+              amount: initData.totalKobo,
+              currency: "NGN",
+              reference: initData.paystackRef,
+              ...callbacks,
+            });
+          }
+        } catch (e) {
+          clearPaystackTimeout();
+          console.error("[Checkout] Paystack popup failed to open:", e);
+          setError("Payment gateway failed to open. Please try again.");
+          setLoading(false);
+          return;
+        }
+
+        paystackTimeout = setTimeout(() => {
+          setLoading(false);
+          setError(
+            "Payment gateway timed out. If this keeps happening, the site domain may need to be registered with Paystack."
+          );
+        }, 30000);
+        return;
+      }
+
+      // ── Monnify Web SDK flow ────────────────────────────────────────────
       const MonnifySDK = await loadMonnifyScript();
       let monnifyTimeout: ReturnType<typeof setTimeout> | null = null;
       const clearMonnifyTimeout = () => {
         if (monnifyTimeout) clearTimeout(monnifyTimeout);
       };
-      const popupEmail = email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`;
 
-      // Monnify Web SDK. The SDK opens an inline checkout pane. Server-side
-      // we already pre-initialized the transaction (so paymentReference is
-      // bound to a payment row); the SDK call here just drives the UI.
+      // The SDK opens an inline checkout pane. Server-side we already pre-
+      // initialized the transaction (paymentReference bound to a payment row);
+      // the SDK call here just drives the UI.
       try {
         MonnifySDK.initialize({
           // Monnify amounts are in NGN (decimals), not kobo.
@@ -345,17 +413,11 @@ export default function CheckoutPage() {
           paymentDescription: `Order at ${restaurant.name}`,
           paymentMethods: ["ACCOUNT_TRANSFER", "CARD"],
           metadata: { paymentId: initData.paymentId },
-          // Fires once the inline iframe finishes loading. Clearing the
-          // timeout here means a slow live payment (OTP, bank-app handoff)
-          // won't trip the gateway-timeout path while the popup is open.
           onLoadComplete: () => {
             clearMonnifyTimeout();
           },
           onComplete: (response: { paymentStatus?: string; paymentReference?: string }) => {
             clearMonnifyTimeout();
-            // PAID is the success state; OVERPAID is also a success scenario.
-            // Anything else (FAILED, EXPIRED, PENDING) we route to the same
-            // pending page — the server-side verify will gate order creation.
             if (
               response?.paymentStatus === "PAID" ||
               response?.paymentStatus === "OVERPAID"
@@ -363,15 +425,13 @@ export default function CheckoutPage() {
               paidRef.current = true;
               clearCart();
             }
-            // Use the reference Monnify actually assigned (may differ from our
-            // pre-generated ref when the SDK re-initializes the transaction).
             const actualRef = response?.paymentReference ?? initData.monnifyRef;
-            router.push(`/${restaurant.slug}/orders/pending?ref=${actualRef}&pid=${initData.paymentId}`);
+            router.push(
+              `/${restaurant.slug}/orders/pending?ref=${actualRef}&pid=${initData.paymentId}&provider=monnify`
+            );
           },
           onClose: (data: { paymentStatus?: string }) => {
             clearMonnifyTimeout();
-            // Customer dismissed the modal. If the payment hadn't completed,
-            // surface the cancellation so they can retry.
             if (data?.paymentStatus !== "PAID" && data?.paymentStatus !== "OVERPAID") {
               setError("Payment was cancelled. You can try again.");
               setLoading(false);
@@ -385,9 +445,6 @@ export default function CheckoutPage() {
         setLoading(false);
         return;
       }
-      // Safety net: if the SDK assets fail to load (network / blocked iframe)
-      // none of the callbacks fire and `loading` would stay stuck true. Reset
-      // after a generous timeout.
       monnifyTimeout = setTimeout(() => {
         setLoading(false);
         setError(
@@ -745,11 +802,6 @@ export default function CheckoutPage() {
               <div className="px-4 py-3 flex items-center justify-between">
                 <div className="text-sm text-black-500">
                   Service fee
-                  {serviceChargePct > 0 && (
-                    <span className="ml-1.5 text-xs text-black-400">
-                      ({(serviceChargePct * 100).toFixed(1)}%{serviceChargeFixedKobo > 0 ? ` + ${formatKobo(serviceChargeFixedKobo)}` : ""})
-                    </span>
-                  )}
                 </div>
                 <span className="text-sm font-semibold text-black-900">{formatKobo(serviceFeeKobo)}</span>
               </div>
@@ -932,6 +984,43 @@ function loadMonnifyScript(): Promise<MonnifySDKInstance> {
       const sdk = (window as unknown as { MonnifySDK?: MonnifySDKInstance }).MonnifySDK;
       if (sdk) resolve(sdk);
       else reject(new Error("MonnifySDK did not register on window"));
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+// Paystack inline.js v2 API surface (only the bits we use).
+// Docs: https://github.com/PaystackHQ/inline-js
+type PaystackPopCallbacks = {
+  onSuccess?: (txn: { id: number; reference: string; message: string }) => void;
+  onCancel?: () => void;
+  onError?: (err: { message: string }) => void;
+  onLoad?: (txn: { id: number; customer: unknown; accessCode: string }) => void;
+};
+type PaystackPopInstance = {
+  resumeTransaction: (accessCode: string, callbacks: PaystackPopCallbacks) => void;
+  newTransaction: (
+    config: Record<string, unknown> & PaystackPopCallbacks
+  ) => void;
+};
+type PaystackPopConstructor = new () => PaystackPopInstance;
+
+function loadPaystackScript(): Promise<PaystackPopConstructor> {
+  return new Promise((resolve, reject) => {
+    const existing = (window as unknown as { PaystackPop?: PaystackPopConstructor })
+      .PaystackPop;
+    if (existing) {
+      resolve(existing);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://js.paystack.co/v2/inline.js";
+    script.onload = () => {
+      const ctor = (window as unknown as { PaystackPop?: PaystackPopConstructor })
+        .PaystackPop;
+      if (ctor) resolve(ctor);
+      else reject(new Error("PaystackPop did not register on window"));
     };
     script.onerror = reject;
     document.head.appendChild(script);

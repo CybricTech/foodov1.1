@@ -53,6 +53,19 @@ export async function POST(request: NextRequest) {
         await handleDisbursementEvent(supabase, event.eventType, event.eventData);
         break;
 
+      case "REJECTED_PAYMENT":
+      case "EXPIRED_TRANSACTION": {
+        const rejectedRef = event.eventData.paymentReference as string | undefined;
+        if (rejectedRef) {
+          await supabase
+            .from("payments")
+            .update({ monnify_status: "rejected" } as never)
+            .eq("monnify_ref" as never, rejectedRef);
+          console.log(`[monnify-webhook] payment ${event.eventType}: ref=${rejectedRef}`);
+        }
+        break;
+      }
+
       default:
         // Unhandled event types — acknowledge so Monnify doesn't retry.
         console.log(`[monnify-webhook] ignoring eventType=${event.eventType}`);

@@ -7,29 +7,36 @@ export async function GET(request: NextRequest) {
   if (!ref) return NextResponse.json({ error: "Missing ref" }, { status: 400 });
 
   const pid = request.nextUrl.searchParams.get("pid");
+  const provider = request.nextUrl.searchParams.get("provider") === "paystack"
+    ? "paystack"
+    : "monnify";
+  const isPaystack = provider === "paystack";
+  const refColumn = isPaystack ? "paystack_ref" : "monnify_ref";
+  const statusColumn = isPaystack ? "paystack_status" : "monnify_status";
 
   const supabase = createServiceClient();
 
   // ── Fast path: webhook already processed ─────────────────────────────────
+  // Select both status columns so the rejected check works for either provider.
   let { data: payment } = await supabase
     .from("payments")
-    .select("id, order_id, monnify_status, restaurant_id, metadata" as never)
-    .eq("monnify_ref" as never, ref)
+    .select("id, order_id, monnify_status, paystack_status, restaurant_id, metadata" as never)
+    .eq(refColumn as never, ref)
     .maybeSingle();
 
-  // ── Reference mismatch fallback ───────────────────────────────────────────
-  // The Monnify SDK may assign a different paymentReference than our pre-
-  // generated ref. The pending page now passes &pid=<paymentId> so we can
-  // look up by DB id and patch monnify_ref to the actual SDK reference.
-  if (!payment && pid) {
+  // ── Reference mismatch fallback (Monnify only) ────────────────────────────
+  // The Monnify SDK can assign a different paymentReference than our pre-
+  // generated ref. The pending page passes &pid=<paymentId> so we can look
+  // up by DB id and patch monnify_ref. Paystack always uses our reference so
+  // this fallback doesn't apply.
+  if (!payment && pid && !isPaystack) {
     const { data: byId } = await supabase
       .from("payments")
-      .select("id, order_id, monnify_status, restaurant_id, metadata" as never)
+      .select("id, order_id, monnify_status, paystack_status, restaurant_id, metadata" as never)
       .eq("id", pid)
       .maybeSingle();
 
     if (byId) {
-      // Patch monnify_ref so webhook idempotency and future polls work correctly.
       await supabase
         .from("payments")
         .update({ monnify_ref: ref } as never)
@@ -42,39 +49,87 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const paymentRow = payment as any;
   if (paymentRow.order_id) return NextResponse.json({ orderId: paymentRow.order_id });
+  const currentStatus = isPaystack ? paymentRow.paystack_status : paymentRow.monnify_status;
+  if (currentStatus === "rejected") {
+    return NextResponse.json({ orderId: null, status: "rejected" });
+  }
 
-  // ── Webhook hasn't fired yet — verify with Monnify directly ──────────────
-  // This catches the race where Monnify redirects the customer back before
-  // the webhook fires.
+  // ── Webhook hasn't fired yet — verify with the gateway directly ──────────
+  // This catches the race where the gateway redirects the customer back
+  // before the webhook fires.
   let verifyChannel: string | undefined;
   let verifyFeesKobo: number | undefined;
   let verifyTxnRef: string | undefined;
 
-  try {
-    const verified = await verifyMonnifyTransaction(ref);
-    if (!verified || verified.paymentStatus !== "PAID") {
+  if (isPaystack) {
+    try {
+      const verifyRes = await fetch(
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(ref)}`,
+        { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
+      );
+      if (!verifyRes.ok) return NextResponse.json({ orderId: null });
+      const vd = (await verifyRes.json()) as {
+        data?: { status?: string; channel?: string; fees?: number };
+      };
+      const status = vd.data?.status;
+      if (status === "failed" || status === "abandoned" || status === "reversed") {
+        await supabase
+          .from("payments")
+          .update({ paystack_status: "rejected" } as never)
+          .eq("id", paymentRow.id);
+        return NextResponse.json({ orderId: null, status: "rejected" });
+      }
+      if (status !== "success") return NextResponse.json({ orderId: null });
+      verifyChannel = vd.data?.channel;
+      verifyFeesKobo = vd.data?.fees;
+    } catch (err) {
+      console.error("[status] Paystack verify failed:", err);
       return NextResponse.json({ orderId: null });
     }
-    verifyChannel = verified.paymentMethod ?? undefined;
-    verifyFeesKobo = verified.fee != null ? nairaToKobo(verified.fee) : undefined;
-    verifyTxnRef = verified.transactionReference;
-  } catch (err) {
-    console.error("[status] Monnify verify failed:", err);
-    return NextResponse.json({ orderId: null });
+  } else {
+    try {
+      const verified = await verifyMonnifyTransaction(ref);
+      if (!verified) {
+        return NextResponse.json({ orderId: null });
+      }
+      const TERMINAL_FAILURES = ["FAILED", "EXPIRED", "REVERSED"];
+      if (TERMINAL_FAILURES.includes(verified.paymentStatus)) {
+        await supabase
+          .from("payments")
+          .update({ monnify_status: "rejected" } as never)
+          .eq("id", paymentRow.id);
+        return NextResponse.json({ orderId: null, status: "rejected" });
+      }
+      if (verified.paymentStatus !== "PAID") {
+        return NextResponse.json({ orderId: null });
+      }
+      verifyChannel = verified.paymentMethod ?? undefined;
+      verifyFeesKobo = verified.fee != null ? nairaToKobo(verified.fee) : undefined;
+      verifyTxnRef = verified.transactionReference;
+    } catch (err) {
+      console.error("[status] Monnify verify failed:", err);
+      return NextResponse.json({ orderId: null });
+    }
   }
 
   // ── Atomically claim processing rights ───────────────────────────────────
-  // Only proceed if the payment is still "pending". If the Monnify webhook
-  // beat us here it will have already set monnify_status → "success", so the
-  // conditional update matches 0 rows and we fall through to re-check order_id.
+  // Only proceed if the payment is still "pending". If the webhook beat us
+  // here it will have already flipped status → "success", so the conditional
+  // update matches 0 rows and we fall through to re-check order_id.
+  const claimMetadataPatch = isPaystack
+    ? { paystack_channel: verifyChannel, paystack_fees: verifyFeesKobo }
+    : {
+        monnify_channel: verifyChannel,
+        monnify_fees_kobo: verifyFeesKobo,
+        monnify_transaction_reference: verifyTxnRef,
+      };
+
   const claimPayload = {
-    monnify_status: "success",
+    [statusColumn]: "success",
     paid_at: new Date().toISOString(),
     metadata: {
       ...((paymentRow.metadata as Record<string, unknown>) ?? {}),
-      monnify_channel: verifyChannel,
-      monnify_fees_kobo: verifyFeesKobo,
-      monnify_transaction_reference: verifyTxnRef,
+      ...claimMetadataPatch,
     },
   } as unknown as Record<string, unknown>;
 
@@ -82,7 +137,7 @@ export async function GET(request: NextRequest) {
     .from("payments")
     .update(claimPayload)
     .eq("id", paymentRow.id)
-    .eq("monnify_status" as never, "pending")
+    .eq(statusColumn as never, "pending")
     .select("id")
     .maybeSingle();
 

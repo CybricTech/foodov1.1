@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle, Loader2, Clock, ArrowLeft } from "lucide-react";
+import { CheckCircle, Loader2, Clock, ArrowLeft, XCircle } from "lucide-react";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 
 function PendingOrderContent() {
@@ -10,9 +10,11 @@ function PendingOrderContent() {
   const router = useRouter();
   const { restaurant } = useRestaurant();
   const ref = searchParams.get("ref");
+  const provider = searchParams.get("provider") === "paystack" ? "paystack" : "monnify";
 
   const [, setAttempts] = useState(0);
   const [timedOut, setTimedOut] = useState(false);
+  const [paymentFailed, setPaymentFailed] = useState(false);
 
   useEffect(() => {
     if (!ref) return;
@@ -21,7 +23,9 @@ function PendingOrderContent() {
 
     async function poll() {
       try {
-        const res = await fetch(`/api/checkout/status?ref=${encodeURIComponent(ref!)}`);
+        const res = await fetch(
+          `/api/checkout/status?ref=${encodeURIComponent(ref!)}&provider=${provider}`
+        );
         // res.json() can throw when the server returns a non-JSON body (e.g. a
         // 502 HTML error page), so parse inside the try block as well.
         let json: Record<string, unknown>;
@@ -49,6 +53,11 @@ function PendingOrderContent() {
             );
           } catch {}
           router.replace(`/${restaurant.slug}/orders/success/${json.orderId}`);
+          return;
+        }
+
+        if (json.status === "rejected") {
+          setPaymentFailed(true);
           return;
         }
 
@@ -81,6 +90,32 @@ function PendingOrderContent() {
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ref]);
+
+  if (paymentFailed) {
+    return (
+      <div className="min-h-screen bg-black-50 flex flex-col items-center justify-center px-4">
+        <div className="bg-white rounded-2xl border border-black-100 p-8 max-w-sm w-full space-y-6 shadow-sm">
+          <div className="flex justify-center">
+            <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center">
+              <XCircle size={40} className="text-red-500" strokeWidth={1.5} />
+            </div>
+          </div>
+          <div className="space-y-2 text-center">
+            <h1 className="text-xl font-bold text-black-900">Payment unsuccessful</h1>
+            <p className="text-sm text-black-500 leading-relaxed">
+              Your payment could not be completed. You have not been charged. Please try again.
+            </p>
+          </div>
+          <button
+            onClick={() => router.replace(`/${restaurant.slug}`)}
+            className="w-full py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black-50 flex flex-col items-center justify-center px-4">
