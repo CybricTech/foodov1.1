@@ -43,7 +43,7 @@ export function AccordionSection() {
           <div className="lg:sticky lg:top-24">
             <h2
               className="text-4xl font-bold text-white mb-6 leading-tight"
-              style={{ fontFamily: "Epilogue, system-ui, sans-serif" }}
+              style={{ fontFamily: "Poppins, system-ui, sans-serif" }}
             >
               What sets{" "}
               <span className="text-[#FFC629]">Kitchyn</span> apart
@@ -54,14 +54,13 @@ export function AccordionSection() {
               ordering platform that works out of the box.
             </p>
             <div className="relative">
-              <div
-                id="dashboard-mockup"
-                className="w-full aspect-[4/3] rounded-2xl bg-white/5 border-2 border-dashed border-white/20 flex items-center justify-center"
-              >
-                <span className="text-white/30 text-sm font-medium select-none">
-                  Dashboard screenshot
-                </span>
-              </div>
+              <div className="absolute -inset-3 bg-white/5 rounded-3xl blur-xl" />
+              <img
+                src="/hero-mockup.png"
+                alt="Kitchyn restaurant dashboard"
+                className="relative w-full rounded-2xl shadow-2xl border border-white/10"
+                draggable={false}
+              />
             </div>
           </div>
 

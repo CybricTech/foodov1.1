@@ -102,7 +102,10 @@
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant menu page food ordering mobile customer\" --design-system -p \"Foodo Menu Page\")",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant merchant dashboard SaaS analytics orders revenue\" --design-system -p \"Kitchyn Dashboard\")",
       "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard KPI cards orders status real-time mobile\" --domain ux -n 5)",
-      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard analytics nextjs\" --stack nextjs)"
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"dashboard analytics nextjs\" --stack nextjs)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"restaurant SaaS white-label food ordering platform B2B landing page professional\" --design-system --persist -p \"Kitchyn\" --page \"landing\")",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"SaaS B2B landing hero social-proof testimonials conversion\" --domain landing -n 5)",
+      "Bash(python3 .claude/skills/ui-ux-pro-max/scripts/search.py \"hero section above fold conversion CTA\" --domain ux -n 4)"
     ]
   }
 }

@@ -194,6 +194,10 @@ export function DashboardHomeClient({
   const restaurantSlug = restaurant?.slug ?? "";
 
   const [orders, setOrders] = useState<Order[]>(initialOrders);
+  // Local state for accepts_orders so realtime updates reflect immediately
+  const [acceptsOrders, setAcceptsOrders] = useState<boolean>(
+    restaurant?.accepts_orders ?? false
+  );
   const [activeFilter, setActiveFilter] = useState<TimeFilter>("today");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [customFrom, setCustomFrom] = useState<Date | undefined>();
@@ -211,11 +215,13 @@ export function DashboardHomeClient({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // Realtime subscription
+  // Realtime: orders + restaurant accepts_orders
   useEffect(() => {
     if (!restaurantId) return;
+
     const channel = supabase
       .channel(`home-${restaurantId}`)
+      // Orders — new/updated
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders", filter: `restaurant_id=eq.${restaurantId}` },
@@ -231,7 +237,19 @@ export function DashboardHomeClient({
           }
         }
       )
+      // Restaurant — picks up accepts_orders changes saved from Settings
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "restaurants", filter: `id=eq.${restaurantId}` },
+        (payload) => {
+          const updated = payload.new as { accepts_orders?: boolean };
+          if (typeof updated.accepts_orders === "boolean") {
+            setAcceptsOrders(updated.accepts_orders);
+          }
+        }
+      )
       .subscribe();
+
     return () => { channel.unsubscribe(); };
   }, [restaurantId, supabase]);
 
@@ -348,7 +366,7 @@ export function DashboardHomeClient({
             <div
               className={cn(
                 "flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl min-h-[36px]",
-                restaurant.accepts_orders
+                acceptsOrders
                   ? "bg-viridian-50 text-viridian-700"
                   : "bg-cinnabar-50 text-cinnabar-600"
               )}
@@ -356,12 +374,12 @@ export function DashboardHomeClient({
               <span
                 className={cn(
                   "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                  restaurant.accepts_orders
+                  acceptsOrders
                     ? "bg-viridian-500 animate-pulse"
                     : "bg-cinnabar-500"
                 )}
               />
-              {restaurant.accepts_orders ? "Open" : "Closed"}
+              {acceptsOrders ? "Open" : "Closed"}
             </div>
           )}
         </div>

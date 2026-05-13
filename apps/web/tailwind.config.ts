@@ -57,7 +57,7 @@ const config: Config = {
       },
       fontFamily: {
         sans:     ["Geist", "system-ui", "sans-serif"],
-        epilogue: ["Epilogue", "system-ui", "sans-serif"],
+        epilogue: ["Poppins", "system-ui", "sans-serif"],
         jakarta:  ["Plus Jakarta Sans", "system-ui", "sans-serif"],
       },
       borderRadius: {

@@ -1,5 +1,5 @@
 import { getDashboardUser } from "@/lib/supabase/cached-queries";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DashboardHomeClient } from "@/components/dashboard/dashboard-home-client";
 
@@ -9,7 +9,7 @@ export default async function DashboardHomePage() {
   const session = await getDashboardUser();
   if (!session) redirect("/dashboard/login");
 
-  const supabase = createServiceClient();
+  const supabase = await createServerClient();
   const { restaurantId } = session;
 
   const { data: restaurant } = await supabase

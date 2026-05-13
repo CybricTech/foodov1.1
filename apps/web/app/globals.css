@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  scroll-behavior: smooth;
+}
+
 /*
   Global CSS variables.
   --brand-color is overridden per-restaurant in [restaurant_slug]/layout.tsx
@@ -40,7 +44,7 @@ body {
 
 /* Headline font utility */
 .font-headline {
-  font-family: "Epilogue", system-ui, -apple-system, sans-serif;
+  font-family: "Poppins", system-ui, -apple-system, sans-serif;
 }
 
 /* Prevent layout shift on images */
