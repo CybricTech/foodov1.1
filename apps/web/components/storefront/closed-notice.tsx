@@ -74,7 +74,9 @@ function getNextOpenTime(hours: OpeningHours): string | null {
 
 export function ClosedNotice() {
   const { restaurant } = useRestaurant();
-  const hours = (restaurant as unknown as { opening_hours?: OpeningHours | null }).opening_hours;
+  const extended = restaurant as unknown as { opening_hours?: OpeningHours | null; closure_message?: string | null };
+  const hours = extended.opening_hours;
+  const closureMessage = extended.closure_message;
 
   // hardClosed = merchant manually toggled "Accept orders" off
   // scheduleClosed = within operating hours but not the right time
@@ -141,7 +143,9 @@ export function ClosedNotice() {
 
           {/* Subtitle */}
           <p className="text-sm text-black-500 text-center mb-1 leading-relaxed">
-            {restaurant.name} isn&apos;t taking orders at the moment.
+            {hardClosed && closureMessage
+              ? closureMessage
+              : `${restaurant.name} isn’t taking orders at the moment.`}
           </p>
 
           {/* Next open time */}

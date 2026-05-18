@@ -452,6 +452,7 @@ type RestaurantExtended = Restaurant & {
   restaurant_max_fee_kobo?: number | null;
   vat_percentage?: number | null;
   opening_hours?: OpeningHours | null;
+  closure_message?: string | null;
 };
 
 export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
@@ -482,6 +483,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   );
   const [logisticsDefault, setLogisticsDefault] = useState(r.logistics_default);
   const [acceptsOrders, setAcceptsOrders] = useState(r.accepts_orders);
+  const [closureMessage, setClosureMessage] = useState(r.closure_message ?? "");
   const [openingHours, setOpeningHours] = useState<OpeningHours>(
     r.opening_hours ?? DEFAULT_HOURS
   );
@@ -622,6 +624,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         vat_percentage: vatPercentage ? parseFloat(vatPercentage) : null,
         logistics_default: logisticsDefault,
         accepts_orders: acceptsOrders,
+        closure_message: closureMessage || null,
         opening_hours: openingHours,
         instagram_url: instagramUrl || null,
         facebook_url: facebookUrl || null,
@@ -987,15 +990,22 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                 <option value="third_party">Third-Party (Kwik etc.)</option>
               </select>
             </Field>
-            <div className="flex items-center justify-between py-3 border-t border-black-100 mb-1">
+          </Section>
+
+          {/* Close store */}
+          <Section title="Close store">
+            <p className="text-xs text-black-400 -mt-1 mb-1">
+              Manually close the store at any time. This is separate from your operating hours — use it for unexpected closures, breaks, or holidays.
+            </p>
+            <div className="flex items-center justify-between py-3 border-b border-black-100">
               <div>
-                <p className="text-sm font-medium text-black-900">Accept orders</p>
-                <p className="text-xs text-black-400">Toggle off to pause ordering without deleting anything</p>
+                <p className="text-sm font-medium text-black-900">Store is open</p>
+                <p className="text-xs text-black-400">Toggle off to close the store immediately</p>
               </div>
               <button
                 type="button"
                 onClick={() => setAcceptsOrders((v) => !v)}
-                aria-label={acceptsOrders ? "Accepting orders — tap to pause" : "Orders paused — tap to accept"}
+                aria-label={acceptsOrders ? "Store is open — tap to close" : "Store is closed — tap to open"}
                 aria-checked={acceptsOrders}
                 role="switch"
                 className={cn(
@@ -1011,6 +1021,19 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                 />
               </button>
             </div>
+            <Field
+              label="Closure message"
+              hint="Shown to customers when they visit while the store is manually closed. Leave blank for the default message."
+            >
+              <textarea
+                value={closureMessage}
+                onChange={(e) => setClosureMessage(e.target.value)}
+                className={cn(inputCls, "resize-none")}
+                rows={3}
+                maxLength={200}
+                placeholder="e.g. We're taking a short break — back tomorrow at noon!"
+              />
+            </Field>
           </Section>
 
           {/* Operating hours */}
