@@ -52,6 +52,51 @@ export type Database = {
           },
         ]
       }
+      blog_posts: {
+        Row: {
+          id: string
+          slug: string
+          title: string
+          excerpt: string | null
+          content: string
+          cover_image_url: string | null
+          author_name: string
+          read_minutes: number | null
+          is_published: boolean
+          published_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          slug: string
+          title: string
+          excerpt?: string | null
+          content: string
+          cover_image_url?: string | null
+          author_name?: string
+          read_minutes?: number | null
+          is_published?: boolean
+          published_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          slug?: string
+          title?: string
+          excerpt?: string | null
+          content?: string
+          cover_image_url?: string | null
+          author_name?: string
+          read_minutes?: number | null
+          is_published?: boolean
+          published_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           created_at: string
@@ -165,6 +210,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      demo_requests: {
+        Row: {
+          id: string
+          name: string
+          restaurant_name: string
+          email: string
+          phone: string
+          message: string | null
+          status: string
+          source: string
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          restaurant_name: string
+          email: string
+          phone: string
+          message?: string | null
+          status?: string
+          source?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          restaurant_name?: string
+          email?: string
+          phone?: string
+          message?: string | null
+          status?: string
+          source?: string
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       delivery_assignments: {
         Row: {
@@ -901,6 +988,7 @@ export type Database = {
           vat_percentage: number | null
           whatsapp_number: string | null
           youtube_url: string | null
+          closure_message: string | null
         }
         Insert: {
           accepts_orders?: boolean
@@ -938,6 +1026,7 @@ export type Database = {
           vat_percentage?: number | null
           whatsapp_number?: string | null
           youtube_url?: string | null
+          closure_message?: string | null
         }
         Update: {
           accepts_orders?: boolean
@@ -975,6 +1064,7 @@ export type Database = {
           vat_percentage?: number | null
           whatsapp_number?: string | null
           youtube_url?: string | null
+          closure_message?: string | null
         }
         Relationships: []
       }
