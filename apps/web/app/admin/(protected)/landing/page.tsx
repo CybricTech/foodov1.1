@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminLandingOverviewPage() {
   const supabase = createServiceClient();
 
-  const [{ count: publishedCount }, { count: draftCount }, { count: newRequestCount }] =
+  const [{ count: publishedCount }, { count: draftCount }, { count: totalRequestCount }, { count: newRequestCount }] =
     await Promise.all([
       supabase
         .from("blog_posts")
@@ -17,6 +17,9 @@ export default async function AdminLandingOverviewPage() {
         .from("blog_posts")
         .select("id", { count: "exact", head: true })
         .eq("is_published", false),
+      supabase
+        .from("demo_requests")
+        .select("id", { count: "exact", head: true }),
       supabase
         .from("demo_requests")
         .select("id", { count: "exact", head: true })
@@ -77,10 +80,18 @@ export default async function AdminLandingOverviewPage() {
           <div className="flex items-center gap-6 text-sm">
             <div>
               <p className="text-2xl font-bold text-black-900">
-                {newRequestCount ?? 0}
+                {totalRequestCount ?? 0}
               </p>
-              <p className="text-xs text-black-500">New (unread)</p>
+              <p className="text-xs text-black-500">Total</p>
             </div>
+            {(newRequestCount ?? 0) > 0 && (
+              <div>
+                <p className="text-2xl font-bold text-purple-600">
+                  {newRequestCount}
+                </p>
+                <p className="text-xs text-black-500">New</p>
+              </div>
+            )}
           </div>
         </Link>
       </div>
