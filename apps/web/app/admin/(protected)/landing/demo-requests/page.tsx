@@ -10,5 +10,6 @@ export default async function AdminDemoRequestsPage() {
     .select("*")
     .order("created_at", { ascending: false });
 
-  return <LandingDemoRequestsClient initialRequests={data ?? []} />;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return <LandingDemoRequestsClient initialRequests={(data ?? []) as any} />;
 }
