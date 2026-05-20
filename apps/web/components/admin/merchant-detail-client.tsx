@@ -1055,13 +1055,95 @@ function FinancialsTab({
 /*  Settings Tab                                                       */
 /* ------------------------------------------------------------------ */
 
+function SlugEditForm({ restaurant }: { restaurant: Restaurant }) {
+  const [editing, setEditing] = useState(false);
+  const [slug, setSlug] = useState(restaurant.slug);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/merchants/slug", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restaurantId: restaurant.id, slug }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to save");
+      } else {
+        setSaved(true);
+        setEditing(false);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch {
+      setError("Network error");
+    }
+    setSaving(false);
+  }
+
+  if (editing) {
+    return (
+      <div>
+        <p className="text-xs text-black-400 font-medium uppercase tracking-wide mb-0.5">Slug</p>
+        <form onSubmit={handleSave} className="flex items-center gap-2">
+          <span className="text-sm text-black-400 font-mono">/</span>
+          <input
+            className="text-sm font-mono border border-black-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500 w-40"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            autoFocus
+            disabled={saving}
+          />
+          <button
+            type="submit"
+            disabled={saving || !slug.trim()}
+            className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setEditing(false); setSlug(restaurant.slug); setError(""); }}
+            className="text-xs text-black-400 hover:text-black-700 px-2 py-1.5"
+          >
+            Cancel
+          </button>
+        </form>
+        {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-black-400 font-medium uppercase tracking-wide mb-0.5">Slug</p>
+      <div className="flex items-center gap-2">
+        <p className="text-sm font-mono text-black-900">/{slug}</p>
+        {saved && <span className="text-xs text-green-600">Saved</span>}
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="text-xs text-primary-600 hover:underline"
+        >
+          Edit
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsTab({ restaurant }: { restaurant: Restaurant }) {
   return (
     <div className="space-y-6">
       <section>
         <h2 className="text-base font-bold text-black-900 mb-3">Merchant Info</h2>
         <div className="bg-white rounded-2xl border border-black-200 px-5 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <InfoRow label="Slug" value={`/${restaurant.slug}`} mono />
+          <SlugEditForm restaurant={restaurant} />
           <InfoRow
             label="WhatsApp"
             value={restaurant.whatsapp_number ?? "Not configured"}
