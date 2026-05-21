@@ -6,11 +6,14 @@ import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { useCartStore } from "@/lib/stores/cart";
 import { useRestaurant } from "./restaurant-context";
+import { MenuItemCard } from "./menu-item-card";
 import type { MenuItemWithOptions, SelectedOptionSnapshot } from "@foodo/database";
 
 interface MenuItemSheetProps {
   item: MenuItemWithOptions | null;
   onClose: () => void;
+  allItems?: MenuItemWithOptions[];
+  onSelect?: (item: MenuItemWithOptions) => void;
 }
 
 // choiceQtys: optionId → choiceId → quantity (0 means unselected)
@@ -18,7 +21,7 @@ type ChoiceQtys = Record<string, Record<string, number>>;
 
 const MAX_CHOICE_QTY = 20;
 
-export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
+export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuItemSheetProps) {
   const { restaurant } = useRestaurant();
   const addItem = useCartStore((s) => s.addItem);
 
@@ -160,6 +163,10 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
 
   const unitPrice = computeUnitPrice();
   const totalPrice = unitPrice * quantity;
+
+  const related = allItems
+    .filter((i) => i.id !== item.id && i.is_available && i.category_id === item.category_id)
+    .slice(0, 8);
 
   const isSizedItem =
     item.price_kobo === 0 &&
@@ -379,10 +386,32 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
               className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 placeholder:text-black-400 focus:outline-none focus:border-primary resize-none"
             />
           </div>
+
+          {/* Related items */}
+          {related.length > 0 && onSelect && (
+            <div className="mt-5 pt-5 border-t border-black-100 pb-2">
+              <h3 className="font-semibold text-black-900 text-sm mb-3">
+                More from this section
+              </h3>
+              <div className="flex gap-3 overflow-x-auto scrollbar-hide -mx-4 px-4">
+                {related.map((relatedItem) => (
+                  <div key={relatedItem.id} className="flex-shrink-0 w-64">
+                    <MenuItemCard
+                      item={relatedItem}
+                      onSelect={(i) => { onSelect(i); }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer: Quantity + Add to Cart */}
-        <div className="flex-shrink-0 px-4 py-4 border-t border-black-100 bg-white">
+        <div
+          className="flex-shrink-0 px-4 pt-4 border-t border-black-100 bg-white"
+          style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+        >
           <div className="flex items-center gap-4">
             {/* Quantity stepper */}
             <div className="flex items-center gap-2 bg-black-50 rounded-xl px-3 py-2">

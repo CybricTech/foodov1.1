@@ -89,7 +89,12 @@ export function MenuSections({
         </section>
       )}
 
-      <MenuItemSheet item={selectedItem} onClose={() => setSelectedItem(null)} />
+      <MenuItemSheet
+        item={selectedItem}
+        onClose={() => setSelectedItem(null)}
+        allItems={items}
+        onSelect={handleSelect}
+      />
       <CartBar />
     </>
   );
