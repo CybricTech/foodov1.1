@@ -55,6 +55,12 @@ export default function CheckoutPage() {
   const [serviceChargePct, setServiceChargePct] = useState(0);
   const [serviceChargeFixedKobo, setServiceChargeFixedKobo] = useState(0);
 
+  const [phone, setPhone] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [step, setStep] = useState<"phone" | "checkout">("phone");
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -114,12 +120,6 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addressInput, fulfillmentType]);
 
-  const [phone, setPhone] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-
-  const [step, setStep] = useState<"phone" | "checkout">("phone");
   const [savedAddresses, setSavedAddresses] = useState<
     Array<{ id: string; address: string; label: string | null; is_default: boolean }>
   >([]);
