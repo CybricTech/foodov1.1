@@ -13,7 +13,6 @@ import { LandingFeatured } from "@/components/storefront/landing-featured";
 import { ReviewsSection } from "@/components/storefront/reviews-section";
 import { LocationSection } from "@/components/storefront/location-section";
 import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
-import { StorefrontCTAButtons } from "@/components/storefront/storefront-cta-buttons";
 
 export const revalidate = 60;
 
@@ -148,13 +147,20 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
           )}
 
           {/* CTAs */}
-          <StorefrontCTAButtons
-            restaurantSlug={params.restaurant_slug}
-            logoUrl={restaurant.logo_url ?? null}
-            brandColor={restaurant.primary_color ?? "#2D6A4F"}
-            restaurantName={restaurant.name}
-            acceptsOrders={restaurant.accepts_orders}
-          />
+          <div className="flex gap-2.5 pt-1">
+            <Link
+              href={`/${params.restaurant_slug}/menu`}
+              className="flex-1 bg-primary text-white text-center py-3.5 rounded-2xl font-bold text-sm hover:opacity-90 transition-opacity cursor-pointer"
+            >
+              {restaurant.accepts_orders ? "Order now" : "Browse menu"}
+            </Link>
+            <Link
+              href={`/${params.restaurant_slug}/menu`}
+              className="flex-1 bg-white/15 backdrop-blur-sm text-white text-center py-3.5 rounded-2xl font-semibold text-sm border border-white/30 hover:bg-white/25 transition-colors cursor-pointer"
+            >
+              View menu
+            </Link>
+          </div>
         </div>
       </section>
 
