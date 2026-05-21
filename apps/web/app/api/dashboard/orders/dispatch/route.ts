@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
   // Verify the order belongs to this merchant's restaurant and is ready
   const { data: order, error: orderErr } = await serviceClient
     .from("orders")
-    .select("id, order_number, restaurant_id, status, fulfillment_type, delivery_fee_kobo")
+    .select("id, order_number, restaurant_id, status, fulfillment_type, delivery_fee_kobo, customer_phone")
     .eq("id", order_id)
     .eq("restaurant_id", profile.restaurant_id)
     .single();
@@ -227,6 +227,28 @@ export async function POST(request: NextRequest) {
   // Telegram notification — awaited so serverless doesn't kill it on response return
   if (dispatch_type === "platform_rider") {
     await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number).catch(console.error);
+  }
+
+  // Customer "on its way" SMS — fired once at first dispatch (existing-assignment
+  // branch above short-circuits before this point, so re-dispatches don't duplicate).
+  if (order.customer_phone) {
+    await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-sms`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          restaurantId: profile.restaurant_id,
+          phone: order.customer_phone,
+          eventType: "order_in_transit",
+          orderId: order_id,
+          orderNumber: order.order_number,
+        }),
+      }
+    ).catch(console.error);
   }
 
   return NextResponse.json({ ok: true, status: newStatus, dispatch_type });

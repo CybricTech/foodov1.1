@@ -151,5 +151,19 @@ export async function POST(request: NextRequest) {
     }
   ).catch(console.error);
 
+  // Kick off Sendchamp sender-ID registration for this restaurant.
+  // Fire-and-forget — approval lands later and admin marks it via the merchants page.
+  fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/register-sms-sender`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ restaurantId: restaurant.id }),
+    }
+  ).catch(console.error);
+
   return NextResponse.json({ restaurant, password });
 }

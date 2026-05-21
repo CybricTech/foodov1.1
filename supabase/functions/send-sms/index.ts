@@ -19,6 +19,9 @@ interface SmsPayload {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SENDCHAMP_API_KEY = Deno.env.get("SENDCHAMP_API_KEY")!;
+const SENDCHAMP_DEFAULT_SENDER_ID = Deno.env.get("SENDCHAMP_DEFAULT_SENDER_ID") ?? "Foodo";
+const SENDCHAMP_ROUTE = Deno.env.get("SENDCHAMP_ROUTE") ?? "non_dnd";
 const TERMII_API_KEY = Deno.env.get("TERMII_API_KEY")!;
 const TERMII_SENDER_ID = Deno.env.get("TERMII_SENDER_ID") ?? "Foodo";
 const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
@@ -36,13 +39,13 @@ function buildMessage(
   const num = orderNumber ? `#${orderNumber}` : "";
   switch (eventType) {
     case "order_confirmed":
-      return `Your order ${num} from ${restaurantName} has been confirmed! We'll notify you when it's ready.`;
+      return `Thanks for ordering from ${restaurantName}! Your order ${num} is confirmed — we'll text you again when it's ready.`;
     case "order_preparing":
       return `Great news! ${restaurantName} is preparing your order ${num}. 🍽️`;
     case "order_ready":
-      return `Your order ${num} from ${restaurantName} is ready for pickup!`;
+      return `Your order ${num} is ready for pickup at ${restaurantName}! 🛍️`;
     case "order_in_transit":
-      return `Your order ${num} from ${restaurantName} is on its way! 🛵`;
+      return `Your order ${num} from ${restaurantName} is ready and on its way! Sit tight!`;
     case "order_delivered":
       return `Your order ${num} from ${restaurantName} has been delivered. Enjoy your meal! 😋`;
     case "order_cancelled":
@@ -143,6 +146,48 @@ function buildAdminWhatsAppOrderMessage(
   restaurantName: string
 ): string {
   return `🏪 *[${restaurantName}]*\n\n${buildWhatsAppOrderMessage(order)}`;
+}
+
+// ── Normalize Nigerian phone numbers to E.164 (no '+'), Sendchamp format ──────
+// Accepts: "08012345678", "+2348012345678", "2348012345678", "8012345678"
+// Returns: "2348012345678" (Nigerian) or digit-only original for other countries.
+function normalizePhoneE164(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("234")) return digits;
+  if (digits.length === 11 && digits.startsWith("0")) return "234" + digits.slice(1);
+  if (digits.length === 10) return "234" + digits;
+  return digits;
+}
+
+// ── Send via Sendchamp (SMS — customer order notifications) ───────────────────
+async function sendViaSendchamp(
+  phone: string,
+  message: string,
+  senderName: string
+): Promise<boolean> {
+  const res = await fetch("https://api.sendchamp.com/api/v1/sms/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SENDCHAMP_API_KEY}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      to: [phone],
+      message,
+      sender_name: senderName,
+      route: SENDCHAMP_ROUTE,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.error(`Sendchamp send failed: ${res.status} ${body}`);
+    return false;
+  }
+
+  const body = await res.json().catch(() => ({}));
+  return body.status === "success";
 }
 
 // ── Send via Termii (SMS — generic channel) ───────────────────────────────────
@@ -296,14 +341,21 @@ serve(async (req) => {
 
   const { restaurantId, eventType, orderId, orderNumber } = payload;
 
-  // Resolve restaurant info (including whatsapp_number)
+  // Resolve restaurant info (including whatsapp_number + sender ID for Sendchamp)
   const { data: restaurant } = await supabase
     .from("restaurants")
-    .select("name, phone, whatsapp_number")
+    .select("name, phone, whatsapp_number, sms_sender_id, sms_sender_status")
     .eq("id", restaurantId)
     .single();
 
   const restaurantName = restaurant?.name ?? "the restaurant";
+
+  // Per-restaurant sender ID — only used when Sendchamp has approved it.
+  // Otherwise fall back to the platform default (e.g. "Foodo").
+  const sendchampSender =
+    restaurant?.sms_sender_status === "approved" && restaurant?.sms_sender_id
+      ? restaurant.sms_sender_id
+      : SENDCHAMP_DEFAULT_SENDER_ID;
 
   // ── Merchant new order alerts: WhatsApp with SMS fallback ───────────────
   if (eventType === "new_order_merchant") {
@@ -442,7 +494,7 @@ serve(async (req) => {
     );
   }
 
-  // ── All other events (customer notifications) — existing SMS logic ──────
+  // ── Customer order notifications — Sendchamp only ───────────────────────
   let recipientPhone = payload.phone;
   if (!recipientPhone) {
     recipientPhone = restaurant?.phone ?? undefined;
@@ -455,36 +507,29 @@ serve(async (req) => {
     );
   }
 
+  // Sendchamp requires E.164-style digits-only ("23480...").
+  const normalizedPhone = normalizePhoneE164(recipientPhone);
   const message = buildMessage(eventType, orderNumber, restaurantName);
 
   const logId = await createLog({
     restaurantId,
     orderId,
-    phone: recipientPhone,
+    phone: normalizedPhone,
     message,
     eventType,
-    provider: "termii",
+    provider: "sendchamp",
     channel: "sms",
     status: "queued",
   });
 
-  // Try Termii first
-  let sent = await sendViaTermii(recipientPhone, message);
-  let provider = "termii";
+  const sent = await sendViaSendchamp(normalizedPhone, message, sendchampSender);
 
-  // Fallback to Twilio
-  if (!sent) {
-    sent = await sendViaTwilio(recipientPhone, message);
-    provider = "twilio";
-  }
-
-  // Update log
   if (logId) {
-    await updateLog(logId, sent ? "sent" : "failed", provider, "sms");
+    await updateLog(logId, sent ? "sent" : "failed", "sendchamp", "sms");
   }
 
   return new Response(
-    JSON.stringify({ success: sent, provider }),
+    JSON.stringify({ success: sent, provider: "sendchamp", sender: sendchampSender }),
     {
       status: sent ? 200 : 502,
       headers: { "Content-Type": "application/json" },

@@ -989,6 +989,9 @@ export type Database = {
           whatsapp_number: string | null
           youtube_url: string | null
           closure_message: string | null
+          sms_sender_id: string | null
+          sms_sender_status: string | null
+          sms_sender_requested_at: string | null
         }
         Insert: {
           accepts_orders?: boolean
@@ -1027,6 +1030,9 @@ export type Database = {
           whatsapp_number?: string | null
           youtube_url?: string | null
           closure_message?: string | null
+          sms_sender_id?: string | null
+          sms_sender_status?: string | null
+          sms_sender_requested_at?: string | null
         }
         Update: {
           accepts_orders?: boolean
@@ -1065,6 +1071,9 @@ export type Database = {
           whatsapp_number?: string | null
           youtube_url?: string | null
           closure_message?: string | null
+          sms_sender_id?: string | null
+          sms_sender_status?: string | null
+          sms_sender_requested_at?: string | null
         }
         Relationships: []
       }

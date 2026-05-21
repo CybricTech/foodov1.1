@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
   // riders page may complete it. Merchants can manage everything else.
   const { data: order, error: lookupError } = await serviceClient
     .from("orders")
-    .select("id, dispatch_type, status")
+    .select("id, dispatch_type, status, fulfillment_type, customer_phone, order_number")
     .eq("id", orderId)
     .eq("restaurant_id", restaurantId)
     .single();
@@ -134,6 +134,33 @@ export async function POST(req: NextRequest) {
         orderRow.order_number
       ).catch(console.error);
     }
+  }
+
+  // Customer "order ready for pickup" SMS — only for pickup orders, only on the
+  // first transition into ready_for_pickup (skip if it was already in that state).
+  if (
+    status === "ready_for_pickup" &&
+    order.status !== "ready_for_pickup" &&
+    order.fulfillment_type === "pickup" &&
+    order.customer_phone
+  ) {
+    await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-sms`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          restaurantId,
+          phone: order.customer_phone,
+          eventType: "order_ready",
+          orderId,
+          orderNumber: order.order_number,
+        }),
+      }
+    ).catch(console.error);
   }
 
   return NextResponse.json({ success: true });

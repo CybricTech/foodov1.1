@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/server";
 import { MerchantDetailClient } from "@/components/admin/merchant-detail-client";
+import { MerchantSmsSenderCard } from "@/components/admin/merchant-sms-sender-card";
 
 export const dynamic = "force-dynamic";
 
@@ -197,6 +198,16 @@ export default async function MerchantDetailPage({
           View storefront &rarr;
         </Link>
       </div>
+
+      {/* SMS sender ID management */}
+      <MerchantSmsSenderCard
+        restaurantId={restaurant.id}
+        senderId={restaurant.sms_sender_id ?? null}
+        senderStatus={
+          (restaurant.sms_sender_status as "pending" | "approved" | "rejected" | null) ?? null
+        }
+        requestedAt={restaurant.sms_sender_requested_at ?? null}
+      />
 
       {/* Tabbed Content */}
       <MerchantDetailClient
