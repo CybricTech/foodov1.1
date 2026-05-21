@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { X } from "lucide-react";
 import Image from "next/image";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
@@ -243,7 +244,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
       {/* Sheet */}
       <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
         {/* Image */}
-        {item.image_url && (
+        {item.image_url ? (
           <div className="relative w-full h-64 flex-shrink-0">
             <Image
               src={item.image_url}
@@ -254,6 +255,23 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
               sizes="100vw"
               priority
             />
+            <button
+              onClick={onClose}
+              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black-900/50 backdrop-blur-sm flex items-center justify-center text-white"
+              aria-label="Close"
+            >
+              <X size={16} strokeWidth={2.5} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex justify-end px-3 pt-3 flex-shrink-0">
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-black-100 flex items-center justify-center text-black-500"
+              aria-label="Close"
+            >
+              <X size={16} strokeWidth={2.5} />
+            </button>
           </div>
         )}
 
