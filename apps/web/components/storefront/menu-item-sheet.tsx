@@ -244,7 +244,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
       <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
         {/* Image */}
         {item.image_url && (
-          <div className="relative w-full h-48 flex-shrink-0">
+          <div className="relative w-full h-64 flex-shrink-0">
             <Image
               src={item.image_url}
               alt={item.name}
