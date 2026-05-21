@@ -264,7 +264,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
               alt={item.name}
               fill
               unoptimized
-              className="object-cover"
+              className="object-contain"
               style={{ opacity: imageLoaded ? 1 : 0, transition: "opacity 0.2s ease" }}
               sizes="100vw"
               priority
@@ -275,7 +275,11 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
                 const clamped = Math.min(Math.max(ratio, 4 / 5), 16 / 9);
                 // Use the actual rendered sheet width (respects max-w-[480px] on desktop)
                 const containerWidth = sheetRef.current?.clientWidth ?? Math.min(window.innerWidth, 480);
-                setImageHeight(Math.round(containerWidth / clamped));
+                // visualViewport gives the true visible height on iOS Safari (excludes browser chrome)
+                const viewH = window.visualViewport?.height ?? window.innerHeight;
+                // Never exceed 50% of the visible viewport height so content stays reachable
+                const maxH = Math.round(viewH * 0.5);
+                setImageHeight(Math.min(Math.round(containerWidth / clamped), maxH));
                 setImageLoaded(true);
               }}
             />
