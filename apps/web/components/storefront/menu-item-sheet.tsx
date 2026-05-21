@@ -51,16 +51,30 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
 
-  // Trap scroll when open
-  useEffect(() => {
-    if (item) document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
-  }, [item]);
-
   const sheetRef = useRef<HTMLDivElement>(null);
   const dragStartY = useRef<number | null>(null);
   const dragCurrentY = useRef(0);
   const dismissing = useRef(false);
+  const savedScrollY = useRef(0);
+
+  // iOS-compatible scroll lock — overflow:hidden on body is ignored by iOS Safari.
+  // position:fixed freezes the page in place and lets env(safe-area-*) work correctly.
+  useEffect(() => {
+    if (item) {
+      savedScrollY.current = window.scrollY;
+      document.body.style.position = "fixed";
+      document.body.style.top = `-${savedScrollY.current}px`;
+      document.body.style.left = "0";
+      document.body.style.right = "0";
+    }
+    return () => {
+      document.body.style.position = "";
+      document.body.style.top = "";
+      document.body.style.left = "";
+      document.body.style.right = "";
+      window.scrollTo(0, savedScrollY.current);
+    };
+  }, [item]);
 
   if (!item) return null;
 
@@ -226,8 +240,8 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
         onClick={onClose}
       />
 
-      {/* Sheet */}
-      <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl max-h-[90vh] flex flex-col animate-slide-up">
+      {/* Sheet — max-h uses dvh so it never taller than the visible viewport on iOS */}
+      <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
         {/* Image */}
         {item.image_url && (
           <div className="relative w-full h-48 flex-shrink-0">
@@ -243,10 +257,10 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
           </div>
         )}
 
-        {/* Drag handle — 44px touch target, swipe down to dismiss */}
+        {/* Drag handle — 44px touch target, touch-action:none lets our gesture run unblocked */}
         <div
           className="flex justify-center items-center flex-shrink-0 cursor-grab active:cursor-grabbing"
-          style={{ paddingTop: 12, paddingBottom: 12 }}
+          style={{ paddingTop: 12, paddingBottom: 12, touchAction: "none" }}
           onTouchStart={onDragStart}
           onTouchMove={onDragMove}
           onTouchEnd={onDragEnd}
@@ -254,8 +268,11 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
           <div className="w-10 h-1 bg-black-300 rounded-full" />
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
+        {/* Scrollable content — overscroll-contain stops body from scrolling at boundary */}
+        <div
+          className="flex-1 overflow-y-auto px-4 pb-4"
+          style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}
+        >
           <h2 className="text-xl font-bold text-black-900 mt-1">{item.name}</h2>
           {item.description && (
             <p className="mt-1 text-sm text-black-400">{item.description}</p>
@@ -426,7 +443,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
               placeholder="Add special request"
               rows={3}
               maxLength={300}
-              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 placeholder:text-black-400 focus:outline-none focus:border-primary resize-none"
+              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-base text-black-900 placeholder:text-black-400 focus:outline-none focus:border-primary resize-none"
             />
           </div>
 

@@ -33,6 +33,11 @@ html {
   }
 }
 
+/* Remove iOS tap highlight flash on interactive elements */
+a, button, label, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Body font: Plus Jakarta Sans per brand guidelines */
 body {
   font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
