@@ -5,6 +5,7 @@ import { RestaurantProvider } from "@/components/storefront/restaurant-context";
 import { CartGuard } from "@/components/storefront/cart-guard";
 import { ClosedNotice } from "@/components/storefront/closed-notice";
 import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
+import { StorefrontSplash } from "@/components/storefront/storefront-splash";
 
 export default async function StorefrontLayout({
   children,
@@ -25,6 +26,11 @@ export default async function StorefrontLayout({
       style={{ "--brand-color": brandColor } as React.CSSProperties}
       className="min-h-screen bg-black-50"
     >
+      <StorefrontSplash
+        logoUrl={restaurant.logo_url ?? null}
+        brandColor={brandColor}
+        restaurantName={restaurant.name}
+      />
       <RestaurantProvider restaurant={restaurant}>
         <ActiveOrderBanner />
         <ClosedNotice />
