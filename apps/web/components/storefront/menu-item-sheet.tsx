@@ -244,8 +244,8 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
         onClick={onClose}
       />
 
-      {/* Sheet — max-h uses dvh so it never taller than the visible viewport on iOS */}
-      <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
+      {/* Sheet — centered on desktop, full-width on mobile, capped at 480px */}
+      <div ref={sheetRef} className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
         {/* Image — height derived from natural dimensions, clamped 4:5 → 16:9 */}
         {item.image_url && (
           <div
@@ -273,7 +273,9 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
                 const ratio = img.naturalWidth / img.naturalHeight;
                 // Clamp between 4:5 portrait (0.8) and 16:9 landscape (≈1.78)
                 const clamped = Math.min(Math.max(ratio, 4 / 5), 16 / 9);
-                setImageHeight(Math.round(window.innerWidth / clamped));
+                // Use the actual rendered sheet width (respects max-w-[480px] on desktop)
+                const containerWidth = sheetRef.current?.clientWidth ?? Math.min(window.innerWidth, 480);
+                setImageHeight(Math.round(containerWidth / clamped));
                 setImageLoaded(true);
               }}
             />
