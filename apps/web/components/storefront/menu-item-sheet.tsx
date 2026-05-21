@@ -57,6 +57,11 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
     return () => { document.body.style.overflow = ""; };
   }, [item]);
 
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef<number | null>(null);
+  const dragCurrentY = useRef(0);
+  const dismissing = useRef(false);
+
   if (!item) return null;
 
   /** For single-select groups: toggle choice on/off (qty 0 or 1). */
@@ -160,11 +165,6 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
     setAdded(true);
     setTimeout(onClose, 700);
   }
-
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const dragStartY = useRef<number | null>(null);
-  const dragCurrentY = useRef(0);
-  const dismissing = useRef(false);
 
   function onDragStart(e: React.TouchEvent) {
     if (dismissing.current) return;
