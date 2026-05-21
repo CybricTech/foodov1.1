@@ -60,6 +60,12 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
+    if (step === "checkout") {
+      window.scrollTo(0, 0);
+    }
+  }, [step]);
+
+  useEffect(() => {
     fetch("/api/checkout/service-fee")
       .then((r) => r.json())
       .then((d) => {
