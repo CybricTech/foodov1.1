@@ -31,6 +31,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [specialRequest, setSpecialRequest] = useState("");
   const [added, setAdded] = useState(false);
+  const [imageExpanded, setImageExpanded] = useState(false);
 
   // Reset state when item changes
   useEffect(() => {
@@ -48,6 +49,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
       setErrors({});
       setSpecialRequest("");
       setAdded(false);
+      setImageExpanded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
@@ -235,6 +237,16 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
 
   return (
     <>
+      {/* Image lightbox — tap/click anywhere or press Esc to close */}
+      {imageExpanded && item.image_url && (
+        <Lightbox
+          src={item.image_url}
+          alt={item.name}
+          brandColor={restaurant.primary_color ?? "#2D6A4F"}
+          onClose={() => setImageExpanded(false)}
+        />
+      )}
+
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black-900/50 z-40 animate-fade-in"
@@ -245,7 +257,10 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
       <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
         {/* Image */}
         {item.image_url ? (
-          <div className="relative w-full h-64 flex-shrink-0">
+          <div
+            className="relative w-full h-64 flex-shrink-0 cursor-zoom-in"
+            onClick={() => setImageExpanded(true)}
+          >
             <Image
               src={item.image_url}
               alt={item.name}
@@ -525,6 +540,52 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
         </div>
       </div>
     </>
+  );
+}
+
+function Lightbox({
+  src,
+  alt,
+  brandColor,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  brandColor: string;
+  onClose: () => void;
+}) {
+  // Close on Escape (desktop)
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] bg-black animate-fade-in flex items-center justify-center"
+      onClick={onClose}
+      style={{ touchAction: "none" }}
+    >
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        unoptimized
+        className="object-contain"
+        sizes="100vw"
+      />
+      <button
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center text-white shadow-lg"
+        style={{ backgroundColor: brandColor }}
+        aria-label="Close image"
+      >
+        <X size={18} strokeWidth={2.5} />
+      </button>
+    </div>
   );
 }
 
