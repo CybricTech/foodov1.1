@@ -186,13 +186,13 @@ export function MenuItemSheet({ item, onClose }: MenuItemSheetProps) {
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl max-h-[90vh] flex flex-col animate-slide-up">
         {/* Image */}
         {item.image_url && (
-          <div className="relative w-full h-48 flex-shrink-0">
+          <div className="relative w-full h-56 flex-shrink-0 bg-black-100 rounded-t-2xl overflow-hidden">
             <Image
               src={item.image_url}
               alt={item.name}
               fill
               unoptimized
-              className="object-cover rounded-t-2xl"
+              className="object-contain"
               sizes="100vw"
               priority
             />
