@@ -72,7 +72,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
       document.body.style.top = "";
       document.body.style.left = "";
       document.body.style.right = "";
-      window.scrollTo(0, savedScrollY.current);
+      window.scrollTo({ top: savedScrollY.current, behavior: "instant" });
     };
   }, [item]);
 
