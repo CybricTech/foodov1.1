@@ -183,11 +183,12 @@ async function sendViaSendchamp(
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     console.error(`Sendchamp send failed: ${res.status} ${body}`);
-    return false;
+    return { ok: false, messageId: null };
   }
 
   const body = await res.json().catch(() => ({}));
-  return body.status === "success";
+  const messageId: string | null = body.data?.id ?? null;
+  return { ok: body.status === "success", messageId };
 }
 
 // ── Send via Termii (SMS — generic channel) ───────────────────────────────────
@@ -522,14 +523,18 @@ serve(async (req) => {
     status: "queued",
   });
 
-  const sent = await sendViaSendchamp(normalizedPhone, message, sendchampSender);
+  const { ok: sent, messageId } = await sendViaSendchamp(normalizedPhone, message, sendchampSender);
 
   if (logId) {
     await updateLog(logId, sent ? "sent" : "failed", "sendchamp", "sms");
+    // Store Sendchamp's message ID for future delivery status lookups
+    if (messageId) {
+      await supabase.from("sms_logs").update({ provider_ref: messageId }).eq("id", logId);
+    }
   }
 
   return new Response(
-    JSON.stringify({ success: sent, provider: "sendchamp", sender: sendchampSender }),
+    JSON.stringify({ success: sent, provider: "sendchamp", sender: sendchampSender, messageId }),
     {
       status: sent ? 200 : 502,
       headers: { "Content-Type": "application/json" },

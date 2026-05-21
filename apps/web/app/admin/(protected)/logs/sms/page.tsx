@@ -9,7 +9,7 @@ export default async function SmsLogsPage() {
   const { data: logsData } = await supabase
     .from("sms_logs")
     .select(
-      "id, phone, event_type, provider, status, created_at, sent_at, restaurant_id, restaurants(name)"
+      "id, recipient_phone, message_body, event_type, provider, provider_ref, status, channel, created_at, sent_at, order_id, restaurant_id, restaurants(name)"
     )
     .order("created_at", { ascending: false })
     .limit(200);
