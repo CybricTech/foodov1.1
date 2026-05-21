@@ -30,6 +30,8 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [specialRequest, setSpecialRequest] = useState("");
   const [added, setAdded] = useState(false);
+  const [imageHeight, setImageHeight] = useState<number | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   // Reset state when item changes
   useEffect(() => {
@@ -47,6 +49,8 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
       setErrors({});
       setSpecialRequest("");
       setAdded(false);
+      setImageHeight(null);
+      setImageLoaded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
@@ -242,17 +246,36 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
 
       {/* Sheet — max-h uses dvh so it never taller than the visible viewport on iOS */}
       <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
-        {/* Image */}
+        {/* Image — height derived from natural dimensions, clamped 4:5 → 16:9 */}
         {item.image_url && (
-          <div className="relative w-full h-48 flex-shrink-0">
+          <div
+            className="relative w-full flex-shrink-0 rounded-t-2xl overflow-hidden bg-black-100"
+            style={{
+              height: imageHeight ?? 220,
+              transition: imageLoaded ? "none" : undefined,
+            }}
+          >
+            {/* Skeleton shown until image loads */}
+            {!imageLoaded && (
+              <div className="absolute inset-0 bg-black-100 animate-pulse" />
+            )}
             <Image
               src={item.image_url}
               alt={item.name}
               fill
               unoptimized
-              className="object-cover rounded-t-2xl"
+              className="object-cover"
+              style={{ opacity: imageLoaded ? 1 : 0, transition: "opacity 0.2s ease" }}
               sizes="100vw"
               priority
+              onLoad={(e) => {
+                const img = e.currentTarget as HTMLImageElement;
+                const ratio = img.naturalWidth / img.naturalHeight;
+                // Clamp between 4:5 portrait (0.8) and 16:9 landscape (≈1.78)
+                const clamped = Math.min(Math.max(ratio, 4 / 5), 16 / 9);
+                setImageHeight(Math.round(window.innerWidth / clamped));
+                setImageLoaded(true);
+              }}
             />
           </div>
         )}
