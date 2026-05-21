@@ -257,7 +257,8 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
             />
             <button
               onClick={onClose}
-              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black-900/50 backdrop-blur-sm flex items-center justify-center text-white"
+              className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center text-white shadow-sm"
+              style={{ backgroundColor: restaurant.primary_color ?? "#2D6A4F" }}
               aria-label="Close"
             >
               <X size={16} strokeWidth={2.5} />
@@ -267,7 +268,8 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
           <div className="flex justify-end px-3 pt-3 flex-shrink-0">
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-black-100 flex items-center justify-center text-black-500"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white shadow-sm"
+              style={{ backgroundColor: restaurant.primary_color ?? "#2D6A4F" }}
               aria-label="Close"
             >
               <X size={16} strokeWidth={2.5} />
