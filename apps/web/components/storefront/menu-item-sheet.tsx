@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
@@ -161,6 +161,43 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
     setTimeout(onClose, 700);
   }
 
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef<number | null>(null);
+  const dragCurrentY = useRef(0);
+  const dismissing = useRef(false);
+
+  function onDragStart(e: React.TouchEvent) {
+    if (dismissing.current) return;
+    dragStartY.current = e.touches[0].clientY;
+    dragCurrentY.current = 0;
+    if (sheetRef.current) sheetRef.current.style.transition = "none";
+  }
+
+  function onDragMove(e: React.TouchEvent) {
+    if (dragStartY.current === null || dismissing.current) return;
+    const delta = Math.max(0, e.touches[0].clientY - dragStartY.current);
+    dragCurrentY.current = delta;
+    if (sheetRef.current) sheetRef.current.style.transform = `translateY(${delta}px)`;
+  }
+
+  function onDragEnd() {
+    if (dragStartY.current === null || dismissing.current) return;
+    dragStartY.current = null;
+    if (dragCurrentY.current > 80) {
+      dismissing.current = true;
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = "transform 0.28s cubic-bezier(0.32,0.72,0,1)";
+        sheetRef.current.style.transform = "translateY(100%)";
+      }
+      setTimeout(() => { dismissing.current = false; onClose(); }, 280);
+    } else {
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = "transform 0.3s cubic-bezier(0.32,0.72,0,1)";
+        sheetRef.current.style.transform = "translateY(0)";
+      }
+    }
+  }
+
   const unitPrice = computeUnitPrice();
   const totalPrice = unitPrice * quantity;
 
@@ -190,7 +227,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
       />
 
       {/* Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl max-h-[90vh] flex flex-col animate-slide-up">
+      <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl max-h-[90vh] flex flex-col animate-slide-up">
         {/* Image */}
         {item.image_url && (
           <div className="relative w-full h-48 flex-shrink-0">
@@ -206,9 +243,15 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
           </div>
         )}
 
-        {/* Drag handle */}
-        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-          <div className="w-10 h-1 bg-black-200 rounded-full" />
+        {/* Drag handle — 44px touch target, swipe down to dismiss */}
+        <div
+          className="flex justify-center items-center flex-shrink-0 cursor-grab active:cursor-grabbing"
+          style={{ paddingTop: 12, paddingBottom: 12 }}
+          onTouchStart={onDragStart}
+          onTouchMove={onDragMove}
+          onTouchEnd={onDragEnd}
+        >
+          <div className="w-10 h-1 bg-black-300 rounded-full" />
         </div>
 
         {/* Scrollable content */}
