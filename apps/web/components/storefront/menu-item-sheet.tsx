@@ -30,8 +30,6 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [specialRequest, setSpecialRequest] = useState("");
   const [added, setAdded] = useState(false);
-  const [imageHeight, setImageHeight] = useState<number | null>(null);
-  const [imageLoaded, setImageLoaded] = useState(false);
 
   // Reset state when item changes
   useEffect(() => {
@@ -49,8 +47,6 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
       setErrors({});
       setSpecialRequest("");
       setAdded(false);
-      setImageHeight(null);
-      setImageLoaded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item?.id]);
@@ -244,44 +240,19 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
         onClick={onClose}
       />
 
-      {/* Sheet — centered on desktop, full-width on mobile, capped at 480px */}
-      <div ref={sheetRef} className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
-        {/* Image — height derived from natural dimensions, clamped 4:5 → 16:9 */}
+      {/* Sheet */}
+      <div ref={sheetRef} className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col animate-slide-up" style={{ maxHeight: "90dvh" }}>
+        {/* Image */}
         {item.image_url && (
-          <div
-            className="relative w-full flex-shrink-0 rounded-t-2xl overflow-hidden bg-black-100"
-            style={{
-              height: imageHeight ?? 220,
-              transition: imageLoaded ? "none" : undefined,
-            }}
-          >
-            {/* Skeleton shown until image loads */}
-            {!imageLoaded && (
-              <div className="absolute inset-0 bg-black-100 animate-pulse" />
-            )}
+          <div className="relative w-full h-48 flex-shrink-0">
             <Image
               src={item.image_url}
               alt={item.name}
               fill
               unoptimized
-              className="object-contain"
-              style={{ opacity: imageLoaded ? 1 : 0, transition: "opacity 0.2s ease" }}
+              className="object-cover rounded-t-2xl"
               sizes="100vw"
               priority
-              onLoad={(e) => {
-                const img = e.currentTarget as HTMLImageElement;
-                const ratio = img.naturalWidth / img.naturalHeight;
-                // Clamp between 4:5 portrait (0.8) and 16:9 landscape (≈1.78)
-                const clamped = Math.min(Math.max(ratio, 4 / 5), 16 / 9);
-                // Use the actual rendered sheet width (respects max-w-[480px] on desktop)
-                const containerWidth = sheetRef.current?.clientWidth ?? Math.min(window.innerWidth, 480);
-                // visualViewport gives the true visible height on iOS Safari (excludes browser chrome)
-                const viewH = window.visualViewport?.height ?? window.innerHeight;
-                // Never exceed 50% of the visible viewport height so content stays reachable
-                const maxH = Math.round(viewH * 0.5);
-                setImageHeight(Math.min(Math.round(containerWidth / clamped), maxH));
-                setImageLoaded(true);
-              }}
             />
           </div>
         )}
