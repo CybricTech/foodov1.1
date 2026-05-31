@@ -10,6 +10,8 @@ import {
   Star,
   ImagePlus,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Upload,
   Download,
   AlertCircle,
@@ -43,6 +45,44 @@ export function MenuManagerClient({
   const [activeCategory, setActiveCategory] = useState<string | null>(
     initialCategories[0]?.id ?? null
   );
+  const [reorderBusy, setReorderBusy] = useState(false);
+
+  // Featured items in storefront display order (featured_order, then newest).
+  const featuredItems = items
+    .filter((i) => i.is_featured)
+    .sort(
+      (a, b) =>
+        a.featured_order - b.featured_order ||
+        Date.parse(b.created_at) - Date.parse(a.created_at)
+    );
+
+  // Move a featured item up/down and persist the new order. We normalize every
+  // featured item's featured_order to its index so the order is always stable.
+  async function moveFeatured(itemId: string, direction: "up" | "down") {
+    if (reorderBusy) return;
+    const ordered = [...featuredItems];
+    const idx = ordered.findIndex((i) => i.id === itemId);
+    const swapWith = direction === "up" ? idx - 1 : idx + 1;
+    if (idx < 0 || swapWith < 0 || swapWith >= ordered.length) return;
+
+    [ordered[idx], ordered[swapWith]] = [ordered[swapWith], ordered[idx]];
+
+    setReorderBusy(true);
+    // Optimistic: assign each its new index as featured_order.
+    const orderMap = new Map(ordered.map((it, i) => [it.id, i]));
+    setItems((prev) =>
+      prev.map((it) =>
+        orderMap.has(it.id) ? { ...it, featured_order: orderMap.get(it.id)! } : it
+      )
+    );
+
+    await Promise.all(
+      ordered.map((it, i) =>
+        supabase.from("menu_items").update({ featured_order: i }).eq("id", it.id)
+      )
+    );
+    setReorderBusy(false);
+  }
 
   function handleExport() {
     const catMap = new Map(categories.map((c) => [c.id, c.name]));
@@ -143,6 +183,64 @@ export function MenuManagerClient({
           </button>
         </div>
       </div>
+
+      {/* ── Featured order ── */}
+      {featuredItems.length >= 2 && (
+        <div className="bg-white md:rounded-2xl border-b md:border border-black-100 mt-0 md:mt-4 px-4 py-4">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Star size={15} className="text-amber-400" fill="currentColor" />
+            <h2 className="text-sm font-bold text-black-900">Featured order</h2>
+          </div>
+          <p className="text-xs text-black-400 mb-3">
+            The order these appear in your storefront “Featured” carousel.
+          </p>
+          <div className="space-y-2">
+            {featuredItems.map((item, idx) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 p-2 rounded-xl border border-black-100"
+              >
+                <span className="w-4 text-center text-xs font-bold text-black-300">
+                  {idx + 1}
+                </span>
+                {item.image_url ? (
+                  <div
+                    className="w-9 h-9 rounded-lg bg-black-100 bg-cover bg-center flex-shrink-0"
+                    style={{ backgroundImage: `url(${item.image_url})` }}
+                    role="img"
+                    aria-label={item.name}
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-lg bg-black-100 flex items-center justify-center flex-shrink-0">
+                    <UtensilsCrossed size={15} className="text-black-300" />
+                  </div>
+                )}
+                <span className="flex-1 text-sm font-medium text-black-800 truncate">
+                  {item.name}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => moveFeatured(item.id, "up")}
+                    disabled={idx === 0 || reorderBusy}
+                    aria-label={`Move ${item.name} up`}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-black-500 hover:bg-black-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  >
+                    <ChevronUp size={18} strokeWidth={2.5} />
+                  </button>
+                  <button
+                    onClick={() => moveFeatured(item.id, "down")}
+                    disabled={idx === featuredItems.length - 1 || reorderBusy}
+                    aria-label={`Move ${item.name} down`}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-black-500 hover:bg-black-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  >
+                    <ChevronDown size={18} strokeWidth={2.5} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── MOBILE: horizontal category pills ── */}
       <div className="md:hidden bg-white border-b border-black-100">

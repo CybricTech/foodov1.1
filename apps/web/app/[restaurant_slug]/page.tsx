@@ -43,7 +43,13 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
     getRestaurantRatingSummary(supabase, restaurant.id),
     getActiveMenuSale(restaurant.id),
   ]);
-  const featured = items.filter((i) => i.is_featured);
+  const featured = items
+    .filter((i) => i.is_featured)
+    .sort(
+      (a, b) =>
+        a.featured_order - b.featured_order ||
+        Date.parse(b.created_at) - Date.parse(a.created_at)
+    );
 
   const hasInfoChips =
     ratingSummary.count > 0 ||

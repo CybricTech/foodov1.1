@@ -36,7 +36,13 @@ export function MenuSections({
     }
   });
 
-  const featured = items.filter((i) => i.is_featured && i.is_available);
+  const featured = items
+    .filter((i) => i.is_featured && i.is_available)
+    .sort(
+      (a, b) =>
+        a.featured_order - b.featured_order ||
+        Date.parse(b.created_at) - Date.parse(a.created_at)
+    );
 
   function handleSelect(item: MenuItemWithOptions) {
     if (restaurantAcceptsOrders) setSelectedItem(item);
