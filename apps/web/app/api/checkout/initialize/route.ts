@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
+import { resolveDiscount } from "@/lib/discounts";
 import {
   DELIVERY_BASE_FEE_KOBO,
   DELIVERY_PER_KM_RATE_KOBO,
@@ -36,6 +37,7 @@ const InitializeSchema = z.object({
   specialInstructions: z.string().max(500).optional(),
   deliveryFeeKobo: z.number().int().min(0).optional(),
   deliveryDistanceKm: z.number().min(0).optional(),
+  discountCode: z.string().trim().max(40).optional(),
   items: z.array(
     z.object({
       menuItemId: z.string().uuid(),
@@ -271,11 +273,45 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // VAT — applied on subtotal only (not delivery fee)
-  const vatPct = vatPercentageRaw ? Number(vatPercentageRaw) : 0;
-  const vatKobo = vatPct > 0 ? Math.round(subtotalKobo * vatPct / 100) : 0;
+  // ── Discount (merchant-funded) ─────────────────────────────────────────────
+  // Resolve the single best discount (entered code or active automatic) against
+  // the gross subtotal + delivery fee. The engine is the source of truth; the
+  // client only requests a code. One discount per order.
+  const { applied: appliedDiscount } = await resolveDiscount(supabase, {
+    restaurantId: data.restaurantId,
+    code: data.discountCode,
+    subtotalKobo,
+    deliveryFeeKobo,
+    fulfillmentType: data.fulfillmentType,
+    customerPhone: data.customerPhone,
+  });
 
-  // Platform service fee — charged to the customer
+  let discountSubtotalKobo = 0;
+  let discountDeliveryKobo = 0;
+  let discountId: string | null = null;
+  let discountCode: string | null = null;
+
+  if (appliedDiscount) {
+    discountId = appliedDiscount.rule.id;
+    discountCode = appliedDiscount.rule.code;
+    if (appliedDiscount.result.freeDelivery) {
+      discountDeliveryKobo = appliedDiscount.result.discountKobo;
+    } else {
+      discountSubtotalKobo = appliedDiscount.result.discountKobo;
+    }
+  }
+
+  // Total customer benefit (subtotal portion + delivery waiver)
+  const discountKobo = discountSubtotalKobo + discountDeliveryKobo;
+  // Subtotal the customer effectively pays — VAT, service fee and merchant
+  // credit are all based on this discounted figure.
+  const discountedSubtotalKobo = subtotalKobo - discountSubtotalKobo;
+
+  // VAT — applied on the (discounted) subtotal only, not the delivery fee
+  const vatPct = vatPercentageRaw ? Number(vatPercentageRaw) : 0;
+  const vatKobo = vatPct > 0 ? Math.round(discountedSubtotalKobo * vatPct / 100) : 0;
+
+  // Platform service fee — charged to the customer, on the discounted subtotal
   const { data: feeSettings } = await supabase
     .from("platform_settings")
     .select("service_charge_pct, service_charge_fixed_kobo")
@@ -284,10 +320,12 @@ export async function POST(request: NextRequest) {
   const serviceChargeFixedKobo = Number(feeSettings?.service_charge_fixed_kobo ?? 0);
   const serviceFeeKobo =
     serviceChargePct > 0 || serviceChargeFixedKobo > 0
-      ? Math.round(subtotalKobo * serviceChargePct) + serviceChargeFixedKobo
+      ? Math.round(discountedSubtotalKobo * serviceChargePct) + serviceChargeFixedKobo
       : 0;
 
-  const totalKobo = subtotalKobo + deliveryFeeKobo + vatKobo + serviceFeeKobo;
+  // total = gross subtotal + gross delivery + vat + service − total discount
+  const totalKobo =
+    subtotalKobo + deliveryFeeKobo + vatKobo + serviceFeeKobo - discountKobo;
 
   if (
     restaurant.min_order_amount &&
@@ -324,6 +362,10 @@ export async function POST(request: NextRequest) {
     service_fee_kobo: serviceFeeKobo,
     service_charge_pct: serviceChargePct,
     delivery_distance_km: data.deliveryDistanceKm ?? null,
+    discount_id: discountId,
+    discount_code: discountCode,
+    discount_kobo: discountKobo,
+    discount_subtotal_kobo: discountSubtotalKobo,
   } as import("@foodo/database").Json;
 
   const paymentInsert =
@@ -412,6 +454,8 @@ export async function POST(request: NextRequest) {
       vatPercentage: vatPct,
       serviceFeeKobo,
       serviceChargePct,
+      discountKobo,
+      discountCode,
     });
   }
 
@@ -425,5 +469,7 @@ export async function POST(request: NextRequest) {
     vatPercentage: vatPct,
     serviceFeeKobo,
     serviceChargePct,
+    discountKobo,
+    discountCode,
   });
 }

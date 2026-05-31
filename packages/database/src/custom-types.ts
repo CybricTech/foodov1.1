@@ -23,7 +23,19 @@ export type Review =
 export type Customer =
   Database["public"]["Tables"]["customers"]["Row"];
 
+export type Discount =
+  Database["public"]["Tables"]["discounts"]["Row"];
+
+export type DiscountRedemption =
+  Database["public"]["Tables"]["discount_redemptions"]["Row"];
+
 // ── Insert aliases ────────────────────────────────────────────────────────────
+
+export type DiscountInsert =
+  Database["public"]["Tables"]["discounts"]["Insert"];
+
+export type DiscountUpdate =
+  Database["public"]["Tables"]["discounts"]["Update"];
 
 export type ReviewInsert =
   Database["public"]["Tables"]["reviews"]["Insert"];

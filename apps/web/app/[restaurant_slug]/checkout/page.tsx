@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2 } from "lucide-react";
+import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check } from "lucide-react";
 import { z } from "zod";
 import { useCartStore } from "@/lib/stores/cart";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
@@ -55,6 +55,19 @@ export default function CheckoutPage() {
   const [serviceChargePct, setServiceChargePct] = useState(0);
   const [serviceChargeFixedKobo, setServiceChargeFixedKobo] = useState(0);
 
+  // Discounts (preview only — server recomputes the authoritative amount)
+  const [promoInput, setPromoInput] = useState("");
+  const [appliedCode, setAppliedCode] = useState("");
+  const [discount, setDiscount] = useState<{
+    label: string;
+    code: string | null;
+    type: string;
+    discountKobo: number;
+    freeDelivery: boolean;
+  } | null>(null);
+  const [discountError, setDiscountError] = useState("");
+  const [discountChecking, setDiscountChecking] = useState(false);
+
   const [phone, setPhone] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -80,6 +93,97 @@ export default function CheckoutPage() {
       })
       .catch(() => {});
   }, []);
+
+  // Re-evaluate the best discount (entered code or automatic) whenever the cart
+  // basis changes. The server is authoritative — this only powers the preview.
+  useEffect(() => {
+    if (!restaurant?.id || subtotal <= 0) {
+      setDiscount(null);
+      return;
+    }
+    const controller = new AbortController();
+    const grossDelivery = fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0;
+    fetch("/api/checkout/quote-discount", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurantId: restaurant.id,
+        code: appliedCode || undefined,
+        subtotalKobo: subtotal,
+        deliveryFeeKobo: grossDelivery,
+        fulfillmentType,
+        // Normalized to match how redemptions are stored, so per-customer
+        // limits preview accurately.
+        customerPhone: isValidNigerianPhone(phone) ? normalizeToE164(phone) : undefined,
+      }),
+      signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.discount) {
+          setDiscount(d.discount);
+          setDiscountError("");
+        } else {
+          setDiscount(null);
+          if (appliedCode && d.error) {
+            setDiscountError(d.error);
+            setAppliedCode("");
+          }
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurant?.id, subtotal, fulfillmentType, deliveryFeeKobo, appliedCode, phone]);
+
+  async function applyPromo() {
+    const code = promoInput.trim().toUpperCase();
+    if (!code) return;
+    setDiscountChecking(true);
+    setDiscountError("");
+    const grossDelivery = fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0;
+    try {
+      const res = await fetch("/api/checkout/quote-discount", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          restaurantId: restaurant.id,
+          code,
+          subtotalKobo: subtotal,
+          deliveryFeeKobo: grossDelivery,
+          fulfillmentType,
+          customerPhone: isValidNigerianPhone(phone) ? normalizeToE164(phone) : undefined,
+        }),
+      });
+      const d = await res.json();
+      if (d.discount && d.discount.code === code) {
+        // The entered code is the best offer — apply it.
+        setDiscount(d.discount);
+        setAppliedCode(code);
+        setPromoInput("");
+      } else if (d.error) {
+        // The code itself couldn't be used (expired, below minimum, etc.).
+        setDiscountError(d.error);
+      } else if (d.discount) {
+        // The code is valid but an automatic offer already matches or beats it.
+        setDiscount(d.discount);
+        setDiscountError("A better offer is already applied to your order.");
+      } else {
+        setDiscountError("That code can't be applied.");
+      }
+    } catch {
+      setDiscountError("Couldn't check that code. Please try again.");
+    } finally {
+      setDiscountChecking(false);
+    }
+  }
+
+  function removePromo() {
+    setAppliedCode("");
+    setDiscount(null);
+    setDiscountError("");
+    setPromoInput("");
+  }
 
   // Detect bfcache restore (iOS Safari) and reload to prevent stale checkout bundles
   useEffect(() => {
@@ -311,6 +415,7 @@ export default function CheckoutPage() {
           specialInstructions: deliveryInstructions.trim() || undefined,
           deliveryFeeKobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
           deliveryDistanceKm: distanceKm ?? undefined,
+          discountCode: appliedCode || undefined,
           items: items.map((item) => ({
             menuItemId: item.menuItemId,
             name: item.name,
@@ -465,14 +570,20 @@ export default function CheckoutPage() {
   }
 
   const effectiveDeliveryFee = fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0;
+  // Discount: subtotal portion lowers the VAT/service base; total benefit
+  // (incl. any free-delivery waiver) is subtracted from the grand total.
+  const discountSubtotalKobo = discount && !discount.freeDelivery ? discount.discountKobo : 0;
+  const discountTotalKobo = discount?.discountKobo ?? 0;
+  const discountedSubtotal = subtotal - discountSubtotalKobo;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const vatPct = (restaurant as any).vat_percentage ? Number((restaurant as any).vat_percentage) : 0;
-  const vatKobo = vatPct > 0 ? Math.round(subtotal * vatPct / 100) : 0;
+  const vatKobo = vatPct > 0 ? Math.round(discountedSubtotal * vatPct / 100) : 0;
   const serviceFeeKobo =
     serviceChargePct > 0 || serviceChargeFixedKobo > 0
-      ? Math.round(subtotal * serviceChargePct) + serviceChargeFixedKobo
+      ? Math.round(discountedSubtotal * serviceChargePct) + serviceChargeFixedKobo
       : 0;
-  const total = subtotal + effectiveDeliveryFee + vatKobo + serviceFeeKobo;
+  const total =
+    subtotal + effectiveDeliveryFee + vatKobo + serviceFeeKobo - discountTotalKobo;
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
   const storeClosed = !restaurant.accepts_orders;
@@ -812,6 +923,76 @@ export default function CheckoutPage() {
                 <span className="text-sm font-semibold text-black-900">{formatKobo(serviceFeeKobo)}</span>
               </div>
             )}
+
+            {/* Promo code */}
+            <div className="px-4 py-3 space-y-2.5">
+              {discount && (
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary">
+                    <span className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Check size={12} className="text-primary" />
+                    </span>
+                    {discount.label}
+                    {discount.code && (
+                      <span className="font-mono text-xs text-black-400">· {discount.code}</span>
+                    )}
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <span className="text-sm font-semibold text-primary">
+                      −{formatKobo(discountTotalKobo)}
+                    </span>
+                    {appliedCode && (
+                      <button
+                        type="button"
+                        onClick={removePromo}
+                        className="w-5 h-5 rounded-full hover:bg-black-100 flex items-center justify-center text-black-400"
+                        aria-label="Remove discount"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </span>
+                </div>
+              )}
+              {!appliedCode && (
+                <div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Ticket
+                        size={15}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-black-300"
+                      />
+                      <input
+                        value={promoInput}
+                        onChange={(e) => {
+                          setPromoInput(e.target.value.toUpperCase());
+                          if (discountError) setDiscountError("");
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            applyPromo();
+                          }
+                        }}
+                        placeholder="Promo code"
+                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-black-200 text-sm font-mono uppercase focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={applyPromo}
+                      disabled={discountChecking || !promoInput.trim()}
+                      className="px-4 rounded-xl border border-primary text-primary text-sm font-semibold hover:bg-primary/5 disabled:opacity-40 transition-colors"
+                    >
+                      {discountChecking ? <Loader2 size={15} className="animate-spin" /> : "Apply"}
+                    </button>
+                  </div>
+                  {discountError && (
+                    <p className="text-xs text-cinnabar-500 mt-1.5">{discountError}</p>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="px-4 py-3 flex items-center justify-between bg-black-50/50">
               <span className="text-sm font-bold text-black-900">Total</span>

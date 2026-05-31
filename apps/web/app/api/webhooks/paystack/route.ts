@@ -123,17 +123,22 @@ export async function POST(request: NextRequest) {
     delivery_fee_kobo: meta.delivery_fee_kobo as number,
     vat_kobo: (meta.vat_kobo as number) || 0,
     service_fee_kobo: (meta.service_fee_kobo as number) || 0,
+    discount_id: (meta.discount_id as string) || null,
+    discount_code: (meta.discount_code as string) || null,
+    discount_kobo: (meta.discount_kobo as number) || 0,
     total_kobo:
       (meta.subtotal_kobo as number) +
       (meta.delivery_fee_kobo as number) +
       ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0),
+      ((meta.service_fee_kobo as number) || 0) -
+      ((meta.discount_kobo as number) || 0),
     subtotal: meta.subtotal_kobo as number,
     total_amount:
       (meta.subtotal_kobo as number) +
       (meta.delivery_fee_kobo as number) +
       ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0),
+      ((meta.service_fee_kobo as number) || 0) -
+      ((meta.discount_kobo as number) || 0),
     delivery_distance_km: (meta.delivery_distance_km as number) || null,
     delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
     order_number: fallbackOrderNumber,
@@ -210,6 +215,22 @@ export async function POST(request: NextRequest) {
     .update({ estimated_delivery_at: estimatedDeliveryAt })
     .eq("id", order.id);
 
+  // 6b. Record discount redemption (the order was already paid at the
+  // discounted price, so we always honor it) and advance the usage counter
+  // atomically so concurrent limits hold.
+  const discountId = (meta.discount_id as string) || null;
+  const discountKobo = (meta.discount_kobo as number) || 0;
+  if (discountId && discountKobo > 0) {
+    await supabase.from("discount_redemptions").insert({
+      restaurant_id: restaurantId,
+      discount_id: discountId,
+      order_id: order.id,
+      customer_phone: meta.customer_phone as string,
+      amount_kobo: discountKobo,
+    });
+    await supabase.rpc("redeem_discount", { p_discount_id: discountId });
+  }
+
   // 7. Upsert CRM customer record
   const totalKobo =
     (meta.subtotal_kobo as number) +
@@ -277,24 +298,33 @@ export async function POST(request: NextRequest) {
   const deliveryFeeKobo = meta.delivery_fee_kobo as number;
   const vatKobo = (meta.vat_kobo as number) || 0;
 
+  // Merchant-funded discount: the subtotal portion lowers the merchant's
+  // credit; any free-delivery portion is absorbed via the dispatch logistics
+  // flow (delivery fee is not part of merchant credit). discount_subtotal_kobo
+  // is the subtotal reduction; discount_kobo is the full customer benefit.
+  const discountTotalKobo = (meta.discount_kobo as number) || 0;
+  const discountSubtotalKobo = (meta.discount_subtotal_kobo as number) || 0;
+  const netSubtotalKobo = subtotalKobo - discountSubtotalKobo;
+
   // Determine who bears the service fee.
   // If service_fee_kobo is in metadata the customer already paid it at checkout —
-  // merchant gets the full subtotal and we do NOT debit them again.
+  // merchant gets the full (net) subtotal and we do NOT debit them again.
   // Legacy orders (no service_fee_kobo in meta) fall back to deducting from merchant.
   const metaServiceFeeKobo = (meta.service_fee_kobo as number) || 0;
   const customerPaidServiceFee = metaServiceFeeKobo > 0;
 
   const serviceChargeKobo = customerPaidServiceFee
     ? metaServiceFeeKobo
-    : Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
+    : Math.round(netSubtotalKobo * Number(pct)) + Number(fixedFee);
 
-  // Merchant charge: % of the total Paystack transaction amount.
+  // Merchant charge: % of the actual Paystack transaction amount (post-discount).
   // This is the merchant's share of payment processing costs, deducted at settlement.
   const orderTotalKobo =
     subtotalKobo +
     deliveryFeeKobo +
     vatKobo +
-    (customerPaidServiceFee ? metaServiceFeeKobo : 0);
+    (customerPaidServiceFee ? metaServiceFeeKobo : 0) -
+    discountTotalKobo;
   const merchantChargeKobo = Math.round(orderTotalKobo * merchantChargePct);
 
   // Restaurant credit at payment time = subtotal + VAT − merchant charge.
@@ -305,8 +335,8 @@ export async function POST(request: NextRequest) {
   // - Customer service fee goes to Foodo directly; not deducted from restaurant
   // - Legacy orders (no service_fee in meta): deduct service charge from restaurant instead
   const restaurantCreditKobo = customerPaidServiceFee
-    ? subtotalKobo + vatKobo - merchantChargeKobo
-    : subtotalKobo + vatKobo - serviceChargeKobo - merchantChargeKobo;
+    ? netSubtotalKobo + vatKobo - merchantChargeKobo
+    : netSubtotalKobo + vatKobo - serviceChargeKobo - merchantChargeKobo;
 
   const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
 

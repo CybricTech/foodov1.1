@@ -46,6 +46,8 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
   delivery_fee_kobo: number;
   vat_kobo: number;
   service_fee_kobo: number;
+  discount_kobo: number;
+  discount_code: string | null;
   total_kobo: number;
   order_items: Array<{
     id: string;
@@ -190,7 +192,7 @@ export function FrontlineOrdersClient({
         `
         id, order_number, status, payment_status, fulfillment_type,
         customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
-        vat_kobo, service_fee_kobo, total_kobo, created_at,
+        vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
         special_instructions, delivery_address, dispatch_type,
         order_items (id, item_name, quantity, line_total_kobo, selected_options)
       `
@@ -1081,6 +1083,12 @@ function FrontlineOrderCard({
               <div className="flex justify-between text-xs text-black-500">
                 <span>Service fee</span>
                 <span>{formatKobo(order.service_fee_kobo)}</span>
+              </div>
+            )}
+            {order.discount_kobo > 0 && (
+              <div className="flex justify-between text-xs text-purple-600 font-medium">
+                <span>Discount{order.discount_code ? ` (${order.discount_code})` : ""}</span>
+                <span>−{formatKobo(order.discount_kobo)}</span>
               </div>
             )}
             <div className="flex justify-between text-sm font-bold text-black-900 pt-1.5 border-t border-black-100">

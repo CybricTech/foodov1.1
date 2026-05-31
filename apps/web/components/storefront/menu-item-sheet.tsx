@@ -7,7 +7,7 @@ import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { useCartStore } from "@/lib/stores/cart";
 import { useRestaurant } from "./restaurant-context";
-import { MenuItemCard } from "./menu-item-card";
+import { MenuItemCard, NewBadge } from "./menu-item-card";
 import type { MenuItemWithOptions, SelectedOptionSnapshot } from "@foodo/database";
 
 interface MenuItemSheetProps {
@@ -308,7 +308,10 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
           className="flex-1 overflow-y-auto px-4 pb-4"
           style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}
         >
-          <h2 className="text-xl font-bold text-black-900 mt-1">{item.name}</h2>
+          <div className="flex items-center gap-2 mt-1">
+            <h2 className="text-xl font-bold text-black-900">{item.name}</h2>
+            {item.show_new_badge && <NewBadge />}
+          </div>
           {item.description && (
             <p className="mt-1 text-sm text-black-400">{item.description}</p>
           )}

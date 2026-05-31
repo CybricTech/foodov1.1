@@ -1,9 +1,27 @@
 "use client";
 
 import Image from "next/image";
+import { Sparkles } from "lucide-react";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import type { MenuItemWithOptions } from "@foodo/database";
+
+/** Branded "NEW" pill — uses the restaurant's primary colour. */
+export function NewBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "flex-shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5",
+        "text-[9px] font-extrabold uppercase tracking-wider text-white",
+        "bg-gradient-to-br from-primary to-primary/70 ring-1 ring-white/25 shadow-sm",
+        className
+      )}
+    >
+      <Sparkles size={9} strokeWidth={2.5} className="-ml-0.5" />
+      New
+    </span>
+  );
+}
 
 interface MenuItemCardProps {
   item: MenuItemWithOptions;
@@ -35,6 +53,7 @@ export function MenuItemCard({ item, onSelect }: MenuItemCardProps) {
           >
             {item.name}
           </p>
+          {item.show_new_badge && !unavailable && <NewBadge />}
           {unavailable && (
             <span className="flex-shrink-0 text-[10px] font-semibold text-black-400 bg-black-100 px-1.5 py-0.5 rounded-full">
               Unavailable

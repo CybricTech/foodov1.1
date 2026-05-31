@@ -33,6 +33,7 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
       customer_name, customer_phone, customer_email,
       delivery_address, special_instructions,
       subtotal_kobo, delivery_fee_kobo, vat_kobo, service_fee_kobo, total_kobo,
+      discount_kobo, discount_code,
       estimated_delivery_at, created_at,
       order_items (id, item_name, item_price_kobo, quantity, line_total_kobo)
     `)
@@ -217,6 +218,19 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
               <div className="flex items-center justify-between text-sm">
                 <span className="text-black-500">Service fee</span>
                 <span className="text-black-900">{formatKobo(Number(order.service_fee_kobo))}</span>
+              </div>
+            )}
+            {Number((order as { discount_kobo?: number }).discount_kobo) > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-primary">
+                  Discount
+                  {(order as { discount_code?: string | null }).discount_code
+                    ? ` (${(order as { discount_code?: string | null }).discount_code})`
+                    : ""}
+                </span>
+                <span className="text-primary font-medium">
+                  −{formatKobo(Number((order as { discount_kobo?: number }).discount_kobo))}
+                </span>
               </div>
             )}
             <div className="flex items-center justify-between text-sm border-t border-black-100 pt-2">

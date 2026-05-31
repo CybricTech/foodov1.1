@@ -154,6 +154,19 @@ export type WalletTransactionType = (typeof WALLET_TRANSACTION_TYPES)[number];
 export const SETTLEMENT_STATUSES = ["pending", "processing", "paid", "failed"] as const;
 export type SettlementStatus = (typeof SETTLEMENT_STATUSES)[number];
 
+// ─── Discounts ───────────────────────────────────────────────────────────────
+export const DISCOUNT_TRIGGERS = ["code", "automatic"] as const;
+export type DiscountTrigger = (typeof DISCOUNT_TRIGGERS)[number];
+
+export const DISCOUNT_TYPES = ["percentage", "fixed", "free_delivery"] as const;
+export type DiscountType = (typeof DISCOUNT_TYPES)[number];
+
+export const DISCOUNT_TYPE_LABELS: Record<DiscountType, string> = {
+  percentage: "Percentage off",
+  fixed: "Fixed amount off",
+  free_delivery: "Free delivery",
+};
+
 // ─── Delivery Pricing (fallback defaults — source of truth is platform_settings) ──
 export const DELIVERY_BASE_FEE_KOBO = 230000;      // ₦2,300
 export const DELIVERY_PER_KM_RATE_KOBO = 15000;    // ₦150 per km

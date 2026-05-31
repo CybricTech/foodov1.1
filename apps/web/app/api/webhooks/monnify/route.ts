@@ -182,17 +182,22 @@ async function handleSuccessfulTransaction(
     delivery_fee_kobo: meta.delivery_fee_kobo as number,
     vat_kobo: (meta.vat_kobo as number) || 0,
     service_fee_kobo: (meta.service_fee_kobo as number) || 0,
+    discount_id: (meta.discount_id as string) || null,
+    discount_code: (meta.discount_code as string) || null,
+    discount_kobo: (meta.discount_kobo as number) || 0,
     total_kobo:
       (meta.subtotal_kobo as number) +
       (meta.delivery_fee_kobo as number) +
       ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0),
+      ((meta.service_fee_kobo as number) || 0) -
+      ((meta.discount_kobo as number) || 0),
     subtotal: meta.subtotal_kobo as number,
     total_amount:
       (meta.subtotal_kobo as number) +
       (meta.delivery_fee_kobo as number) +
       ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0),
+      ((meta.service_fee_kobo as number) || 0) -
+      ((meta.discount_kobo as number) || 0),
     delivery_distance_km: (meta.delivery_distance_km as number) || null,
     delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
     order_number: fallbackOrderNumber,
@@ -269,6 +274,21 @@ async function handleSuccessfulTransaction(
     .update({ estimated_delivery_at: estimatedDeliveryAt })
     .eq("id", order.id);
 
+  // Record discount redemption (order already paid at the discounted price)
+  // and advance the usage counter atomically.
+  const discountId = (meta.discount_id as string) || null;
+  const discountKobo = (meta.discount_kobo as number) || 0;
+  if (discountId && discountKobo > 0) {
+    await supabase.from("discount_redemptions").insert({
+      restaurant_id: restaurantId,
+      discount_id: discountId,
+      order_id: order.id,
+      customer_phone: meta.customer_phone as string,
+      amount_kobo: discountKobo,
+    });
+    await supabase.rpc("redeem_discount", { p_discount_id: discountId });
+  }
+
   // Upsert CRM customer record
   const totalKobo =
     (meta.subtotal_kobo as number) +
@@ -340,20 +360,27 @@ async function handleSuccessfulTransaction(
   const metaServiceFeeKobo = (meta.service_fee_kobo as number) || 0;
   const customerPaidServiceFee = metaServiceFeeKobo > 0;
 
+  // Merchant-funded discount: subtotal portion lowers merchant credit; any
+  // free-delivery portion is absorbed via the dispatch logistics flow.
+  const discountTotalKobo = (meta.discount_kobo as number) || 0;
+  const discountSubtotalKobo = (meta.discount_subtotal_kobo as number) || 0;
+  const netSubtotalKobo = subtotalKobo - discountSubtotalKobo;
+
   const serviceChargeKobo = customerPaidServiceFee
     ? metaServiceFeeKobo
-    : Math.round(subtotalKobo * Number(pct)) + Number(fixedFee);
+    : Math.round(netSubtotalKobo * Number(pct)) + Number(fixedFee);
 
   const orderTotalKobo =
     subtotalKobo +
     deliveryFeeKobo +
     vatKobo +
-    (customerPaidServiceFee ? metaServiceFeeKobo : 0);
+    (customerPaidServiceFee ? metaServiceFeeKobo : 0) -
+    discountTotalKobo;
   const merchantChargeKobo = Math.round(orderTotalKobo * merchantChargePct);
 
   const restaurantCreditKobo = customerPaidServiceFee
-    ? subtotalKobo + vatKobo - merchantChargeKobo
-    : subtotalKobo + vatKobo - serviceChargeKobo - merchantChargeKobo;
+    ? netSubtotalKobo + vatKobo - merchantChargeKobo
+    : netSubtotalKobo + vatKobo - serviceChargeKobo - merchantChargeKobo;
 
   const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
 

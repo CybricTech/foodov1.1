@@ -594,6 +594,10 @@ function ItemFormModal({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>(item?.image_url ?? "");
   const [isFeatured, setIsFeatured] = useState(item?.is_featured ?? false);
+  // Default ON for new items so they get a "NEW" badge automatically.
+  const [showNewBadge, setShowNewBadge] = useState(
+    (item as { show_new_badge?: boolean } | null)?.show_new_badge ?? true
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -714,6 +718,7 @@ function ItemFormModal({
         category_id: categoryId || null,
         image_url: imageUrl,
         is_featured: isFeatured,
+        show_new_badge: showNewBadge,
       };
 
       let itemId: string;
@@ -1035,6 +1040,29 @@ function ItemFormModal({
             <div>
               <span className="text-sm font-medium text-black-900">Featured item</span>
               <p className="text-xs text-black-400">Highlighted on your public menu</p>
+            </div>
+          </label>
+
+          {/* NEW badge */}
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div className={cn(
+              "relative w-10 h-5 rounded-full transition-colors duration-200",
+              showNewBadge ? "bg-purple-500" : "bg-black-200"
+            )}>
+              <input
+                type="checkbox"
+                checked={showNewBadge}
+                onChange={(e) => setShowNewBadge(e.target.checked)}
+                className="sr-only"
+              />
+              <span className={cn(
+                "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200",
+                showNewBadge ? "translate-x-[18px]" : "translate-x-0"
+              )} />
+            </div>
+            <div>
+              <span className="text-sm font-medium text-black-900">Show “NEW” badge</span>
+              <p className="text-xs text-black-400">Display a NEW tag on this item in your storefront</p>
             </div>
           </label>
 

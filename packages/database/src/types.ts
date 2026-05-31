@@ -469,6 +469,7 @@ export type Database = {
           price: number
           price_kobo: number
           restaurant_id: string
+          show_new_badge: boolean
           updated_at: string
         }
         Insert: {
@@ -485,6 +486,7 @@ export type Database = {
           price: number
           price_kobo?: number
           restaurant_id: string
+          show_new_badge?: boolean
           updated_at?: string
         }
         Update: {
@@ -501,6 +503,7 @@ export type Database = {
           price?: number
           price_kobo?: number
           restaurant_id?: string
+          show_new_badge?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -584,6 +587,142 @@ export type Database = {
           },
         ]
       }
+      discounts: {
+        Row: {
+          code: string | null
+          created_at: string
+          description: string | null
+          ends_at: string | null
+          fulfillment_type: string | null
+          id: string
+          is_active: boolean
+          max_discount_kobo: number | null
+          min_order_kobo: number
+          name: string
+          restaurant_id: string
+          starts_at: string | null
+          times_redeemed: number
+          trigger: string
+          type: string
+          updated_at: string
+          usage_limit_per_customer: number | null
+          usage_limit_total: number | null
+          value: number | null
+        }
+        Insert: {
+          code?: string | null
+          created_at?: string
+          description?: string | null
+          ends_at?: string | null
+          fulfillment_type?: string | null
+          id?: string
+          is_active?: boolean
+          max_discount_kobo?: number | null
+          min_order_kobo?: number
+          name: string
+          restaurant_id: string
+          starts_at?: string | null
+          times_redeemed?: number
+          trigger: string
+          type: string
+          updated_at?: string
+          usage_limit_per_customer?: number | null
+          usage_limit_total?: number | null
+          value?: number | null
+        }
+        Update: {
+          code?: string | null
+          created_at?: string
+          description?: string | null
+          ends_at?: string | null
+          fulfillment_type?: string | null
+          id?: string
+          is_active?: boolean
+          max_discount_kobo?: number | null
+          min_order_kobo?: number
+          name?: string
+          restaurant_id?: string
+          starts_at?: string | null
+          times_redeemed?: number
+          trigger?: string
+          type?: string
+          updated_at?: string
+          usage_limit_per_customer?: number | null
+          usage_limit_total?: number | null
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discounts_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      discount_redemptions: {
+        Row: {
+          amount_kobo: number
+          created_at: string
+          customer_id: string | null
+          customer_phone: string
+          discount_id: string
+          id: string
+          order_id: string | null
+          restaurant_id: string
+        }
+        Insert: {
+          amount_kobo: number
+          created_at?: string
+          customer_id?: string | null
+          customer_phone: string
+          discount_id: string
+          id?: string
+          order_id?: string | null
+          restaurant_id: string
+        }
+        Update: {
+          amount_kobo?: number
+          created_at?: string
+          customer_id?: string | null
+          customer_phone?: string
+          discount_id?: string
+          id?: string
+          order_id?: string | null
+          restaurant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discount_redemptions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_redemptions_discount_id_fkey"
+            columns: ["discount_id"]
+            isOneToOne: false
+            referencedRelation: "discounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_redemptions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_redemptions_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           cancellation_reason: string | null
@@ -604,6 +743,9 @@ export type Database = {
           delivery_lng: number | null
           delivery_status: string | null
           discount_amount: number
+          discount_code: string | null
+          discount_id: string | null
+          discount_kobo: number
           dispatch_type: string | null
           estimated_delivery_at: string | null
           fulfillment_type: string
@@ -645,6 +787,9 @@ export type Database = {
           delivery_lng?: number | null
           delivery_status?: string | null
           discount_amount?: number
+          discount_code?: string | null
+          discount_id?: string | null
+          discount_kobo?: number
           dispatch_type?: string | null
           estimated_delivery_at?: string | null
           fulfillment_type: string
@@ -686,6 +831,9 @@ export type Database = {
           delivery_lng?: number | null
           delivery_status?: string | null
           discount_amount?: number
+          discount_code?: string | null
+          discount_id?: string | null
+          discount_kobo?: number
           dispatch_type?: string | null
           estimated_delivery_at?: string | null
           fulfillment_type?: string
@@ -714,6 +862,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_discount_id_fkey"
+            columns: ["discount_id"]
+            isOneToOne: false
+            referencedRelation: "discounts"
             referencedColumns: ["id"]
           },
           {
@@ -1411,6 +1566,7 @@ export type Database = {
         Returns: undefined
       }
       mark_late_orders: { Args: never; Returns: undefined }
+      redeem_discount: { Args: { p_discount_id: string }; Returns: number }
       release_pending_wallet_balances: { Args: never; Returns: undefined }
       restore_failed_settlement: {
         Args: { p_amount_kobo: number; p_restaurant_id: string }

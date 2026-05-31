@@ -299,6 +299,8 @@ function OrderDetailsCard({ order, brandColor }: { order: OrderWithItems; brandC
   const deliveryFeeKobo  = typeof raw.delivery_fee_kobo  === "number" ? raw.delivery_fee_kobo  : 0;
   const vatKobo          = typeof raw.vat_kobo           === "number" ? raw.vat_kobo           : 0;
   const serviceFeeKobo   = typeof raw.service_fee_kobo   === "number" ? raw.service_fee_kobo   : 0;
+  const discountKobo     = typeof raw.discount_kobo      === "number" ? raw.discount_kobo      : 0;
+  const discountCode     = typeof raw.discount_code      === "string" ? raw.discount_code      : null;
   const specialInstructions = typeof raw.special_instructions === "string" ? raw.special_instructions : null;
 
   const placedAt = new Date(order.created_at);
@@ -371,6 +373,17 @@ function OrderDetailsCard({ order, brandColor }: { order: OrderWithItems; brandC
               <div className="flex items-center justify-between text-sm">
                 <span className="text-black-500">Service fee</span>
                 <span className="text-black-900 font-medium">{formatKobo(serviceFeeKobo)}</span>
+              </div>
+            )}
+
+            {discountKobo > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: brandColor }}>
+                  Discount{discountCode ? ` (${discountCode})` : ""}
+                </span>
+                <span className="font-medium" style={{ color: brandColor }}>
+                  −{formatKobo(discountKobo)}
+                </span>
               </div>
             )}
 

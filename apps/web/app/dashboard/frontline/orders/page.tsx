@@ -25,7 +25,7 @@ export default async function FrontlineOrdersPage() {
         `
         id, order_number, status, payment_status, fulfillment_type,
         customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
-        vat_kobo, service_fee_kobo, total_kobo, created_at,
+        vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
         special_instructions, delivery_address, dispatch_type,
         order_items (id, item_name, quantity, line_total_kobo, selected_options)
       `

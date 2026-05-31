@@ -14,6 +14,7 @@ import {
   BarChart3,
   Settings,
   Wallet,
+  Megaphone,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean
   { href: "/dashboard/orders",    label: "Orders",     icon: ClipboardList,   exact: false },
   { href: "/dashboard/menu",      label: "Menu",       icon: UtensilsCrossed, exact: false },
   { href: "/dashboard/customers", label: "Customers",  icon: Users,           exact: false },
+  { href: "/dashboard/marketing", label: "Marketing",  icon: Megaphone,       exact: false },
   { href: "/dashboard/analytics", label: "Analytics",  icon: BarChart3,       exact: false },
   { href: "/dashboard/wallet",    label: "Wallet",     icon: Wallet,          exact: false },
   { href: "/dashboard/settings",  label: "Settings",   icon: Settings,        exact: false },
