@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import { Sparkles } from "lucide-react";
-import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import type { MenuItemWithOptions } from "@foodo/database";
+import { ItemPrice, SalePill, type MenuSale } from "./menu-price";
 
 /** Branded "NEW" pill — uses the restaurant's primary colour. */
 export function NewBadge({ className }: { className?: string }) {
@@ -26,10 +26,12 @@ export function NewBadge({ className }: { className?: string }) {
 interface MenuItemCardProps {
   item: MenuItemWithOptions;
   onSelect: (item: MenuItemWithOptions) => void;
+  sale?: MenuSale | null;
 }
 
-export function MenuItemCard({ item, onSelect }: MenuItemCardProps) {
+export function MenuItemCard({ item, onSelect, sale = null }: MenuItemCardProps) {
   const unavailable = !item.is_available;
+  const showSale = !!sale && !sale.conditional && !unavailable;
 
   return (
     <button
@@ -65,24 +67,9 @@ export function MenuItemCard({ item, onSelect }: MenuItemCardProps) {
             {item.description}
           </p>
         )}
-        <p
-          className={cn(
-            "mt-2 text-sm font-bold",
-            unavailable ? "text-black-300" : "text-primary"
-          )}
-        >
-          {item.price_kobo === 0
-            ? (() => {
-                const sizeGroup = item.options?.find(
-                  (o) => o.is_required && o.max_selections === 1
-                );
-                const first = sizeGroup?.choices[0];
-                return first
-                  ? `from ${formatKobo(first.price_modifier_kobo ?? 0)}`
-                  : formatKobo(0);
-              })()
-            : formatKobo(item.price_kobo)}
-        </p>
+        <div className="mt-2 text-sm font-bold">
+          <ItemPrice item={item} sale={sale} muted={unavailable} />
+        </div>
       </div>
 
       {/* Image */}
@@ -99,6 +86,11 @@ export function MenuItemCard({ item, onSelect }: MenuItemCardProps) {
             )}
             sizes="96px"
           />
+          {showSale && (
+            <div className="absolute top-1.5 left-1.5">
+              <SalePill percentOff={sale!.percentOff} />
+            </div>
+          )}
           {!unavailable && (
             <div className="absolute inset-0 flex items-end justify-end p-1.5">
               <span className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-lg font-bold leading-none">

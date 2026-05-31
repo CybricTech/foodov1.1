@@ -10,6 +10,7 @@ import {
 } from "@foodo/database";
 import { CategoryTabs } from "@/components/storefront/category-tabs";
 import { MenuSections } from "@/components/storefront/menu-sections";
+import { getActiveMenuSale } from "@/lib/discounts";
 
 export const revalidate = 60;
 
@@ -33,9 +34,10 @@ export default async function MenuPage({ params }: MenuPageProps) {
   const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
   if (!restaurant) notFound();
 
-  const [categories, items] = await Promise.all([
+  const [categories, items, sale] = await Promise.all([
     getMenuCategories(supabase, restaurant.id),
     getMenuItems(supabase, restaurant.id, { includeUnavailable: true }),
+    getActiveMenuSale(restaurant.id),
   ]);
 
   return (
@@ -135,6 +137,7 @@ export default async function MenuPage({ params }: MenuPageProps) {
           categories={categories}
           items={items}
           restaurantAcceptsOrders={restaurant.accepts_orders}
+          sale={sale}
         />
       </div>
     </div>

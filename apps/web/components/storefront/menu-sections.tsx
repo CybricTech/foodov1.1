@@ -5,18 +5,21 @@ import { Star } from "lucide-react";
 import { MenuItemCard } from "./menu-item-card";
 import { MenuItemSheet } from "./menu-item-sheet";
 import { CartBar } from "./cart-bar";
+import { SaleBanner, type MenuSale } from "./menu-price";
 import type { MenuCategory, MenuItemWithOptions } from "@foodo/database";
 
 interface MenuSectionsProps {
   categories: MenuCategory[];
   items: MenuItemWithOptions[];
   restaurantAcceptsOrders: boolean;
+  sale: MenuSale | null;
 }
 
 export function MenuSections({
   categories,
   items,
   restaurantAcceptsOrders,
+  sale,
 }: MenuSectionsProps) {
   const [selectedItem, setSelectedItem] = useState<MenuItemWithOptions | null>(null);
 
@@ -41,6 +44,13 @@ export function MenuSections({
 
   return (
     <>
+      {/* Store-wide sale banner */}
+      {sale && (
+        <div className="-mx-4 mb-6">
+          <SaleBanner sale={sale} />
+        </div>
+      )}
+
       {/* Featured strip */}
       {featured.length > 0 && (
         <section className="mb-7">
@@ -51,7 +61,7 @@ export function MenuSections({
           <div className="flex gap-3 overflow-x-auto scrollbar-hide -mx-4 px-4 pb-2">
             {featured.map((item) => (
               <div key={item.id} className="flex-shrink-0 w-64">
-                <MenuItemCard item={item} onSelect={handleSelect} />
+                <MenuItemCard item={item} onSelect={handleSelect} sale={sale} />
               </div>
             ))}
           </div>
@@ -70,7 +80,7 @@ export function MenuSections({
             )}
             <div className="grid grid-cols-1 gap-3">
               {catItems.map((item) => (
-                <MenuItemCard key={item.id} item={item} onSelect={handleSelect} />
+                <MenuItemCard key={item.id} item={item} onSelect={handleSelect} sale={sale} />
               ))}
             </div>
           </section>
@@ -83,7 +93,7 @@ export function MenuSections({
           <h2 className="text-lg font-bold text-black-900 mb-3">More</h2>
           <div className="grid grid-cols-1 gap-3">
             {uncategorized.map((item) => (
-              <MenuItemCard key={item.id} item={item} onSelect={handleSelect} />
+              <MenuItemCard key={item.id} item={item} onSelect={handleSelect} sale={sale} />
             ))}
           </div>
         </section>
@@ -94,6 +104,7 @@ export function MenuSections({
         onClose={() => setSelectedItem(null)}
         allItems={items}
         onSelect={handleSelect}
+        sale={sale}
       />
       <CartBar />
     </>

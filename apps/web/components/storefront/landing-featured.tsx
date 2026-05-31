@@ -4,36 +4,27 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Plus, UtensilsCrossed, ChevronRight } from "lucide-react";
-import { formatKobo } from "@foodo/utils";
 import type { MenuItemWithOptions } from "@foodo/database";
 import { MenuItemSheet } from "./menu-item-sheet";
 import { CartBar } from "./cart-bar";
+import { NewBadge } from "./menu-item-card";
+import { ItemPrice, SalePill, SaleBanner, type MenuSale } from "./menu-price";
 
 interface LandingFeaturedProps {
   items: MenuItemWithOptions[];
   restaurantSlug: string;
   restaurantAcceptsOrders: boolean;
+  sale: MenuSale | null;
 }
 
 export function LandingFeatured({
   items,
   restaurantSlug,
   restaurantAcceptsOrders,
+  sale,
 }: LandingFeaturedProps) {
   const [selectedItem, setSelectedItem] = useState<MenuItemWithOptions | null>(null);
-
-  function getPrice(item: MenuItemWithOptions) {
-    if (item.price_kobo === 0) {
-      const sizeGroup = item.options?.find(
-        (o) => o.is_required && o.max_selections === 1
-      );
-      const first = sizeGroup?.choices[0];
-      return first
-        ? `from ${formatKobo(first.price_modifier_kobo ?? 0)}`
-        : formatKobo(0);
-    }
-    return formatKobo(item.price_kobo);
-  }
+  const showSaleOnItems = !!sale && !sale.conditional;
 
   function handleTap(item: MenuItemWithOptions) {
     if (restaurantAcceptsOrders && item.is_available) {
@@ -44,6 +35,13 @@ export function LandingFeatured({
   return (
     <>
       <section className="mt-8">
+        {/* Store-wide sale banner */}
+        {sale && (
+          <div className="mb-5">
+            <SaleBanner sale={sale} />
+          </div>
+        )}
+
         {/* Section header */}
         <div className="flex items-center justify-between px-5 mb-4">
           <div>
@@ -91,6 +89,14 @@ export function LandingFeatured({
                     </div>
                   )}
 
+                  {/* Top-left badges: NEW and/or sale */}
+                  {!unavailable && (item.show_new_badge || showSaleOnItems) && (
+                    <div className="absolute top-2 left-2 flex flex-col items-start gap-1">
+                      {item.show_new_badge && <NewBadge />}
+                      {showSaleOnItems && <SalePill percentOff={sale!.percentOff} />}
+                    </div>
+                  )}
+
                   {/* Add button — available items only */}
                   {canTap && (
                     <div className="absolute bottom-2.5 right-2.5 transition-transform duration-200 group-hover:scale-110">
@@ -118,13 +124,9 @@ export function LandingFeatured({
                 >
                   {item.name}
                 </p>
-                <p
-                  className={`text-sm font-bold mt-0.5 ${
-                    unavailable ? "text-black-300" : "text-primary"
-                  }`}
-                >
-                  {getPrice(item)}
-                </p>
+                <div className="text-sm font-bold mt-0.5">
+                  <ItemPrice item={item} sale={sale} muted={unavailable} />
+                </div>
               </button>
             );
           })}
@@ -132,7 +134,7 @@ export function LandingFeatured({
       </section>
 
       {/* Bottom sheet & cart */}
-      <MenuItemSheet item={selectedItem} onClose={() => setSelectedItem(null)} />
+      <MenuItemSheet item={selectedItem} onClose={() => setSelectedItem(null)} sale={sale} />
       <CartBar />
     </>
   );

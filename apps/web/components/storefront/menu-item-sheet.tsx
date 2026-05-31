@@ -8,6 +8,7 @@ import { cn } from "@foodo/ui";
 import { useCartStore } from "@/lib/stores/cart";
 import { useRestaurant } from "./restaurant-context";
 import { MenuItemCard, NewBadge } from "./menu-item-card";
+import { applyPercent, type MenuSale } from "./menu-price";
 import type { MenuItemWithOptions, SelectedOptionSnapshot } from "@foodo/database";
 
 interface MenuItemSheetProps {
@@ -15,6 +16,7 @@ interface MenuItemSheetProps {
   onClose: () => void;
   allItems?: MenuItemWithOptions[];
   onSelect?: (item: MenuItemWithOptions) => void;
+  sale?: MenuSale | null;
 }
 
 // choiceQtys: optionId → choiceId → quantity (0 means unselected)
@@ -22,7 +24,7 @@ type ChoiceQtys = Record<string, Record<string, number>>;
 
 const MAX_CHOICE_QTY = 20;
 
-export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuItemSheetProps) {
+export function MenuItemSheet({ item, onClose, allItems = [], onSelect, sale = null }: MenuItemSheetProps) {
   const { restaurant } = useRestaurant();
   const addItem = useCartStore((s) => s.addItem);
 
@@ -315,11 +317,29 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
           {item.description && (
             <p className="mt-1 text-sm text-black-400">{item.description}</p>
           )}
-          <p className="mt-2 text-lg font-bold text-primary">
-            {isSizedItem
-              ? `from ${formatKobo(minSizePrice)}`
-              : formatKobo(item.price_kobo)}
-          </p>
+          {(() => {
+            const baseKobo = isSizedItem ? minSizePrice : item.price_kobo;
+            const onSale = !!sale && !sale.conditional && baseKobo > 0;
+            const prefix = isSizedItem ? "from " : "";
+            return (
+              <p className="mt-2 text-lg font-bold text-primary flex items-baseline gap-2">
+                <span>
+                  {prefix}
+                  {formatKobo(onSale ? applyPercent(baseKobo, sale!.percentOff) : baseKobo)}
+                </span>
+                {onSale && (
+                  <>
+                    <span className="text-sm font-medium text-black-400 line-through">
+                      {formatKobo(baseKobo)}
+                    </span>
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-primary">
+                      {sale!.percentOff}% off
+                    </span>
+                  </>
+                )}
+              </p>
+            );
+          })()}
 
           {/* Options */}
           {item.options?.map((opt) => {
@@ -497,6 +517,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect }: MenuIt
                     <MenuItemCard
                       item={relatedItem}
                       onSelect={(i) => { onSelect(i); }}
+                      sale={sale}
                     />
                   </div>
                 ))}

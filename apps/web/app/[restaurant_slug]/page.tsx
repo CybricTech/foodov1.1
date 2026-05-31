@@ -10,6 +10,7 @@ import {
   getRestaurantRatingSummary,
 } from "@foodo/database";
 import { LandingFeatured } from "@/components/storefront/landing-featured";
+import { getActiveMenuSale } from "@/lib/discounts";
 import { ReviewsSection } from "@/components/storefront/reviews-section";
 import { LocationSection } from "@/components/storefront/location-section";
 import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
@@ -36,10 +37,11 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
   const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
   if (!restaurant) notFound();
 
-  const [items, reviews, ratingSummary] = await Promise.all([
+  const [items, reviews, ratingSummary, sale] = await Promise.all([
     getMenuItems(supabase, restaurant.id),
     getRestaurantReviews(supabase, restaurant.id),
     getRestaurantRatingSummary(supabase, restaurant.id),
+    getActiveMenuSale(restaurant.id),
   ]);
   const featured = items.filter((i) => i.is_featured);
 
@@ -170,6 +172,7 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
           items={featured}
           restaurantSlug={params.restaurant_slug}
           restaurantAcceptsOrders={restaurant.accepts_orders}
+          sale={sale}
         />
       )}
 
