@@ -594,9 +594,9 @@ function ItemFormModal({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>(item?.image_url ?? "");
   const [isFeatured, setIsFeatured] = useState(item?.is_featured ?? false);
-  // Default ON for new items so they get a "NEW" badge automatically.
+  // Opt-in: off by default, the merchant turns it on per item.
   const [showNewBadge, setShowNewBadge] = useState(
-    (item as { show_new_badge?: boolean } | null)?.show_new_badge ?? true
+    (item as { show_new_badge?: boolean } | null)?.show_new_badge ?? false
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
