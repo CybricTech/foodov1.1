@@ -22,7 +22,10 @@
         "MONNIFY_WALLET_ACCOUNT",
         "GOOGLE_MAPS_API_KEY",
         "TELEGRAM_BOT_TOKEN",
-        "TELEGRAM_CHAT_ID"
+        "TELEGRAM_CHAT_ID",
+        "NEXT_PUBLIC_SENTRY_DSN",
+        "NEXT_PUBLIC_APP_ENV",
+        "SENTRY_AUTH_TOKEN"
       ]
     },
     "dev": {
