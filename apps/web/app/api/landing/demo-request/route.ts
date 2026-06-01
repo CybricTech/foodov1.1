@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
 import { corsHeaders, preflight } from "@/lib/api/cors";
+import { getPostHogClient } from "@/lib/posthog";
 
 // IP rate limit — 5 requests / minute is plenty for a contact form.
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -86,6 +87,19 @@ export async function POST(request: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500, headers });
   }
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: email,
+    event: "demo request submitted",
+    properties: {
+      demo_request_id: data.id,
+      restaurant_name: restaurantName,
+      phone,
+      has_message: !!message,
+    },
+  });
+  await posthog.shutdown();
 
   // Fire-and-forget admin notification email
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {

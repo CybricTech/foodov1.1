@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
 import { resolveDiscount } from "@/lib/discounts";
+import { getPostHogClient } from "@/lib/posthog";
 import {
   DELIVERY_BASE_FEE_KOBO,
   DELIVERY_PER_KM_RATE_KOBO,
@@ -403,6 +404,25 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: data.customerPhone,
+    event: "checkout initiated",
+    properties: {
+      payment_id: payment.id,
+      restaurant_id: data.restaurantId,
+      fulfillment_type: data.fulfillmentType,
+      subtotal_kobo: subtotalKobo,
+      delivery_fee_kobo: deliveryFeeKobo,
+      discount_kobo: discountKobo,
+      discount_code: discountCode,
+      total_kobo: totalKobo,
+      item_count: data.items.length,
+      payment_provider: provider,
+    },
+  });
+  await posthog.shutdown();
 
   if (provider === "paystack") {
     // Server-side init — binds the reference to our payment row before the

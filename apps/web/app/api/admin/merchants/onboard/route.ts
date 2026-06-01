@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 const OnboardSchema = z.object({
   name: z.string().min(2).max(100),
@@ -150,6 +151,21 @@ export async function POST(request: NextRequest) {
       }),
     }
   ).catch(console.error);
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: "merchant onboarded",
+    properties: {
+      restaurant_id: restaurant.id,
+      restaurant_name: name,
+      restaurant_slug: slug,
+      merchant_email: email,
+      city: city ?? null,
+      onboarded_by: user.id,
+    },
+  });
+  await posthog.shutdown();
 
   // Kick off Sendchamp sender-ID registration for this restaurant.
   // Fire-and-forget — approval lands later and admin marks it via the merchants page.

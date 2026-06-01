@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -161,6 +162,26 @@ export async function POST(request: NextRequest) {
   const order = orderResult.data;
 
   console.log(`[webhook] Order created: id=${order.id}, number=${order.order_number}`);
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: meta.customer_phone as string,
+    event: "order created",
+    properties: {
+      order_id: order.id,
+      order_number: order.order_number,
+      restaurant_id: restaurantId,
+      fulfillment_type: meta.fulfillment_type,
+      total_kobo: (meta.subtotal_kobo as number) + (meta.delivery_fee_kobo as number) + ((meta.vat_kobo as number) || 0) + ((meta.service_fee_kobo as number) || 0) - ((meta.discount_kobo as number) || 0),
+      subtotal_kobo: meta.subtotal_kobo,
+      delivery_fee_kobo: meta.delivery_fee_kobo,
+      discount_kobo: (meta.discount_kobo as number) || 0,
+      discount_code: (meta.discount_code as string) || null,
+      item_count: (meta.items as unknown[])?.length ?? 0,
+      payment_provider: "paystack",
+    },
+  });
+  await posthog.shutdown();
 
   // 6. Create order items (snapshot)
   const items = (meta.items as Array<{

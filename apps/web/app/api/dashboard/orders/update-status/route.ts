@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { sendTelegramRiderAlert } from "@/lib/telegram";
+import { getPostHogClient } from "@/lib/posthog";
 
 const VALID_STATUSES = [
   "pending",
@@ -162,6 +163,20 @@ export async function POST(req: NextRequest) {
       }
     ).catch(console.error);
   }
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: "order status updated",
+    properties: {
+      order_id: orderId,
+      restaurant_id: restaurantId,
+      previous_status: order.status,
+      new_status: status,
+      fulfillment_type: order.fulfillment_type,
+    },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json({ success: true });
 }
