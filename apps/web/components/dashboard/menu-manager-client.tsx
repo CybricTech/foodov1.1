@@ -37,15 +37,6 @@ export function MenuManagerClient({
   initialItems,
 }: MenuManagerClientProps) {
   const supabase = createBrowserClient();
-
-  // Bust the storefront menu cache after any edit so customers see price/
-  // availability changes immediately instead of waiting out the 60s TTL.
-  // Fire-and-forget: a failed revalidation just means the change lands within
-  // the TTL, so it must never block or break the dashboard UX.
-  const revalidateMenu = () => {
-    void fetch("/api/revalidate", { method: "POST" }).catch(() => {});
-  };
-
   const [categories, setCategories] = useState(initialCategories);
   const [items, setItems] = useState(initialItems);
   const [editingItem, setEditingItem] = useState<MenuItemWithOptions | null>(null);
@@ -91,7 +82,6 @@ export function MenuManagerClient({
         supabase.from("menu_items").update({ featured_order: i }).eq("id", it.id)
       )
     );
-    revalidateMenu();
     setReorderBusy(false);
   }
 
@@ -134,14 +124,12 @@ export function MenuManagerClient({
         i.id === itemId ? { ...i, is_available: !current } : i
       )
     );
-    revalidateMenu();
   }
 
   async function deleteItem(itemId: string) {
     if (!confirm("Delete this menu item?")) return;
     await supabase.from("menu_items").delete().eq("id", itemId);
     setItems((prev) => prev.filter((i) => i.id !== itemId));
-    revalidateMenu();
   }
 
   async function deleteCategory(catId: string) {
@@ -153,7 +141,6 @@ export function MenuManagerClient({
     if (!confirm("Delete this category?")) return;
     await supabase.from("menu_categories").delete().eq("id", catId);
     setCategories((prev) => prev.filter((c) => c.id !== catId));
-    revalidateMenu();
     if (activeCategory === catId) {
       setActiveCategory(categories.find((c) => c.id !== catId)?.id ?? null);
     }
@@ -389,7 +376,6 @@ export function MenuManagerClient({
             } else {
               setItems((prev) => [...prev, savedItem]);
             }
-            revalidateMenu();
             setShowAddItem(false);
             setEditingItem(null);
           }}
@@ -405,7 +391,6 @@ export function MenuManagerClient({
           onSave={(newCat) => {
             setCategories((prev) => [...prev, newCat]);
             setActiveCategory(newCat.id);
-            revalidateMenu();
             setShowAddCategory(false);
           }}
         />
@@ -430,7 +415,6 @@ export function MenuManagerClient({
             } else {
               setItems((prev) => [...prev, ...newItems]);
             }
-            revalidateMenu();
             setShowCsvImport(false);
           }}
         />

@@ -2,7 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Clock, ShoppingBag, ArrowLeft } from "lucide-react";
-import { getCachedRestaurant, getCachedMenu } from "@/lib/supabase/storefront-cache";
+import { createServerClient } from "@/lib/supabase/server";
+import { getMenuCategories, getMenuItems } from "@foodo/database";
+import { getCachedRestaurant } from "@/lib/supabase/storefront-cache";
 import { transformImage } from "@/lib/images";
 import { CategoryTabs } from "@/components/storefront/category-tabs";
 import { MenuSections } from "@/components/storefront/menu-sections";
@@ -24,14 +26,16 @@ export async function generateMetadata({ params }: MenuPageProps) {
 }
 
 export default async function MenuPage({ params }: MenuPageProps) {
+  const supabase = await createServerClient();
+
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) notFound();
 
-  const [menu, sale] = await Promise.all([
-    getCachedMenu(restaurant.id, true),
+  const [categories, items, sale] = await Promise.all([
+    getMenuCategories(supabase, restaurant.id),
+    getMenuItems(supabase, restaurant.id, { includeUnavailable: true }),
     getActiveMenuSale(restaurant.id),
   ]);
-  const { categories, items } = menu;
 
   return (
     <div className="pb-24 bg-white min-h-screen">
