@@ -6,6 +6,7 @@ import Image from "next/image";
 import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check } from "lucide-react";
 import { z } from "zod";
 import { useCartStore } from "@/lib/stores/cart";
+import { transformImage } from "@/lib/images";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { normalizeToE164, formatKobo, isValidNigerianPhone } from "@foodo/utils";
 import { cn } from "@foodo/ui";
@@ -611,7 +612,7 @@ export default function CheckoutPage() {
               {restaurant.logo_url && (
                 <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto border border-black-100">
                   <Image
-                    src={restaurant.logo_url}
+                    src={transformImage(restaurant.logo_url, { width: 64, height: 64 })}
                     alt={restaurant.name}
                     width={64}
                     height={64}

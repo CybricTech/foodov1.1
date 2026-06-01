@@ -10,6 +10,7 @@ import {
   getRestaurantRatingSummary,
 } from "@foodo/database";
 import { LandingFeatured } from "@/components/storefront/landing-featured";
+import { transformImage } from "@/lib/images";
 import { getActiveMenuSale } from "@/lib/discounts";
 import { ReviewsSection } from "@/components/storefront/reviews-section";
 import { LocationSection } from "@/components/storefront/location-section";
@@ -65,7 +66,7 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
         {/* Background */}
         {restaurant.banner_url ? (
           <Image
-            src={restaurant.banner_url}
+            src={transformImage(restaurant.banner_url, { width: 720, height: 900, quality: 75 })}
             alt={restaurant.name}
             fill
             className="object-cover"
@@ -85,7 +86,7 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
           {restaurant.logo_url ? (
             <div className="relative w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/30 shadow-xl bg-white flex-shrink-0">
               <Image
-                src={restaurant.logo_url}
+                src={transformImage(restaurant.logo_url, { width: 56, height: 56 })}
                 alt={`${restaurant.name} logo`}
                 fill
                 className="object-cover"

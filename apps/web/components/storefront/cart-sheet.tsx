@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { X, UtensilsCrossed, ArrowRight, Minus, Plus } from "lucide-react";
 import { formatKobo } from "@foodo/utils";
 import { useCartStore } from "@/lib/stores/cart";
+import { transformImage } from "@/lib/images";
 import { useRestaurant } from "./restaurant-context";
 
 interface CartSheetProps {
@@ -82,7 +83,7 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
                 {item.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={item.imageUrl}
+                    src={transformImage(item.imageUrl, { width: 56, height: 56 })}
                     alt={item.name}
                     className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-black-100"
                   />

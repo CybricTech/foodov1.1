@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Plus, UtensilsCrossed, ChevronRight } from "lucide-react";
 import type { MenuItemWithOptions } from "@foodo/database";
+import { transformImage } from "@/lib/images";
 import { MenuItemSheet } from "./menu-item-sheet";
 import { CartBar } from "./cart-bar";
 import { NewBadge } from "./menu-item-card";
@@ -74,7 +75,7 @@ export function LandingFeatured({
                 <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black-100 mb-2.5 shadow-sm">
                   {item.image_url ? (
                     <Image
-                      src={item.image_url}
+                      src={transformImage(item.image_url, { width: 176, height: 176 })}
                       alt={item.name}
                       fill
                       unoptimized

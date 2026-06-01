@@ -6,6 +6,7 @@ import Image from "next/image";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { useCartStore } from "@/lib/stores/cart";
+import { transformImage } from "@/lib/images";
 import { useRestaurant } from "./restaurant-context";
 import { MenuItemCard, NewBadge } from "./menu-item-card";
 import { applyPercent, type MenuSale } from "./menu-price";
@@ -242,7 +243,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect, sale = n
       {/* Image lightbox — tap/click anywhere or press Esc to close */}
       {imageExpanded && item.image_url && (
         <Lightbox
-          src={item.image_url}
+          src={transformImage(item.image_url, { width: 900, height: 900, quality: 80, resize: "contain" })}
           alt={item.name}
           brandColor={restaurant.primary_color ?? "#2D6A4F"}
           onClose={() => setImageExpanded(false)}
@@ -264,7 +265,7 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect, sale = n
             onClick={() => setImageExpanded(true)}
           >
             <Image
-              src={item.image_url}
+              src={transformImage(item.image_url, { width: 600, height: 256, quality: 75 })}
               alt={item.name}
               fill
               unoptimized

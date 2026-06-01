@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { compressImage } from "@/lib/images";
 import { cn } from "@foodo/ui";
 import { ImagePlus, UserPlus, Trash2, KeyRound, Eye, EyeOff, ExternalLink } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
@@ -510,12 +511,13 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
     setLogoUploading(true);
     setLogoError("");
 
-    const ext = file.name.split(".").pop() ?? "jpg";
+    const compressed = await compressImage(file);
+    const ext = compressed.name.split(".").pop() ?? "jpg";
     const path = `${r.id}/logo-${Date.now()}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from("menu-images")
-      .upload(path, file, { contentType: file.type });
+      .upload(path, compressed, { contentType: compressed.type });
 
     if (uploadError) {
       setLogoError(uploadError.message);
@@ -567,12 +569,13 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
     setBannerUploading(true);
     setBannerError("");
 
-    const ext = file.name.split(".").pop() ?? "jpg";
+    const compressed = await compressImage(file, { maxEdge: 2000 });
+    const ext = compressed.name.split(".").pop() ?? "jpg";
     const path = `${r.id}/banner-${Date.now()}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
       .from("menu-images")
-      .upload(path, file, { contentType: file.type });
+      .upload(path, compressed, { contentType: compressed.type });
 
     if (uploadError) {
       setBannerError(uploadError.message);

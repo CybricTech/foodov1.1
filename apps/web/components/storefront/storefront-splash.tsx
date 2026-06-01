@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { transformImage } from "@/lib/images";
 
 interface StorefrontSplashProps {
   logoUrl: string | null;
@@ -68,7 +69,7 @@ export function StorefrontSplash({ logoUrl, brandColor, restaurantName }: Storef
         >
           {logoUrl ? (
             <Image
-              src={logoUrl}
+              src={transformImage(logoUrl, { width: 64, height: 64 })}
               alt={restaurantName}
               fill
               unoptimized

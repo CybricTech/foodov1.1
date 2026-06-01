@@ -4,6 +4,7 @@ import Image from "next/image";
 import { Sparkles } from "lucide-react";
 import { cn } from "@foodo/ui";
 import type { MenuItemWithOptions } from "@foodo/database";
+import { transformImage } from "@/lib/images";
 import { ItemPrice, SalePill, type MenuSale } from "./menu-price";
 
 /** Branded "NEW" pill — uses the restaurant's primary colour. */
@@ -76,7 +77,7 @@ export function MenuItemCard({ item, onSelect, sale = null }: MenuItemCardProps)
       {item.image_url ? (
         <div className="relative flex-shrink-0 w-24 h-24 rounded-lg overflow-hidden bg-black-100">
           <Image
-            src={item.image_url}
+            src={transformImage(item.image_url, { width: 96, height: 96 })}
             alt={item.name}
             fill
             unoptimized

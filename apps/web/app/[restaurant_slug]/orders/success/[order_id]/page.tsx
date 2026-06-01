@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckCircle, UtensilsCrossed, Phone, MapPin, Clock, ArrowLeft, Store, Sparkles } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
+import { transformImage } from "@/lib/images";
 import { getRestaurantBySlug } from "@foodo/database";
 import { formatKobo } from "@foodo/utils";
 
@@ -107,7 +108,7 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
           {restaurant.logo_url ? (
             <div className="relative w-18 h-18 rounded-2xl overflow-hidden border-2 border-white/40 bg-white flex-shrink-0 shadow-lg">
               <Image
-                src={restaurant.logo_url}
+                src={transformImage(restaurant.logo_url, { width: 72, height: 72 })}
                 alt={restaurant.name}
                 fill
                 className="object-cover"

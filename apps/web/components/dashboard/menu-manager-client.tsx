@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { createBrowserClient } from "@/lib/supabase/client";
+import { compressImage } from "@/lib/images";
 import { formatKobo } from "@foodo/utils";
 import { MENU_IMAGE_MAX_SIZE_BYTES } from "@foodo/utils";
 import { cn } from "@foodo/ui";
@@ -798,10 +799,11 @@ function ItemFormModal({
       let imageUrl = item?.image_url ?? null;
 
       if (imageFile) {
-        const path = `${restaurantId}/${Date.now()}-${imageFile.name}`;
+        const compressed = await compressImage(imageFile);
+        const path = `${restaurantId}/${Date.now()}-${compressed.name}`;
         const { error: uploadError } = await supabase.storage
           .from("menu-images")
-          .upload(path, imageFile, { upsert: true });
+          .upload(path, compressed, { upsert: true });
         if (uploadError) throw uploadError;
         const { data: { publicUrl } } = supabase.storage.from("menu-images").getPublicUrl(path);
         imageUrl = publicUrl;

@@ -9,6 +9,7 @@ import {
   Store,
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { transformImage } from "@/lib/images";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { OrderEtaCountdown } from "@/components/storefront/order-eta-countdown";
 import { OrderStatusAnimation } from "@/components/storefront/order-status-animation";
@@ -127,7 +128,7 @@ export default function OrderTrackingPage() {
           {restaurant.logo_url ? (
             <div className="relative w-9 h-9 rounded-lg overflow-hidden border border-black-100 flex-shrink-0">
               <Image
-                src={restaurant.logo_url}
+                src={transformImage(restaurant.logo_url, { width: 36, height: 36 })}
                 alt={restaurant.name}
                 fill
                 className="object-cover"

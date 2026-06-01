@@ -8,6 +8,7 @@ import {
   getMenuCategories,
   getMenuItems,
 } from "@foodo/database";
+import { transformImage } from "@/lib/images";
 import { CategoryTabs } from "@/components/storefront/category-tabs";
 import { MenuSections } from "@/components/storefront/menu-sections";
 import { getActiveMenuSale } from "@/lib/discounts";
@@ -47,7 +48,7 @@ export default async function MenuPage({ params }: MenuPageProps) {
         {restaurant.banner_url ? (
           <div className="relative w-full h-48">
             <Image
-              src={restaurant.banner_url}
+              src={transformImage(restaurant.banner_url, { width: 720, height: 192, quality: 75 })}
               alt={`${restaurant.name} banner`}
               fill
               className="object-cover"
@@ -79,7 +80,7 @@ export default async function MenuPage({ params }: MenuPageProps) {
           {restaurant.logo_url && (
             <div className="relative w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 border border-black-100">
               <Image
-                src={restaurant.logo_url}
+                src={transformImage(restaurant.logo_url, { width: 56, height: 56 })}
                 alt={restaurant.name}
                 fill
                 className="object-cover"
