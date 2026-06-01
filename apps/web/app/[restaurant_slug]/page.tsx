@@ -2,12 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Star, Clock, ShoppingBag } from "lucide-react";
-import { createServerClient } from "@/lib/supabase/server";
-import { getMenuItems } from "@foodo/database";
 import {
   getCachedRestaurant,
   getCachedReviews,
   getCachedRatingSummary,
+  getCachedMenu,
 } from "@/lib/supabase/storefront-cache";
 import { LandingFeatured } from "@/components/storefront/landing-featured";
 import { transformImage } from "@/lib/images";
@@ -32,17 +31,16 @@ export async function generateMetadata({ params }: StorefrontPageProps) {
 }
 
 export default async function StorefrontPage({ params }: StorefrontPageProps) {
-  const supabase = await createServerClient();
-
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) notFound();
 
-  const [items, reviews, ratingSummary, sale] = await Promise.all([
-    getMenuItems(supabase, restaurant.id),
+  const [menu, reviews, ratingSummary, sale] = await Promise.all([
+    getCachedMenu(restaurant.id),
     getCachedReviews(restaurant.id),
     getCachedRatingSummary(restaurant.id),
     getActiveMenuSale(restaurant.id),
   ]);
+  const items = menu.items;
   const featured = items
     .filter((i) => i.is_featured)
     .sort(

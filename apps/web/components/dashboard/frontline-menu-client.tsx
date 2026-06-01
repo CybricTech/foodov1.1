@@ -65,6 +65,10 @@ export function FrontlineMenuClient({
       setItems((prev) =>
         prev.map((i) => (i.id === itemId ? { ...i, is_available: current } : i))
       );
+    } else {
+      // Bust the storefront menu cache so a sold-out item disappears for
+      // customers immediately rather than after the 60s TTL.
+      void fetch("/api/revalidate", { method: "POST" }).catch(() => {});
     }
     setToggling(null);
   }
