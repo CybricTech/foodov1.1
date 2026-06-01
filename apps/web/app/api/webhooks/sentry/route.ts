@@ -70,15 +70,18 @@ export async function POST(request: NextRequest) {
 
   // Only care about issue/error events; ignore installation pings etc.
   const resource = request.headers.get("sentry-hook-resource");
+  console.log("[sentry-webhook] resource:", resource);
   if (resource && !["event_alert", "issue", "error", "metric_alert"].includes(resource)) {
+    console.log("[sentry-webhook] ignored resource type:", resource);
     return NextResponse.json({ ok: true, ignored: resource });
   }
 
-  // Same bot + chat as the existing rider alerts (lib/telegram.ts).
+  // Uses TELEGRAM_ALERTS_CHAT_ID (a separate group from rider alerts).
+  // Same bot token; only the destination chat differs.
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const chatId = process.env.TELEGRAM_ALERTS_CHAT_ID;
   if (!token || !chatId) {
-    console.error("[sentry-webhook] Telegram token/chat id not configured");
+    console.error("[sentry-webhook] Telegram token/alerts chat id not configured");
     return NextResponse.json({ ok: true, skipped: "telegram not configured" });
   }
 
@@ -87,14 +90,19 @@ export async function POST(request: NextRequest) {
   const escape = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+  // Telegram's HTML parser rejects the whole message if an href contains a raw
+  // "&" or quote — Sentry issue URLs routinely carry query params, so escape them.
+  const escapeAttr = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
   const text =
     `${icon} <b>${escape(level.toUpperCase())}${environment ? ` · ${escape(environment)}` : ""}</b>\n\n` +
     `${escape(title)}\n` +
     (culprit ? `<code>${escape(culprit)}</code>\n` : "") +
-    (url ? `\n<a href="${url}">Open in Sentry →</a>` : "");
+    (url ? `\n<a href="${escapeAttr(url)}">Open in Sentry →</a>` : "");
 
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -104,6 +112,18 @@ export async function POST(request: NextRequest) {
         disable_web_page_preview: true,
       }),
     });
+    const tgJson = await tgRes.json().catch(() => null);
+    if (!tgRes.ok || !tgJson?.ok) {
+      // Telegram rejected the message (bad chat id, HTML parse error, etc.).
+      // Log the real reason — previously this was swallowed silently.
+      console.error("[sentry-webhook] Telegram rejected message:", {
+        httpStatus: tgRes.status,
+        description: tgJson?.description,
+        chatIdSuffix: chatId.slice(-4),
+      });
+    } else {
+      console.log("[sentry-webhook] Telegram message sent OK to chat ending", chatId.slice(-4));
+    }
   } catch (err) {
     // Never fail the webhook on a Telegram hiccup — Sentry would just retry.
     console.error("[sentry-webhook] Telegram send failed:", err);

@@ -15,6 +15,7 @@ import {
   Settings,
   AlertTriangle,
   Globe,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 
@@ -27,8 +28,9 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon; exact: boolean
   { href: "/admin/disputes",     label: "Disputes",    icon: Scale,           exact: false },
   { href: "/admin/late-orders",  label: "Late Orders", icon: AlertTriangle,   exact: false },
   { href: "/admin/landing",      label: "Landing",     icon: Globe,           exact: false },
-  { href: "/admin/logs/sms",     label: "SMS Logs",    icon: MessageSquare,   exact: false },
-  { href: "/admin/settings",     label: "Settings",    icon: Settings,        exact: false },
+  { href: "/admin/logs/sms",      label: "SMS Logs",     icon: MessageSquare, exact: false },
+  { href: "/admin/system-health", label: "System Health", icon: Activity,      exact: false },
+  { href: "/admin/settings",      label: "Settings",     icon: Settings,      exact: false },
 ];
 
 export function AdminNav({ userName }: { userName: string }) {
