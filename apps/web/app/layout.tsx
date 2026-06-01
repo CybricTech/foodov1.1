@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import * as Sentry from "@sentry/nextjs";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 
@@ -6,10 +7,15 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export const metadata: Metadata = {
-  title: "Kitchyn — White-label Food Ordering Platform",
-  description: "Launch your own branded food ordering platform. Direct orders, zero commissions, full control.",
-};
+export function generateMetadata(): Metadata {
+  return {
+    title: "Kitchyn — White-label Food Ordering Platform",
+    description: "Launch your own branded food ordering platform. Direct orders, zero commissions, full control.",
+    other: {
+      ...Sentry.getTraceData(),
+    },
+  };
+}
 
 export default function RootLayout({
   children,
