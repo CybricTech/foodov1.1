@@ -3,11 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Clock, ShoppingBag, ArrowLeft } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
-import {
-  getRestaurantBySlug,
-  getMenuCategories,
-  getMenuItems,
-} from "@foodo/database";
+import { getMenuCategories, getMenuItems } from "@foodo/database";
+import { getCachedRestaurant } from "@/lib/supabase/storefront-cache";
 import { transformImage } from "@/lib/images";
 import { CategoryTabs } from "@/components/storefront/category-tabs";
 import { MenuSections } from "@/components/storefront/menu-sections";
@@ -20,8 +17,7 @@ interface MenuPageProps {
 }
 
 export async function generateMetadata({ params }: MenuPageProps) {
-  const supabase = await createServerClient();
-  const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) return {};
   return {
     title: `Menu — ${restaurant.name}`,
@@ -32,7 +28,7 @@ export async function generateMetadata({ params }: MenuPageProps) {
 export default async function MenuPage({ params }: MenuPageProps) {
   const supabase = await createServerClient();
 
-  const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) notFound();
 
   const [categories, items, sale] = await Promise.all([

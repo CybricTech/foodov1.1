@@ -3,12 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Star, Clock, ShoppingBag } from "lucide-react";
 import { createServerClient } from "@/lib/supabase/server";
+import { getMenuItems } from "@foodo/database";
 import {
-  getRestaurantBySlug,
-  getMenuItems,
-  getRestaurantReviews,
-  getRestaurantRatingSummary,
-} from "@foodo/database";
+  getCachedRestaurant,
+  getCachedReviews,
+  getCachedRatingSummary,
+} from "@/lib/supabase/storefront-cache";
 import { LandingFeatured } from "@/components/storefront/landing-featured";
 import { transformImage } from "@/lib/images";
 import { getActiveMenuSale } from "@/lib/discounts";
@@ -23,8 +23,7 @@ interface StorefrontPageProps {
 }
 
 export async function generateMetadata({ params }: StorefrontPageProps) {
-  const supabase = await createServerClient();
-  const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) return {};
   return {
     title: restaurant.name,
@@ -35,13 +34,13 @@ export async function generateMetadata({ params }: StorefrontPageProps) {
 export default async function StorefrontPage({ params }: StorefrontPageProps) {
   const supabase = await createServerClient();
 
-  const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) notFound();
 
   const [items, reviews, ratingSummary, sale] = await Promise.all([
     getMenuItems(supabase, restaurant.id),
-    getRestaurantReviews(supabase, restaurant.id),
-    getRestaurantRatingSummary(supabase, restaurant.id),
+    getCachedReviews(restaurant.id),
+    getCachedRatingSummary(restaurant.id),
     getActiveMenuSale(restaurant.id),
   ]);
   const featured = items
