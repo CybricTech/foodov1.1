@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
+import posthog from "posthog-js";
 import { createBrowserClient } from "@/lib/supabase/client";
 
 export default function MerchantLoginPage() {
@@ -38,6 +39,9 @@ function MerchantLoginForm() {
       setLoading(false);
       return;
     }
+
+    posthog.identify(email.trim());
+    posthog.capture("merchant_login", { email: email.trim() });
 
     window.location.href = redirect;
   }

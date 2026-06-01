@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 const DispatchSchema = z.object({
   orderId: z.string().uuid(),
@@ -74,6 +75,20 @@ export async function POST(request: NextRequest) {
   );
 
   const data = await dispatchRes.json();
+
+  if (dispatchRes.ok) {
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: user.id,
+      event: "order dispatched",
+      properties: {
+        order_id: orderId,
+        restaurant_id: order.restaurant_id,
+        dispatch_mode: mode ?? "platform_rider",
+      },
+    });
+    await posthog.shutdown();
+  }
 
   return NextResponse.json(data, { status: dispatchRes.ok ? 200 : 502 });
 }

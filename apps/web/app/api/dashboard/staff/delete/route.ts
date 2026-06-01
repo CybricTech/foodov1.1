@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 export async function DELETE() {
   const supabase = await createServerClient();
@@ -84,6 +85,17 @@ export async function DELETE() {
       restaurant_id: restaurantId,
     } as import("@foodo/database").Json,
   });
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: "staff member deleted",
+    properties: {
+      restaurant_id: restaurantId,
+      staff_user_id: staffProfile.id,
+    },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json({ success: true });
 }

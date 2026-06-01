@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { validateMonnifyBankAccount } from "@/lib/monnify";
+import { getPostHogClient } from "@/lib/posthog";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
     accountName = validated.accountName;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Account verification failed";
+    getPostHogClient().captureException(err, user.id, { context: "bank_account_verification", bank_code });
     return NextResponse.json({ error: msg }, { status: 422 });
   }
 
@@ -120,6 +122,17 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: "bank account updated",
+    properties: {
+      restaurant_id: restaurant_id,
+      bank_code,
+    },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json(data);
 }

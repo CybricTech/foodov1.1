@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient();
@@ -54,6 +55,17 @@ export async function POST(request: NextRequest) {
     .from("delivery_assignments")
     .update({ status: "delivered", delivered_at: deliveredAt })
     .eq("order_id", order_id);
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: "order delivered",
+    properties: {
+      order_id,
+      delivery_cost_kobo: delivery_cost_kobo,
+    },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json({ ok: true });
 }

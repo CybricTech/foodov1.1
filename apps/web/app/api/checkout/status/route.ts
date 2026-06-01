@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { verifyMonnifyTransaction, nairaToKobo } from "@/lib/monnify";
+import { getPostHogClient } from "@/lib/posthog";
 
 export async function GET(request: NextRequest) {
   const ref = request.nextUrl.searchParams.get("ref");
@@ -84,6 +85,7 @@ export async function GET(request: NextRequest) {
       verifyFeesKobo = vd.data?.fees;
     } catch (err) {
       console.error("[status] Paystack verify failed:", err);
+      getPostHogClient().captureException(err, undefined, { payment_provider: "paystack", ref });
       return NextResponse.json({ orderId: null });
     }
   } else {
@@ -108,6 +110,7 @@ export async function GET(request: NextRequest) {
       verifyTxnRef = verified.transactionReference;
     } catch (err) {
       console.error("[status] Monnify verify failed:", err);
+      getPostHogClient().captureException(err, undefined, { payment_provider: "monnify", ref });
       return NextResponse.json({ orderId: null });
     }
   }
@@ -202,6 +205,12 @@ export async function GET(request: NextRequest) {
 
   if (orderResult.error || !orderResult.data) {
     console.error("[status] Order creation failed:", orderResult.error);
+    if (orderResult.error) {
+      getPostHogClient().captureException(orderResult.error, undefined, {
+        context: "order_creation",
+        restaurant_id: restaurantId,
+      });
+    }
     return NextResponse.json({ orderId: null });
   }
 
@@ -510,6 +519,37 @@ export async function GET(request: NextRequest) {
   }
 
   await Promise.allSettled(notifications);
+
+  const posthog = getPostHogClient();
+  const customerDistinctId = meta.customer_phone as string;
+  posthog.identify({
+    distinctId: customerDistinctId,
+    properties: {
+      $set: {
+        name: meta.customer_name as string,
+        phone: customerDistinctId,
+        ...(meta.customer_email ? { email: meta.customer_email as string } : {}),
+      },
+    },
+  });
+  posthog.capture({
+    distinctId: customerDistinctId,
+    event: "order placed",
+    properties: {
+      order_id: order.id,
+      order_number: order.order_number,
+      restaurant_id: restaurantId,
+      fulfillment_type: meta.fulfillment_type as string,
+      item_count: (meta.items as unknown[]).length,
+      subtotal_kobo: meta.subtotal_kobo as number,
+      delivery_fee_kobo: meta.delivery_fee_kobo as number,
+      vat_kobo: (meta.vat_kobo as number) || 0,
+      service_fee_kobo: (meta.service_fee_kobo as number) || 0,
+      total_kobo: totalKobo,
+      payment_provider: isPaystack ? "paystack" : "monnify",
+    },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json({ orderId: order.id });
 }

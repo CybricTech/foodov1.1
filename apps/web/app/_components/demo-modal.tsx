@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import posthog from "posthog-js";
 
 type FormData = {
   name: string;
@@ -36,8 +37,27 @@ export function DemoModal() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // Simulate submission — wire to your backend here
-    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      await fetch("/api/landing/demo-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          restaurantName: form.restaurantName,
+          email: form.email,
+          phone: form.phone,
+          message: [form.restaurantAddress, form.restaurantType, form.dailyOrders]
+            .filter(Boolean)
+            .join(" | ") || null,
+        }),
+      });
+    } catch {
+      // Non-blocking — still show success to user
+    }
+    posthog.capture("demo_request_submitted", {
+      restaurant_type: form.restaurantType || null,
+      daily_orders_range: form.dailyOrders || null,
+    });
     setLoading(false);
     setSubmitted(true);
   };

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient();
@@ -60,6 +61,14 @@ export async function POST(request: NextRequest) {
     target_id: restaurantId,
     metadata: {},
   });
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: "merchant deleted",
+    properties: { restaurant_id: restaurantId },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json({ success: true });
 }

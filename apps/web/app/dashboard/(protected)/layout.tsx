@@ -7,6 +7,7 @@ import { DashboardNav } from "@/components/dashboard/nav";
 import { ConnectionProvider } from "@/lib/connection-context";
 import { ConnectionBanner } from "@/components/dashboard/connection-banner";
 import { RouterAutoRefresh } from "@/components/shared/router-auto-refresh";
+import { getPostHogClient } from "@/lib/posthog";
 
 export async function generateMetadata(): Promise<Metadata> {
   const session = await getDashboardUser();
@@ -35,6 +36,20 @@ export default async function DashboardLayout({
   if (session.role === "merchant_staff") {
     redirect("/dashboard/frontline/orders");
   }
+
+  const posthog = getPostHogClient();
+  posthog.identify({
+    distinctId: session.userId,
+    properties: {
+      $set: {
+        email: session.email,
+        name: session.fullName,
+        role: session.role,
+        restaurant_id: session.restaurantId,
+      },
+    },
+  });
+  await posthog.shutdown();
 
   return (
     <ConnectionProvider>

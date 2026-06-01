@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 async function requireSuperAdmin() {
   const supabase = await createServerClient();
@@ -233,6 +234,23 @@ export async function POST(request: NextRequest) {
       }
     ).catch(console.error);
   }
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: auth.user.id,
+    event: "settlement recorded",
+    properties: {
+      settlement_id: settlement.id,
+      restaurant_id,
+      period_date,
+      order_count: orderCount,
+      gross_total_kobo: grossTotal,
+      net_payout_kobo: netPayout,
+      merchant_charge_total_kobo: merchantChargeTotal,
+      delivery_commission_kobo: deliveryCommission,
+    },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json({
     settlement_id: settlement.id,

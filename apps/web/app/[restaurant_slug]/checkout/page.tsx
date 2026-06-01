@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check } from "lucide-react";
 import { z } from "zod";
+import posthog from "posthog-js";
 import { useCartStore } from "@/lib/stores/cart";
 import { transformImage } from "@/lib/images";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
@@ -162,6 +163,13 @@ export default function CheckoutPage() {
         setDiscount(d.discount);
         setAppliedCode(code);
         setPromoInput("");
+        posthog.capture("promo_code_applied", {
+          restaurant_id: restaurant.id,
+          promo_code: code,
+          discount_type: d.discount.type,
+          discount_kobo: d.discount.discountKobo,
+          free_delivery: d.discount.freeDelivery,
+        });
       } else if (d.error) {
         // The code itself couldn't be used (expired, below minimum, etc.).
         setDiscountError(d.error);
@@ -436,6 +444,19 @@ export default function CheckoutPage() {
 
       const popupEmail = email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`;
 
+      posthog.capture("payment_initiated", {
+        restaurant_id: restaurant.id,
+        restaurant_name: restaurant.name,
+        provider: initData.provider,
+        fulfillment_type: fulfillmentType,
+        item_count: items.reduce((s, i) => s + i.quantity, 0),
+        subtotal_kobo: subtotal,
+        delivery_fee_kobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
+        total_kobo: initData.totalKobo,
+        discount_code: appliedCode || null,
+        discount_kobo: discount?.discountKobo ?? 0,
+      });
+
       if (initData.provider === "paystack") {
         // ── Paystack inline.js v2 flow ────────────────────────────────────
         const PaystackPop = await loadPaystackScript();
@@ -460,6 +481,11 @@ export default function CheckoutPage() {
           },
           onCancel: () => {
             clearPaystackTimeout();
+            posthog.capture("payment_cancelled", {
+              restaurant_id: restaurant.id,
+              provider: "paystack",
+              total_kobo: initData.totalKobo,
+            });
             setError("Payment was cancelled. You can try again.");
             setLoading(false);
           },
@@ -545,6 +571,11 @@ export default function CheckoutPage() {
           onClose: (data: { paymentStatus?: string }) => {
             clearMonnifyTimeout();
             if (data?.paymentStatus !== "PAID" && data?.paymentStatus !== "OVERPAID") {
+              posthog.capture("payment_cancelled", {
+                restaurant_id: restaurant.id,
+                provider: "monnify",
+                total_kobo: initData.totalKobo,
+              });
               setError("Payment was cancelled. You can try again.");
               setLoading(false);
             }
@@ -650,7 +681,15 @@ export default function CheckoutPage() {
               />
               <button
                 onClick={() => {
-                  lookupCustomer().then(() => setStep("checkout"));
+                  lookupCustomer().then(() => {
+                    setStep("checkout");
+                    posthog.capture("checkout_started", {
+                      restaurant_id: restaurant.id,
+                      restaurant_name: restaurant.name,
+                      item_count: items.reduce((s, i) => s + i.quantity, 0),
+                      subtotal_kobo: subtotal,
+                    });
+                  });
                 }}
                 disabled={phoneLoading || !isValidNigerianPhone(phone)}
                 className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"

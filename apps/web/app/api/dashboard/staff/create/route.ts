@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 const CreateStaffSchema = z.object({
   email: z.string().email("Valid email is required"),
@@ -130,6 +131,17 @@ export async function POST(request: NextRequest) {
       restaurant_id: restaurantId,
     } as import("@foodo/database").Json,
   });
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: "staff member created",
+    properties: {
+      restaurant_id: restaurantId,
+      staff_user_id: authUser.user.id,
+    },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json({
     success: true,

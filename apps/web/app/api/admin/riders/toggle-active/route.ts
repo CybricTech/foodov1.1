@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { getPostHogClient } from "@/lib/posthog";
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient();
@@ -42,6 +43,14 @@ export async function POST(request: NextRequest) {
     target_id: userId,
     metadata: {},
   });
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: isActive ? "rider approved" : "rider suspended",
+    properties: { rider_user_id: userId },
+  });
+  await posthog.shutdown();
 
   return NextResponse.json({ success: true });
 }
