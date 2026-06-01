@@ -102,11 +102,16 @@ export async function middleware(request: NextRequest) {
   // ─── Subdomain routing ─────────────────────────────────────────────────────
   const isDashboardSub = hostname === "dashboard.kitchyn.app";
   const isAdminSub     = hostname === "admin.kitchyn.app";
+  // Reserved subdomains that are NOT restaurant storefronts. "staging" is the
+  // staging environment and must behave like the apex domain (path-based slug
+  // routing, e.g. /get-drizzys), not be treated as a restaurant named "staging".
+  const isReservedSub  =
+    hostname === "www.kitchyn.app" || hostname === "staging.kitchyn.app";
   const isStorefrontSub =
     hostname.endsWith(".kitchyn.app") &&
     !isDashboardSub &&
     !isAdminSub &&
-    hostname !== "www.kitchyn.app";
+    !isReservedSub;
 
   // dashboard.kitchyn.app/ → redirect to /dashboard (all /dashboard/* paths work as-is)
   if (isDashboardSub && pathname === "/") {
