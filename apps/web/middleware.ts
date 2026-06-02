@@ -123,10 +123,17 @@ export async function middleware(request: NextRequest) {
     return withSessionCookies(NextResponse.redirect(new URL("/admin", request.url)));
   }
 
-  // slug.kitchyn.app/* → rewrite to /{slug}/*  (but NOT /api/* paths)
+  // slug.kitchyn.app/* → rewrite to /{slug}/*  (but NOT /api/* or /ingest/*
+  // paths). /ingest is the PostHog reverse proxy (see next.config.mjs rewrites)
+  // — rewriting it to /{slug}/ingest breaks client-side analytics on storefront
+  // subdomains, so only server-side events would ever reach PostHog.
   if (isStorefrontSub) {
     const slug = hostname.replace(".kitchyn.app", "");
-    if (!pathname.startsWith("/api") && !pathname.startsWith(`/${slug}`)) {
+    if (
+      !pathname.startsWith("/api") &&
+      !pathname.startsWith("/ingest") &&
+      !pathname.startsWith(`/${slug}`)
+    ) {
       const rewritePath = pathname === "/" ? `/${slug}` : `/${slug}${pathname}`;
       const rewriteRes = withSessionCookies(NextResponse.rewrite(new URL(rewritePath, request.url)));
       clearPoisonedAuthCookies(rewriteRes);
