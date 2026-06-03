@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { formatKobo } from "@foodo/utils";
+import { formatKobo, computeOrderNet } from "@foodo/utils";
 import Link from "next/link";
 import { Download, ChevronDown, ChevronRight } from "lucide-react";
 
@@ -85,24 +85,6 @@ function paystackTotal(o: OrderRow): number {
   );
 }
 
-/**
- * Delivery fee split depends on who handled the delivery:
- *   - platform_rider → Foodo provided the rider, keeps 100% of the delivery fee
- *   - own_rider / third_party → restaurant provided the rider, Foodo keeps the
- *     configured commission percentage (default 10%)
- *   - null (un-dispatched) → no commission yet; dispatch route writes the
- *     wallet rows once the merchant picks the rider type
- */
-function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
-  const fee = o.delivery_fee_kobo ?? 0;
-  if (fee === 0) return 0;
-  if (o.dispatch_type === "platform_rider") return fee;
-  if (o.dispatch_type === "own_rider" || o.dispatch_type === "third_party") {
-    return Math.round(fee * defaultPct);
-  }
-  return 0;
-}
-
 // Monnify pricing: 1.5% capped at ₦2,000. No flat fee component.
 // Renamed from paystackFee → gatewayFee at the Monnify cutover; the variable
 // name is intentionally generic so future gateway swaps don't repeat the
@@ -153,12 +135,13 @@ export function SettlementsClient({
     let totalCustomerServiceFees = 0;
     let totalCommissions = 0;
 
+    const fees = { merchantChargePct, deliveryCommissionPct };
     for (const o of completedOrders) {
-      const pTotal = paystackTotal(o);
-      grossVolume += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-      totalMerchantCharge += Math.round(pTotal * merchantChargePct);
+      const n = computeOrderNet(o, fees);
+      grossVolume += n.gross;
+      totalMerchantCharge += n.merchantCharge;
       totalCustomerServiceFees += o.service_fee_kobo ?? 0;
-      totalCommissions += deliveryCommissionFor(o, deliveryCommissionPct);
+      totalCommissions += n.deliveryCommission;
     }
 
     const totalFoodoRevenue = totalMerchantCharge + totalCommissions + totalCustomerServiceFees;
@@ -188,14 +171,15 @@ export function SettlementsClient({
     return Object.entries(groups)
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([date, dayOrders]) => {
+        const fees = { merchantChargePct, deliveryCommissionPct };
         let gross = 0;
         let merchantChargeTotal = 0;
         let commission = 0;
         for (const o of dayOrders) {
-          const pTotal = paystackTotal(o);
-          gross += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-          merchantChargeTotal += Math.round(pTotal * merchantChargePct);
-          commission += deliveryCommissionFor(o, deliveryCommissionPct);
+          const n = computeOrderNet(o, fees);
+          gross += n.gross;
+          merchantChargeTotal += n.merchantCharge;
+          commission += n.deliveryCommission;
         }
         const net = gross - merchantChargeTotal - commission;
         const allSettled = dayOrders.every((o) => o.settlement_id != null);
@@ -207,8 +191,7 @@ export function SettlementsClient({
             merchantMap[rid] = { name: o.restaurants?.name ?? "Unknown", orders: 0, gross: 0 };
           }
           merchantMap[rid].orders++;
-          merchantMap[rid].gross +=
-            (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
+          merchantMap[rid].gross += computeOrderNet(o, fees).gross;
         }
 
         return {
@@ -860,12 +843,9 @@ export function SettlementsClient({
               ) : (
                 filteredOrderBreakdown.slice(0, 200).map((o) => {
                   const pTotal = paystackTotal(o);
-                  const merchantCharge = Math.round(pTotal * merchantChargePct);
-                  const delCommission = deliveryCommissionFor(o, deliveryCommissionPct);
+                  const { merchantCharge, deliveryCommission: delCommission, net: merchantNet } =
+                    computeOrderNet(o, { merchantChargePct, deliveryCommissionPct });
                   const foodoRevenue = merchantCharge + delCommission + (o.service_fee_kobo ?? 0);
-                  const grossToMerchant =
-                    (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-                  const merchantNet = grossToMerchant - merchantCharge - delCommission;
                   const dispatchLabel =
                     o.fulfillment_type !== "delivery"
                       ? null

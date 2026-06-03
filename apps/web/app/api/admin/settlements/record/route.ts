@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getPostHogClient } from "@/lib/posthog";
+import { computeSettlementTotals, resolveDispatchType } from "@foodo/utils";
 
 async function requireSuperAdmin() {
   const supabase = await createServerClient();
@@ -80,9 +81,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data: unsettledOrders, error: ordersErr } = await auth.serviceClient
+  // Logistics default is needed to resolve dispatch_type for any order that
+  // wasn't explicitly dispatched (mirrors the admin/wallet UIs exactly).
+  const { data: restaurantLogistics } = await auth.serviceClient
+    .from("restaurants")
+    .select("logistics_default")
+    .eq("id", restaurant_id)
+    .single();
+
+  const { data: unsettledOrdersRaw, error: ordersErr } = await auth.serviceClient
     .from("orders")
-    .select("id, subtotal_kobo, vat_kobo, delivery_fee_kobo, service_fee_kobo, total_kobo")
+    .select(
+      `id, subtotal_kobo, vat_kobo, delivery_fee_kobo, service_fee_kobo, total_kobo,
+       dispatch_type, fulfillment_type, delivery_assignments (dispatch_type)`
+    )
     .eq("restaurant_id", restaurant_id)
     .is("settlement_id", null)
     .neq("status", "cancelled")
@@ -94,30 +106,46 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: ordersErr.message }, { status: 500 });
   }
 
-  if (!unsettledOrders || unsettledOrders.length === 0) {
+  if (!unsettledOrdersRaw || unsettledOrdersRaw.length === 0) {
     return NextResponse.json(
       { error: "No unsettled orders found for this restaurant on the given date" },
       { status: 404 }
     );
   }
 
-  const orderCount = unsettledOrders.length;
-  const merchantChargePct = Number(settings.merchant_charge_pct ?? 0.01);
-  let grossTotal = 0;
-  let totalDeliveryFee = 0;
-  let merchantChargeTotal = 0;
+  const logisticsDefault =
+    (restaurantLogistics as { logistics_default: string | null } | null)?.logistics_default ?? null;
 
-  for (const o of unsettledOrders) {
-    const orderTotal = o.total_kobo ?? (
-      (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0)
-    );
-    grossTotal += (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-    totalDeliveryFee += o.delivery_fee_kobo ?? 0;
-    merchantChargeTotal += Math.round(orderTotal * merchantChargePct);
-  }
+  // Resolve dispatch_type per order, then compute the payout with the SINGLE
+  // canonical formula shared by every settlement surface. This guarantees the
+  // recorded amount (which drives the bank transfer) equals what the admin
+  // preview and merchant wallet display down to the kobo.
+  const unsettledOrders = (unsettledOrdersRaw as Record<string, unknown>[]).map((o) => ({
+    id: o.id as string,
+    subtotal_kobo: (o.subtotal_kobo as number) ?? 0,
+    vat_kobo: (o.vat_kobo as number) ?? 0,
+    delivery_fee_kobo: (o.delivery_fee_kobo as number) ?? 0,
+    service_fee_kobo: (o.service_fee_kobo as number) ?? 0,
+    total_kobo: (o.total_kobo as number | null) ?? null,
+    fulfillment_type: (o.fulfillment_type as string | null) ?? null,
+    dispatch_type: resolveDispatchType(
+      o.dispatch_type as string | null,
+      o.delivery_assignments as Array<{ dispatch_type: string | null }> | null,
+      logisticsDefault
+    ),
+  }));
 
-  const deliveryCommission = Math.round(totalDeliveryFee * settings.delivery_commission_pct);
-  const netPayout = grossTotal - merchantChargeTotal - deliveryCommission;
+  const feeSettings = {
+    merchantChargePct: Number(settings.merchant_charge_pct ?? 0.01),
+    deliveryCommissionPct: Number(settings.delivery_commission_pct ?? 0.1),
+  };
+  const computed = computeSettlementTotals(unsettledOrders, feeSettings);
+
+  const orderCount = computed.orderCount;
+  const grossTotal = computed.grossTotal;
+  const merchantChargeTotal = computed.merchantChargeTotal;
+  const deliveryCommission = computed.deliveryCommissionTotal;
+  const netPayout = computed.netPayout;
 
   const now = new Date().toISOString();
 
@@ -134,9 +162,13 @@ export async function POST(request: NextRequest) {
       period_date,
       order_count: orderCount,
       gross_total_kobo: grossTotal,
-      service_fee_total_kobo: 0,
+      service_fee_total_kobo: computed.serviceFeeTotal,
       merchant_charge_total_kobo: merchantChargeTotal,
       delivery_commission_kobo: deliveryCommission,
+      // canonical_net_kobo == amount_kobo for new settlements: the recorded
+      // figure IS the canonical figure. They only diverge for legacy records
+      // written before the formula was unified (see migration 059).
+      canonical_net_kobo: netPayout,
       initiated_at: now,
       paid_at: now,
     })
@@ -176,11 +208,13 @@ export async function POST(request: NextRequest) {
     .in("order_id", orderIds)
     .eq("type", "order_credit");
 
-  // Debit the wallet: decrement pending_balance_kobo, increment total_withdrawn_kobo
+  // Re-derive the wallet counters from the source of truth (orders + paid
+  // settlements) rather than incrementally mutating them — this is what keeps
+  // pending_balance / total_withdrawn / total_earned permanently consistent
+  // with the settlement records and the order ledger.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (auth.serviceClient.rpc as any)("debit_wallet_for_settlement", {
+  await (auth.serviceClient.rpc as any)("recompute_restaurant_wallet", {
     p_restaurant_id: restaurant_id,
-    p_amount_kobo: netPayout,
   });
 
   await auth.serviceClient.from("audit_logs").insert({

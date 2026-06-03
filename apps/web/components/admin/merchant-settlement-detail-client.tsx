@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { formatKobo } from "@foodo/utils";
+import { formatKobo, computeOrderNet } from "@foodo/utils";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, X } from "lucide-react";
 
@@ -79,25 +79,6 @@ function toWATDate(iso: string): string {
   return wat.toISOString().slice(0, 10);
 }
 
-/**
- * Foodo's slice of the delivery fee, dispatch-aware:
- *   - platform_rider → Foodo provided the rider, keeps 100% of the fee
- *   - own_rider / third_party → restaurant delivered, Foodo keeps the configured % commission
- *   - null → un-dispatched, no commission yet
- *
- * Mirrors the per-order logic in settlements-client.tsx so the daily blocks
- * here equal the sum of "Merchant Net" in the per-order breakdown.
- */
-function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
-  const fee = o.delivery_fee_kobo ?? 0;
-  if (fee === 0) return 0;
-  if (o.dispatch_type === "platform_rider") return fee;
-  if (o.dispatch_type === "own_rider" || o.dispatch_type === "third_party") {
-    return Math.round(fee * defaultPct);
-  }
-  return 0;
-}
-
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-dixie-100 text-dixie-600",
   processing: "bg-purple-100 text-purple-600",
@@ -136,12 +117,12 @@ export function MerchantSettlementDetailClient({
     let totalCommissions = 0;
     let unsettledCount = 0;
 
+    const fees = { merchantChargePct, deliveryCommissionPct };
     for (const o of orders) {
-      const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-      const oTotal = oGross + (o.service_fee_kobo ?? 0);
-      grossRevenue += oGross;
-      totalMerchantCharge += Math.round(oTotal * merchantChargePct);
-      totalCommissions += deliveryCommissionFor(o, deliveryCommissionPct);
+      const n = computeOrderNet(o, fees);
+      grossRevenue += n.gross;
+      totalMerchantCharge += n.merchantCharge;
+      totalCommissions += n.deliveryCommission;
       if (!o.settlement_id) unsettledCount++;
     }
 
@@ -172,17 +153,17 @@ export function MerchantSettlementDetailClient({
         //   - serviceMerchantCharge: customer service fee + merchant charge
         //   - deliveryFees: dispatch-aware delivery commission
         //     (100% of platform-rider fees, 10% of own/third-party fees)
+        const fees = { merchantChargePct, deliveryCommissionPct };
         let gross = 0;
         let merchantCharge = 0;
         let serviceFee = 0;
         let deliveryFees = 0;
         for (const o of dayOrders) {
-          const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-          const oTotal = oGross + (o.service_fee_kobo ?? 0);
-          gross += oGross;
-          merchantCharge += Math.round(oTotal * merchantChargePct);
+          const n = computeOrderNet(o, fees);
+          gross += n.gross;
+          merchantCharge += n.merchantCharge;
           serviceFee += o.service_fee_kobo ?? 0;
-          deliveryFees += deliveryCommissionFor(o, deliveryCommissionPct);
+          deliveryFees += n.deliveryCommission;
         }
         const serviceMerchantCharge = serviceFee + merchantCharge;
         const net = gross - merchantCharge - deliveryFees;

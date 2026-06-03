@@ -65,41 +65,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ data, count, page, pageSize });
 }
 
-export async function POST(request: NextRequest) {
-  const auth = await requireSuperAdmin();
-  if (!auth) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  const { restaurant_id } = body as { restaurant_id?: string };
-
-  if (!restaurant_id) {
-    return NextResponse.json({ error: "restaurant_id is required" }, { status: 400 });
-  }
-
-  // Manually trigger settlement for a specific restaurant via the edge function
-  const edgeFnUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-settlements`;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-  const res = await fetch(edgeFnUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${serviceKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ restaurant_id }),
-  });
-
-  const result = await res.json();
-
-  if (!res.ok) {
-    return NextResponse.json({ error: result.message ?? "Settlement trigger failed" }, { status: 500 });
-  }
-
-  return NextResponse.json(result);
-}
+// NOTE: The automatic settlement path (POST → process-settlements edge function
+// → Monnify disbursement against the wallet's available balance) was removed in
+// migration 059. Settlements are now recorded manually after a bank transfer
+// via POST /api/admin/settlements/record, which is the single source of truth
+// for what a merchant is paid. There is intentionally no POST handler here.

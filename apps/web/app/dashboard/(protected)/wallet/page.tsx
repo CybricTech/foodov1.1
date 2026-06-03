@@ -1,4 +1,4 @@
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { redirect } from "next/navigation";
 import { WalletClient } from "@/components/dashboard/wallet-client";
@@ -11,12 +11,26 @@ export default async function WalletPage() {
 
   const supabase = await createServerClient();
 
+  // Re-derive this merchant's wallet counters from the source of truth (all of
+  // their orders + paid settlements) so the "Expected Payout" headline is exact
+  // over the merchant's ENTIRE history — not just the most-recent 200 orders the
+  // activity/payout lists below are capped to. Service client because the
+  // recompute UPDATEs restaurant_wallets, which RLS blocks for the merchant role;
+  // it only ever touches this merchant's own row.
+  const serviceClient = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (serviceClient.rpc as any)("recompute_restaurant_wallet", {
+    p_restaurant_id: session.restaurantId,
+  });
+
   const [
     { data: transactions },
     { data: settlements },
     { data: orders },
     { data: platformSettings },
     { data: restaurant },
+    { data: wallet },
+    { count: processedOrderCount },
   ] = await Promise.all([
     // Activity tab: recent wallet transactions
     supabase
@@ -71,6 +85,21 @@ export default async function WalletPage() {
       .select("logistics_default")
       .eq("id", session.restaurantId)
       .single(),
+
+    // Authoritative pending balance — recomputed above over ALL orders.
+    serviceClient
+      .from("restaurant_wallets")
+      .select("pending_balance_kobo")
+      .eq("restaurant_id", session.restaurantId)
+      .maybeSingle(),
+
+    // True lifetime count of billable (non-cancelled/pending) orders.
+    serviceClient
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("restaurant_id", session.restaurantId)
+      .neq("status", "cancelled")
+      .neq("status", "pending"),
   ]);
 
   // Resolve dispatch_type with same priority as admin settlement detail
@@ -104,6 +133,8 @@ export default async function WalletPage() {
       transactions={transactions ?? []}
       settlements={settlements ?? []}
       orders={normalizedOrders}
+      pendingBalanceKobo={wallet?.pending_balance_kobo ?? 0}
+      processedOrderCount={processedOrderCount ?? normalizedOrders.length}
       platformSettings={{
         merchantChargePct: platformSettings?.merchant_charge_pct ?? 0.01,
         deliveryCommissionPct: platformSettings?.delivery_commission_pct ?? 0.10,

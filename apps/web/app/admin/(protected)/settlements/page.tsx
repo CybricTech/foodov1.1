@@ -6,6 +6,12 @@ export const dynamic = "force-dynamic";
 export default async function AdminSettlementsPage() {
   const supabase = createServiceClient();
 
+  // Re-derive every wallet's counters from the source of truth (orders +
+  // settlements) before reading them, so the Merchant Directory's Total Earned /
+  // Total Paid / Outstanding can never drift. Cheap (few merchants) + idempotent.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase.rpc as any)("recompute_all_restaurant_wallets");
+
   const [
     { data: orders },
     { data: settlements, count },

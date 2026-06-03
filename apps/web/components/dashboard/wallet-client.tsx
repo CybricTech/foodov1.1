@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { formatKobo } from "@foodo/utils";
+import { formatKobo, computeOrderNet } from "@foodo/utils";
 import { Clock, X, ChevronRight } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -30,6 +30,9 @@ type SettlementRow = {
   period_date: string | null;
   order_count: number;
   gross_total_kobo: number;
+  service_fee_total_kobo: number;
+  merchant_charge_total_kobo: number;
+  delivery_commission_kobo: number;
   paystack_transfer_code: string | null;
   paystack_transfer_ref: string | null;
   monnify_disbursement_reference?: string | null;
@@ -62,21 +65,11 @@ interface WalletClientProps {
   transactions: TxnRow[];
   settlements: SettlementRow[];
   orders: OrderRow[];
+  /** Authoritative pending payout, recomputed server-side over ALL orders. */
+  pendingBalanceKobo: number;
+  /** True lifetime count of billable orders (not capped to the loaded list). */
+  processedOrderCount: number;
   platformSettings: { merchantChargePct: number; deliveryCommissionPct: number };
-}
-
-/* ------------------------------------------------------------------ */
-/*  Fee helpers — mirrors merchant-settlement-detail-client exactly     */
-/* ------------------------------------------------------------------ */
-
-function deliveryCommissionFor(o: OrderRow, defaultPct: number): number {
-  const fee = o.delivery_fee_kobo ?? 0;
-  if (fee === 0) return 0;
-  if (o.dispatch_type === "platform_rider") return fee;
-  if (o.dispatch_type === "own_rider" || o.dispatch_type === "third_party") {
-    return Math.round(fee * defaultPct);
-  }
-  return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -128,6 +121,8 @@ export function WalletClient({
   transactions,
   settlements,
   orders,
+  pendingBalanceKobo,
+  processedOrderCount,
   platformSettings,
 }: WalletClientProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("activity");
@@ -136,37 +131,30 @@ export function WalletClient({
 
   const { merchantChargePct, deliveryCommissionPct } = platformSettings;
 
-  // Compute all monetary stats from orders using the same formula as the admin settlement page.
-  // This guarantees wallet and admin are always consistent, regardless of what was stored in
-  // wallet_transactions or settlements.amount_kobo at the time of recording.
-  const { netBySettlement, pendingBalance, totalWithdrawn, totalOrders, avgOrderNet } = useMemo(() => {
-    const map: Record<string, number> = {};
+  // Monetary stats — all from a single source of truth:
+  //   • Pending ("Expected Payout") = the authoritative server-recomputed balance
+  //     over ALL of the merchant's orders (canonical dispatch-aware formula). Not
+  //     re-summed from the capped order list, so it never undercounts.
+  //   • Total Paid Out = Σ paid settlements (the actual cash transferred).
+  //   • Settled payout rows show the ACTUAL amount transferred, never re-derived —
+  //     history is frozen and always matches the admin's payout records.
+  const { totalWithdrawn, avgOrderNet } = useMemo(() => {
+    const fees = { merchantChargePct, deliveryCommissionPct };
     let totalEarned = 0;
-    let pendingBalance = 0;
-
     for (const o of orders) {
-      const gross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-      const total = gross + (o.service_fee_kobo ?? 0);
-      const merchantCharge = Math.round(total * merchantChargePct);
-      const deliveryFees = deliveryCommissionFor(o, deliveryCommissionPct);
-      const net = gross - merchantCharge - deliveryFees;
-
-      totalEarned += net;
-      if (!o.settlement_id) pendingBalance += net;
-      else map[o.settlement_id] = (map[o.settlement_id] ?? 0) + net;
+      totalEarned += computeOrderNet(o, fees).net;
     }
 
-    // Use the stored settlement amount (what was actually transferred), not the
-    // amount re-derived from orders with today's fee rates. The two diverge
-    // whenever fee percentages change between when a settlement was recorded and
-    // now — and using stored amounts keeps this number consistent with admin.
     const totalWithdrawn = settlements
       .filter((s) => s.status === "paid")
       .reduce((sum, s) => sum + s.amount_kobo, 0);
 
     const avgOrderNet = orders.length > 0 ? Math.round(totalEarned / orders.length) : 0;
-    return { netBySettlement: map, pendingBalance, totalWithdrawn, totalOrders: orders.length, avgOrderNet };
+    return { totalWithdrawn, avgOrderNet };
   }, [orders, settlements, merchantChargePct, deliveryCommissionPct]);
+
+  const pendingBalance = pendingBalanceKobo;
+  const totalOrders = processedOrderCount;
 
   // Group orders by settlement_id for the detail modal
   const ordersBySettlement = useMemo(() => {
@@ -380,7 +368,7 @@ export function WalletClient({
                         <SettlementPayoutRow
                           key={s.id}
                           settlement={s}
-                          computedNet={netBySettlement[s.id] ?? s.amount_kobo}
+                          computedNet={s.amount_kobo}
                           onClick={() => setSelectedSettlement(s)}
                         />
                       ))}
@@ -396,7 +384,7 @@ export function WalletClient({
       {selectedSettlement && (
         <PayoutDetailModal
           settlement={selectedSettlement}
-          computedNet={netBySettlement[selectedSettlement.id] ?? selectedSettlement.amount_kobo}
+          computedNet={selectedSettlement.amount_kobo}
           orders={ordersBySettlement[selectedSettlement.id] ?? []}
           merchantChargePct={merchantChargePct}
           deliveryCommissionPct={deliveryCommissionPct}
@@ -498,19 +486,14 @@ function PayoutDetailModal({
   deliveryCommissionPct: number;
   onClose: () => void;
 }) {
-  // Recompute totals from orders for the breakdown
-  let gross = 0;
-  let merchantChargeTotal = 0;
-  let deliveryFeesTotal = 0;
-  for (const o of orders) {
-    const oGrossLocal = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-    const oTotalLocal = oGrossLocal + (o.service_fee_kobo ?? 0);
-    gross += oGrossLocal;
-    merchantChargeTotal += Math.round(oTotalLocal * merchantChargePct);
-    deliveryFeesTotal += deliveryCommissionFor(o, deliveryCommissionPct);
-  }
-  // Fall back to settlement's stored gross if orders aren't available
-  if (orders.length === 0) gross = settlement.gross_total_kobo;
+  // Use the breakdown STORED on the settlement record — this is what was
+  // actually used for the transfer, so the figures always sum to the amount the
+  // merchant received (computedNet === settlement.amount_kobo). We never
+  // re-derive it from current orders/fee rates.
+  const gross = settlement.gross_total_kobo;
+  const merchantChargeTotal = settlement.merchant_charge_total_kobo;
+  const deliveryFeesTotal = settlement.delivery_commission_kobo;
+  const hasBreakdown = gross > 0;
 
   const dateLabel = new Date(settlement.created_at).toLocaleDateString("en-NG", {
     weekday: "short", day: "numeric", month: "short", year: "numeric",
@@ -548,7 +531,7 @@ function PayoutDetailModal({
           </div>
 
           {/* Breakdown */}
-          {orders.length > 0 && (
+          {hasBreakdown && (
             <div className="bg-black-50 rounded-xl px-4 py-3 space-y-2 text-sm">
               <div className="flex justify-between text-black-600">
                 <span>Gross Total</span>
@@ -586,11 +569,10 @@ function PayoutDetailModal({
             ) : (
               <div className="space-y-2">
                 {orders.map((o) => {
-                  const oGross = (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-                  const oTotal = oGross + (o.service_fee_kobo ?? 0);
-                  const oMC = Math.round(oTotal * merchantChargePct);
-                  const oDC = deliveryCommissionFor(o, deliveryCommissionPct);
-                  const oNet = oGross - oMC - oDC;
+                  const { gross: oGross, net: oNet } = computeOrderNet(o, {
+                    merchantChargePct,
+                    deliveryCommissionPct,
+                  });
                   return (
                     <div
                       key={o.id}
