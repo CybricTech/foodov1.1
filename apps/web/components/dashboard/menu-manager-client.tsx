@@ -46,6 +46,7 @@ export function MenuManagerClient({
   const [activeCategory, setActiveCategory] = useState<string | null>(
     initialCategories[0]?.id ?? null
   );
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [reorderBusy, setReorderBusy] = useState(false);
 
   // Featured items in storefront display order (featured_order, then newest).
@@ -130,6 +131,27 @@ export function MenuManagerClient({
     if (!confirm("Delete this menu item?")) return;
     await supabase.from("menu_items").delete().eq("id", itemId);
     setItems((prev) => prev.filter((i) => i.id !== itemId));
+  }
+
+  async function renameCategory(catId: string, newName: string) {
+    const trimmed = newName.trim();
+    const current = categories.find((c) => c.id === catId);
+    setEditingCategoryId(null);
+    if (!trimmed || trimmed === current?.name) return;
+    // Optimistic update; revert on failure.
+    setCategories((prev) =>
+      prev.map((c) => (c.id === catId ? { ...c, name: trimmed } : c))
+    );
+    const { error } = await supabase
+      .from("menu_categories")
+      .update({ name: trimmed })
+      .eq("id", catId);
+    if (error) {
+      setCategories((prev) =>
+        prev.map((c) => (c.id === catId ? { ...c, name: current?.name ?? c.name } : c))
+      );
+      alert("Could not rename category. Please try again.");
+    }
   }
 
   async function deleteCategory(catId: string) {
@@ -305,30 +327,54 @@ export function MenuManagerClient({
                       : "border-transparent hover:bg-black-50"
                   )}
                 >
-                  <button
-                    onClick={() => setActiveCategory(cat.id)}
-                    className="flex-1 text-left px-3 py-3 cursor-pointer"
-                  >
-                    <span
-                      className={cn(
-                        "block text-sm font-medium leading-tight",
-                        isActive ? "text-purple-600" : "text-black-700"
-                      )}
-                    >
-                      {cat.name}
-                    </span>
-                    <span className="block text-xs text-black-400 mt-0.5">
-                      {count} item{count !== 1 ? "s" : ""}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => deleteCategory(cat.id)}
-                    className="opacity-0 group-hover:opacity-100 mr-2 flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-black-300 hover:text-cinnabar-500 hover:bg-cinnabar-50 transition-all duration-150 cursor-pointer"
-                    title="Delete category"
-                    aria-label="Delete category"
-                  >
-                    <X size={12} />
-                  </button>
+                  {editingCategoryId === cat.id ? (
+                    <div className="flex-1 px-3 py-2.5">
+                      <CategoryNameInput
+                        initialName={cat.name}
+                        onSave={(name) => renameCategory(cat.id, name)}
+                        onCancel={() => setEditingCategoryId(null)}
+                      />
+                      <span className="block text-xs text-black-400 mt-1">
+                        {count} item{count !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setActiveCategory(cat.id)}
+                        onDoubleClick={() => setEditingCategoryId(cat.id)}
+                        className="flex-1 text-left px-3 py-3 cursor-pointer"
+                      >
+                        <span
+                          className={cn(
+                            "block text-sm font-medium leading-tight",
+                            isActive ? "text-purple-600" : "text-black-700"
+                          )}
+                        >
+                          {cat.name}
+                        </span>
+                        <span className="block text-xs text-black-400 mt-0.5">
+                          {count} item{count !== 1 ? "s" : ""}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setEditingCategoryId(cat.id)}
+                        className="opacity-0 group-hover:opacity-100 flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-black-300 hover:text-purple-500 hover:bg-purple-50 transition-all duration-150 cursor-pointer"
+                        title="Rename category"
+                        aria-label="Rename category"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        onClick={() => deleteCategory(cat.id)}
+                        className="opacity-0 group-hover:opacity-100 mr-2 flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-black-300 hover:text-cinnabar-500 hover:bg-cinnabar-50 transition-all duration-150 cursor-pointer"
+                        title="Delete category"
+                        aria-label="Delete category"
+                      >
+                        <X size={12} />
+                      </button>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -575,6 +621,37 @@ function ItemsPanel({
         </div>
       )}
     </>
+  );
+}
+
+function CategoryNameInput({
+  initialName,
+  onSave,
+  onCancel,
+}: {
+  initialName: string;
+  onSave: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initialName);
+  return (
+    <input
+      value={value}
+      autoFocus
+      onChange={(e) => setValue(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onBlur={() => onSave(value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onSave(value);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+      className="w-full px-2 py-1 rounded-lg border border-purple-300 text-sm font-medium text-black-900 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-colors"
+    />
   );
 }
 
