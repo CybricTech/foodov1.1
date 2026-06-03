@@ -20,7 +20,7 @@ interface SmsPayload {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SENDCHAMP_API_KEY = Deno.env.get("SENDCHAMP_API_KEY")!;
-const SENDCHAMP_DEFAULT_SENDER_ID = Deno.env.get("SENDCHAMP_DEFAULT_SENDER_ID") ?? "Foodo";
+const SENDCHAMP_DEFAULT_SENDER_ID = Deno.env.get("SENDCHAMP_DEFAULT_SENDER_ID") ?? "Kitchyn";
 const SENDCHAMP_ROUTE = Deno.env.get("SENDCHAMP_ROUTE") ?? "non_dnd";
 const TERMII_API_KEY = Deno.env.get("TERMII_API_KEY")!;
 const TERMII_SENDER_ID = Deno.env.get("TERMII_SENDER_ID") ?? "Foodo";

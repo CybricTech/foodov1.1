@@ -23,8 +23,12 @@ export type Review =
 export type Customer =
   Database["public"]["Tables"]["customers"]["Row"];
 
+// `archived_at` is augmented here until the generated types are regenerated
+// (migration 060). Archiving soft-deletes a promo while keeping its history.
 export type Discount =
-  Database["public"]["Tables"]["discounts"]["Row"];
+  Database["public"]["Tables"]["discounts"]["Row"] & {
+    archived_at?: string | null;
+  };
 
 export type DiscountRedemption =
   Database["public"]["Tables"]["discount_redemptions"]["Row"];
@@ -35,7 +39,9 @@ export type DiscountInsert =
   Database["public"]["Tables"]["discounts"]["Insert"];
 
 export type DiscountUpdate =
-  Database["public"]["Tables"]["discounts"]["Update"];
+  Database["public"]["Tables"]["discounts"]["Update"] & {
+    archived_at?: string | null;
+  };
 
 export type ReviewInsert =
   Database["public"]["Tables"]["reviews"]["Insert"];

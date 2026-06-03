@@ -23,12 +23,23 @@ import {
   Percent,
   BadgePercent,
   Truck,
+  MessageSquare,
+  AlertTriangle,
+  CheckCircle2,
+  Send,
 } from "lucide-react";
 import type { Discount } from "@foodo/database";
 
 interface MarketingClientProps {
   restaurantId: string;
   initialDiscounts: Discount[];
+  senderStatus: "pending" | "approved" | "rejected" | null;
+  senderName: string | null;
+  customerCounts: {
+    all: number;
+    inactive30: number;
+    vip: number;
+  };
 }
 
 const INPUT_CLS =
@@ -38,9 +49,10 @@ const INPUT_CLS =
 /*  Status derivation                                                   */
 /* ------------------------------------------------------------------ */
 
-type DiscountStatus = "active" | "paused" | "scheduled" | "expired" | "used_up";
+type DiscountStatus = "active" | "paused" | "scheduled" | "expired" | "used_up" | "archived";
 
 function deriveStatus(d: Discount, now = new Date()): DiscountStatus {
+  if (d.archived_at) return "archived";
   if (!d.is_active) return "paused";
   if (d.ends_at && now > new Date(d.ends_at)) return "expired";
   if (d.starts_at && now < new Date(d.starts_at)) return "scheduled";
@@ -56,6 +68,7 @@ const STATUS_STYLES: Record<DiscountStatus, string> = {
   scheduled: "bg-purple-50 text-purple-700",
   expired: "bg-cinnabar-100 text-cinnabar-600",
   used_up: "bg-orange-100 text-orange-700",
+  archived: "bg-black-100 text-black-400",
 };
 
 const STATUS_LABELS: Record<DiscountStatus, string> = {
@@ -64,6 +77,7 @@ const STATUS_LABELS: Record<DiscountStatus, string> = {
   scheduled: "Scheduled",
   expired: "Expired",
   used_up: "Used up",
+  archived: "Archived",
 };
 
 const TYPE_ICONS: Record<DiscountType, typeof Percent> = {
@@ -94,7 +108,6 @@ function describeValue(d: Discount): string {
 function toDatetimeLocal(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
-  // Convert to local time then strip seconds/timezone for the input
   const off = d.getTimezoneOffset();
   return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 16);
 }
@@ -115,12 +128,16 @@ function generateCode(): string {
 export function MarketingClient({
   restaurantId,
   initialDiscounts,
+  senderStatus,
+  senderName,
+  customerCounts,
 }: MarketingClientProps) {
   const supabase = useMemo(() => createBrowserClient(), []);
   const [discounts, setDiscounts] = useState<Discount[]>(initialDiscounts);
   const [editing, setEditing] = useState<Discount | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"offers" | "sms">("offers");
 
   // ── Realtime: keep the list in sync across staff/devices ──────────
   useEffect(() => {
@@ -165,7 +182,6 @@ export function MarketingClient({
 
   async function toggleActive(d: Discount) {
     setBusyId(d.id);
-    // Optimistic
     setDiscounts((prev) =>
       prev.map((x) => (x.id === d.id ? { ...x, is_active: !x.is_active } : x))
     );
@@ -174,7 +190,6 @@ export function MarketingClient({
       .update({ is_active: !d.is_active })
       .eq("id", d.id);
     if (error) {
-      // Revert on failure
       setDiscounts((prev) =>
         prev.map((x) => (x.id === d.id ? { ...x, is_active: d.is_active } : x))
       );
@@ -182,20 +197,30 @@ export function MarketingClient({
     setBusyId(null);
   }
 
-  async function remove(d: Discount) {
+  // Archive (soft-delete) rather than hard-delete: the promo can no longer be
+  // used, but it stays — along with its redemptions and the orders that used it —
+  // so the history is never lost.
+  async function archive(d: Discount) {
     if (
       !window.confirm(
-        `Delete “${d.name}”? Past redemptions stay recorded, but customers can no longer use it.`
+        `Archive "${d.name}"? Customers can no longer use it, but its history and the orders that used it stay on record.`
       )
     ) {
       return;
     }
     setBusyId(d.id);
-    setDiscounts((prev) => prev.filter((x) => x.id !== d.id));
-    const { error } = await supabase.from("discounts").delete().eq("id", d.id);
+    const archivedAt = new Date().toISOString();
+    setDiscounts((prev) =>
+      prev.map((x) => (x.id === d.id ? { ...x, archived_at: archivedAt, is_active: false } : x))
+    );
+    const { error } = await supabase
+      .from("discounts")
+      .update({ archived_at: archivedAt, is_active: false })
+      .eq("id", d.id);
     if (error) {
-      // Re-add on failure
-      setDiscounts((prev) => [d, ...prev]);
+      setDiscounts((prev) =>
+        prev.map((x) => (x.id === d.id ? { ...x, archived_at: null, is_active: d.is_active } : x))
+      );
     }
     setBusyId(null);
   }
@@ -207,150 +232,232 @@ export function MarketingClient({
   return (
     <div className="md:p-6 pb-24">
       {/* Header */}
-      <div className="bg-white md:rounded-2xl border-b md:border border-black-100 px-4 py-4 flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
-            <Megaphone size={18} className="text-purple-600" />
-          </span>
-          <div>
-            <h1 className="font-bold text-black-900 text-lg leading-tight">
-              Marketing
-            </h1>
-            <p className="text-xs text-black-400">
-              {discounts.length} offer{discounts.length === 1 ? "" : "s"} ·{" "}
-              {activeCount} active
-            </p>
+      <div className="bg-white md:rounded-2xl border-b md:border border-black-100">
+        <div className="px-4 py-4 flex flex-wrap gap-3 items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
+              <Megaphone size={18} className="text-purple-600" />
+            </span>
+            <div>
+              <h1 className="font-bold text-black-900 text-lg leading-tight">
+                Marketing
+              </h1>
+              {activeTab === "offers" && (
+                <p className="text-xs text-black-400">
+                  {discounts.length} offer{discounts.length === 1 ? "" : "s"} ·{" "}
+                  {activeCount} active
+                </p>
+              )}
+              {activeTab === "sms" && (
+                <p className="text-xs text-black-400">
+                  {customerCounts.all} customer{customerCounts.all === 1 ? "" : "s"} reachable
+                </p>
+              )}
+            </div>
           </div>
+          {activeTab === "offers" && (
+            <button
+              onClick={() => setCreating(true)}
+              className="text-sm text-white bg-purple-600 px-4 py-2.5 rounded-xl hover:bg-purple-700 transition-colors font-medium flex items-center gap-1.5"
+            >
+              <Plus size={16} /> New offer
+            </button>
+          )}
         </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="text-sm text-white bg-purple-600 px-4 py-2.5 rounded-xl hover:bg-purple-700 transition-colors font-medium flex items-center gap-1.5"
-        >
-          <Plus size={16} /> New offer
-        </button>
-      </div>
 
-      {/* Empty state */}
-      {discounts.length === 0 ? (
-        <div className="mt-10 flex flex-col items-center text-center px-6">
-          <span className="w-14 h-14 rounded-2xl bg-purple-50 flex items-center justify-center mb-4">
-            <Sparkles size={24} className="text-purple-600" />
-          </span>
-          <h2 className="font-bold text-black-900">No offers yet</h2>
-          <p className="text-sm text-black-400 mt-1 max-w-xs">
-            Create a promo code or a time-based discount to bring customers back
-            and grow orders.
-          </p>
+        {/* Tabs */}
+        <div className="flex border-t border-black-100 px-4">
           <button
-            onClick={() => setCreating(true)}
-            className="mt-5 text-sm text-white bg-purple-600 px-5 py-2.5 rounded-xl hover:bg-purple-700 transition-colors font-medium flex items-center gap-1.5"
+            onClick={() => setActiveTab("offers")}
+            className={cn(
+              "py-2.5 px-1 mr-5 text-sm font-medium border-b-2 transition-colors",
+              activeTab === "offers"
+                ? "border-purple-600 text-purple-700"
+                : "border-transparent text-black-400 hover:text-black-700"
+            )}
           >
-            <Plus size={16} /> Create your first offer
+            Offers
+          </button>
+          <button
+            onClick={() => setActiveTab("sms")}
+            className={cn(
+              "py-2.5 px-1 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5",
+              activeTab === "sms"
+                ? "border-purple-600 text-purple-700"
+                : "border-transparent text-black-400 hover:text-black-700"
+            )}
+          >
+            <MessageSquare size={14} />
+            SMS Campaigns
           </button>
         </div>
-      ) : (
-        <div className="px-4 md:px-0 mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {discounts.map((d) => {
-            const status = deriveStatus(d);
-            const TypeIcon = TYPE_ICONS[d.type as DiscountType] ?? Tag;
-            return (
-              <div
-                key={d.id}
-                className="bg-white rounded-2xl border border-black-100 p-4 flex flex-col gap-3"
+      </div>
+
+      {/* Offers tab */}
+      {activeTab === "offers" && (
+        <>
+          {discounts.length === 0 ? (
+            <div className="mt-10 flex flex-col items-center text-center px-6">
+              <span className="w-14 h-14 rounded-2xl bg-purple-50 flex items-center justify-center mb-4">
+                <Sparkles size={24} className="text-purple-600" />
+              </span>
+              <h2 className="font-bold text-black-900">No offers yet</h2>
+              <p className="text-sm text-black-400 mt-1 max-w-xs">
+                Create a promo code or a time-based discount to bring customers back
+                and grow orders.
+              </p>
+              <button
+                onClick={() => setCreating(true)}
+                className="mt-5 text-sm text-white bg-purple-600 px-5 py-2.5 rounded-xl hover:bg-purple-700 transition-colors font-medium flex items-center gap-1.5"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-9 h-9 rounded-xl bg-black-50 flex items-center justify-center flex-shrink-0">
-                      <TypeIcon size={17} className="text-black-600" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-black-900 text-sm truncate">
-                        {d.name}
-                      </p>
-                      <p className="text-xs text-black-400">
-                        {describeValue(d)}
-                      </p>
+                <Plus size={16} /> Create your first offer
+              </button>
+            </div>
+          ) : (
+            <div className="px-4 md:px-0 mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {discounts.map((d) => {
+                const status = deriveStatus(d);
+                const TypeIcon = TYPE_ICONS[d.type as DiscountType] ?? Tag;
+                return (
+                  <div
+                    key={d.id}
+                    className="bg-white rounded-2xl border border-black-100 p-4 flex flex-col gap-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-9 h-9 rounded-xl bg-black-50 flex items-center justify-center flex-shrink-0">
+                          <TypeIcon size={17} className="text-black-600" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-black-900 text-sm truncate">
+                            {d.name}
+                          </p>
+                          <p className="text-xs text-black-400">
+                            {describeValue(d)}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          "text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0",
+                          STATUS_STYLES[status]
+                        )}
+                      >
+                        {STATUS_LABELS[status]}
+                      </span>
                     </div>
+
+                    {/* Meta row */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {d.trigger === "code" && d.code ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md font-mono">
+                          <Ticket size={12} /> {d.code}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-black-500 bg-black-50 px-2 py-0.5 rounded-md">
+                          <Clock size={12} /> Automatic
+                        </span>
+                      )}
+                      {d.min_order_kobo > 0 && (
+                        <span className="text-[11px] font-medium text-black-500 bg-black-50 px-2 py-0.5 rounded-md">
+                          Min {formatKobo(d.min_order_kobo)}
+                        </span>
+                      )}
+                      {d.fulfillment_type && (
+                        <span className="text-[11px] font-medium text-black-500 bg-black-50 px-2 py-0.5 rounded-md capitalize">
+                          {d.fulfillment_type} only
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Usage */}
+                    <div className="text-[11px] text-black-400">
+                      {d.times_redeemed} used
+                      {d.usage_limit_total !== null &&
+                        ` of ${d.usage_limit_total}`}
+                      {d.ends_at &&
+                        ` · ends ${new Date(d.ends_at).toLocaleDateString("en-NG", {
+                          day: "numeric",
+                          month: "short",
+                        })}`}
+                    </div>
+
+                    {/* Actions — archived promos are read-only history */}
+                    {status === "archived" ? (
+                      <div className="pt-1 border-t border-black-50 text-[11px] text-black-400">
+                        Archived
+                        {d.archived_at
+                          ? ` ${new Date(d.archived_at).toLocaleDateString("en-NG", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}`
+                          : ""}{" "}
+                        · kept for history
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 pt-1 border-t border-black-50">
+                        <button
+                          onClick={() => toggleActive(d)}
+                          disabled={busyId === d.id}
+                          className={cn(
+                            "flex-1 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50",
+                            d.is_active
+                              ? "text-black-600 hover:bg-black-50"
+                              : "text-viridian-700 hover:bg-viridian-100"
+                          )}
+                        >
+                          <Power size={13} />
+                          {d.is_active ? "Pause" : "Resume"}
+                        </button>
+                        <button
+                          onClick={() => setEditing(d)}
+                          disabled={busyId === d.id}
+                          className="flex-1 text-xs font-medium px-2.5 py-2 rounded-lg text-black-600 hover:bg-black-50 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                        >
+                          <Pencil size={13} /> Edit
+                        </button>
+                        <button
+                          onClick={() => archive(d)}
+                          disabled={busyId === d.id}
+                          className="text-xs font-medium px-2.5 py-2 rounded-lg text-cinnabar-600 hover:bg-cinnabar-100 flex items-center justify-center transition-colors disabled:opacity-50"
+                          aria-label="Archive offer"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <span
-                    className={cn(
-                      "text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0",
-                      STATUS_STYLES[status]
-                    )}
-                  >
-                    {STATUS_LABELS[status]}
-                  </span>
-                </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
 
-                {/* Meta row */}
-                <div className="flex flex-wrap gap-1.5">
-                  {d.trigger === "code" && d.code ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md font-mono">
-                      <Ticket size={12} /> {d.code}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-black-500 bg-black-50 px-2 py-0.5 rounded-md">
-                      <Clock size={12} /> Automatic
-                    </span>
-                  )}
-                  {d.min_order_kobo > 0 && (
-                    <span className="text-[11px] font-medium text-black-500 bg-black-50 px-2 py-0.5 rounded-md">
-                      Min {formatKobo(d.min_order_kobo)}
-                    </span>
-                  )}
-                  {d.fulfillment_type && (
-                    <span className="text-[11px] font-medium text-black-500 bg-black-50 px-2 py-0.5 rounded-md capitalize">
-                      {d.fulfillment_type} only
-                    </span>
-                  )}
-                </div>
-
-                {/* Usage */}
-                <div className="text-[11px] text-black-400">
-                  {d.times_redeemed} used
-                  {d.usage_limit_total !== null &&
-                    ` of ${d.usage_limit_total}`}
-                  {d.ends_at &&
-                    ` · ends ${new Date(d.ends_at).toLocaleDateString("en-NG", {
-                      day: "numeric",
-                      month: "short",
-                    })}`}
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1.5 pt-1 border-t border-black-50">
-                  <button
-                    onClick={() => toggleActive(d)}
-                    disabled={busyId === d.id}
-                    className={cn(
-                      "flex-1 text-xs font-medium px-2.5 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50",
-                      d.is_active
-                        ? "text-black-600 hover:bg-black-50"
-                        : "text-viridian-700 hover:bg-viridian-100"
-                    )}
-                  >
-                    <Power size={13} />
-                    {d.is_active ? "Pause" : "Resume"}
-                  </button>
-                  <button
-                    onClick={() => setEditing(d)}
-                    disabled={busyId === d.id}
-                    className="flex-1 text-xs font-medium px-2.5 py-2 rounded-lg text-black-600 hover:bg-black-50 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
-                  >
-                    <Pencil size={13} /> Edit
-                  </button>
-                  <button
-                    onClick={() => remove(d)}
-                    disabled={busyId === d.id}
-                    className="text-xs font-medium px-2.5 py-2 rounded-lg text-cinnabar-600 hover:bg-cinnabar-100 flex items-center justify-center transition-colors disabled:opacity-50"
-                    aria-label="Delete offer"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+      {/* SMS Campaigns tab — gated "coming soon": the composer is previewed but
+          non-interactive until the discount/targeting work it depends on ships. */}
+      {activeTab === "sms" && (
+        <div className="relative">
+          <div className="pointer-events-none select-none opacity-40" aria-hidden="true">
+            <SmsComposer
+              senderStatus={senderStatus}
+              senderName={senderName}
+              customerCounts={customerCounts}
+            />
+          </div>
+          <div className="absolute inset-0 flex items-start justify-center px-4 pt-12 md:pt-16">
+            <div className="bg-white border border-black-200 rounded-2xl shadow-lg px-6 py-6 text-center max-w-sm">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full">
+                <Clock size={12} /> Coming soon
+              </span>
+              <h3 className="font-bold text-black-900 mt-3">SMS Campaigns are almost here</h3>
+              <p className="text-sm text-black-500 mt-1.5">
+                We&rsquo;re finishing the discount integration that powers targeted campaigns.
+                You&rsquo;ll be able to message your customers shortly.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -373,6 +480,280 @@ export function MarketingClient({
             setEditing(null);
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  SMS Campaign Composer                                               */
+/* ------------------------------------------------------------------ */
+
+type SmsAudience = "all" | "inactive_30" | "vip";
+
+interface SmsResult {
+  total: number;
+  sent: number;
+  failed: number;
+}
+
+function SmsComposer({
+  senderStatus,
+  senderName,
+  customerCounts,
+}: {
+  senderStatus: "pending" | "approved" | "rejected" | null;
+  senderName: string | null;
+  customerCounts: { all: number; inactive30: number; vip: number };
+}) {
+  const [audience, setAudience] = useState<SmsAudience>("all");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<SmsResult | null>(null);
+  const [error, setError] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const MAX_CHARS = 612;
+
+  const audienceCounts: Record<SmsAudience, number> = {
+    all: customerCounts.all,
+    inactive_30: customerCounts.inactive30,
+    vip: customerCounts.vip,
+  };
+  const recipientCount = audienceCounts[audience];
+
+  const charCount = message.length;
+  const smsCount = charCount === 0 ? 1 : Math.ceil(charCount / 160);
+
+  // Replace {name} with a sample for preview
+  const previewText = message.replace(/\{name\}/gi, "Ahmed");
+
+  async function handleSend() {
+    setShowConfirm(false);
+    setSending(true);
+    setError("");
+    setResult(null);
+
+    const res = await fetch("/api/dashboard/marketing/sms-campaign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audience, message }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    setSending(false);
+
+    if (!res.ok) {
+      setError(data.error ?? "Failed to send campaign. Please try again.");
+      return;
+    }
+
+    setResult(data);
+    setMessage("");
+  }
+
+  return (
+    <div className="px-4 md:px-0 mt-4 space-y-4">
+      {/* Sender status banner */}
+      {senderStatus === "approved" && senderName ? (
+        <div className="flex items-center gap-3 bg-viridian-50 border border-viridian-200 rounded-xl px-4 py-2.5">
+          <CheckCircle2 size={14} className="text-viridian-600 flex-shrink-0" />
+          <p className="text-xs text-viridian-700">
+            Sending as{" "}
+            <span className="font-semibold text-viridian-900">{senderName}</span>
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3 bg-jasmine-50 border border-jasmine-200 rounded-xl px-4 py-3">
+          <AlertTriangle size={16} className="text-jasmine-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-jasmine-800">Sender ID not yet approved</p>
+            <p className="text-xs text-jasmine-700 mt-0.5">
+              Messages will arrive from our platform sender name. Contact support to register your own branded Sender ID.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Success result */}
+      {result && (
+        <div className="flex items-start gap-3 bg-viridian-50 border border-viridian-200 rounded-xl px-4 py-3">
+          <CheckCircle2 size={16} className="text-viridian-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-viridian-800">Campaign sent</p>
+            <p className="text-xs text-viridian-700 mt-0.5">
+              {result.sent} delivered · {result.failed > 0 ? `${result.failed} failed · ` : ""}{result.total} total recipients
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Audience picker */}
+      <div className="bg-white rounded-2xl border border-black-100 p-4">
+        <p className="text-xs font-medium text-black-500 mb-3">Who receives this?</p>
+        <div className="space-y-2">
+          {(
+            [
+              { value: "all", label: "All customers", hint: "Everyone who has ordered from you" },
+              { value: "inactive_30", label: "Inactive 30+ days", hint: "Haven't placed an order in over a month" },
+              { value: "vip", label: "VIP customers", hint: "Loyal customers with 3 or more orders" },
+            ] as { value: SmsAudience; label: string; hint: string }[]
+          ).map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setAudience(opt.value)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors text-left",
+                audience === opt.value
+                  ? "border-purple-500 bg-purple-50"
+                  : "border-black-100 hover:bg-black-50"
+              )}
+            >
+              {/* Radio dot */}
+              <div
+                className={cn(
+                  "w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors",
+                  audience === opt.value ? "border-purple-500" : "border-black-300"
+                )}
+              >
+                {audience === opt.value && (
+                  <div className="w-2 h-2 rounded-full bg-purple-500" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className={cn(
+                    "text-sm font-medium",
+                    audience === opt.value ? "text-purple-700" : "text-black-900"
+                  )}
+                >
+                  {opt.label}
+                </p>
+                <p className="text-[11px] text-black-400">{opt.hint}</p>
+              </div>
+              <span
+                className={cn(
+                  "text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0",
+                  audience === opt.value
+                    ? "bg-purple-100 text-purple-700"
+                    : "bg-black-100 text-black-500"
+                )}
+              >
+                {audienceCounts[opt.value]}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Message composer */}
+      <div className="bg-white rounded-2xl border border-black-100 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-medium text-black-500">Message</p>
+          <span
+            className={cn(
+              "text-[11px] tabular-nums",
+              charCount > MAX_CHARS ? "text-cinnabar-600 font-semibold" : "text-black-400"
+            )}
+          >
+            {charCount} / {MAX_CHARS} chars · {smsCount} SMS
+          </span>
+        </div>
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder={`Hi {name}! We have a special offer just for you — use code SAVE20 for 20% off your next order. Valid today only!`}
+          rows={5}
+          maxLength={MAX_CHARS}
+          className="w-full px-3.5 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 bg-white resize-none leading-relaxed"
+        />
+        <p className="text-[11px] text-black-400 mt-2">
+          Use{" "}
+          <span className="font-mono bg-black-50 px-1 rounded text-black-700">
+            {"{name}"}
+          </span>{" "}
+          to personalize with the customer&rsquo;s first name. Each SMS is 160 characters.
+        </p>
+      </div>
+
+      {/* Live preview */}
+      {message && (
+        <div className="bg-black-50 rounded-xl px-4 py-3">
+          <p className="text-[11px] font-medium text-black-500 mb-1.5">
+            Preview · as seen by Ahmed
+          </p>
+          <p className="text-sm text-black-700 leading-relaxed whitespace-pre-wrap">
+            {previewText}
+          </p>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <p className="text-sm text-cinnabar-600 bg-cinnabar-100 rounded-xl px-3 py-2.5">
+          {error}
+        </p>
+      )}
+
+      {/* Send button */}
+      <button
+        disabled={!message.trim() || charCount > MAX_CHARS || recipientCount === 0 || sending}
+        onClick={() => setShowConfirm(true)}
+        className="w-full py-3 bg-purple-600 text-white font-semibold rounded-xl hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm"
+      >
+        {sending ? (
+          <>Sending…</>
+        ) : (
+          <>
+            <Send size={15} />
+            Send to {recipientCount} customer{recipientCount === 1 ? "" : "s"}
+          </>
+        )}
+      </button>
+
+      {recipientCount === 0 && (
+        <p className="text-xs text-center text-black-400">
+          No customers in this segment yet.
+        </p>
+      )}
+
+      {/* Confirmation modal */}
+      {showConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black-900/40 backdrop-blur-sm px-4"
+          onClick={() => setShowConfirm(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center mb-4">
+              <MessageSquare size={20} className="text-purple-600" />
+            </div>
+            <h3 className="font-bold text-black-900 text-base">Send this campaign?</h3>
+            <p className="text-sm text-black-500 mt-2 leading-relaxed">
+              This will send an SMS to{" "}
+              <span className="font-semibold text-black-900">
+                {recipientCount} customer{recipientCount === 1 ? "" : "s"}
+              </span>
+              . This action cannot be undone.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl border border-black-200 text-black-600 font-medium text-sm hover:bg-black-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSend}
+                className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white font-semibold text-sm hover:bg-purple-700 transition-colors"
+              >
+                Send now
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -406,7 +787,6 @@ function DiscountForm({
   const [type, setType] = useState<DiscountType>(
     (discount?.type as DiscountType) ?? "percentage"
   );
-  // Naira-facing numeric inputs
   const [percentValue, setPercentValue] = useState(
     type === "percentage" && discount?.value ? String(discount.value) : ""
   );

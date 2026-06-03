@@ -13,16 +13,55 @@ export default async function MarketingPage() {
   const supabase = await createServerClient();
   const { restaurantId } = session;
 
-  const { data: discounts } = await supabase
-    .from("discounts")
-    .select("*")
-    .eq("restaurant_id", restaurantId)
-    .order("created_at", { ascending: false });
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const [
+    { data: discounts },
+    { data: restaurant },
+    { count: allCount },
+    { count: inactive30Count },
+    { count: vipCount },
+  ] = await Promise.all([
+    supabase
+      .from("discounts")
+      .select("*")
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("restaurants")
+      .select("name, sms_sender_id, sms_sender_status")
+      .eq("id", restaurantId)
+      .single(),
+    supabase
+      .from("customers")
+      .select("*", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId),
+    supabase
+      .from("customers")
+      .select("*", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId)
+      .or(`last_order_at.is.null,last_order_at.lt.${thirtyDaysAgo.toISOString()}`),
+    supabase
+      .from("customers")
+      .select("*", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId)
+      .gte("total_orders", 3),
+  ]);
 
   return (
     <MarketingClient
       restaurantId={restaurantId}
       initialDiscounts={(discounts ?? []) as Discount[]}
+      senderStatus={
+        restaurant?.sms_sender_status as "pending" | "approved" | "rejected" | null
+      }
+      senderName={restaurant?.sms_sender_id ?? null}
+      customerCounts={{
+        all: allCount ?? 0,
+        inactive30: inactive30Count ?? 0,
+        vip: vipCount ?? 0,
+      }}
     />
   );
 }
