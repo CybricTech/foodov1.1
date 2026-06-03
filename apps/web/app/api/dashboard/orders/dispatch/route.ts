@@ -104,6 +104,13 @@ export async function POST(request: NextRequest) {
       .update({ status: newStatus, dispatch_type })
       .eq("id", order_id);
 
+    // Re-dispatching a platform_rider order is a renewed rider request, so the
+    // Telegram alert must fire here too — the early return below would otherwise
+    // skip the notification block further down.
+    if (dispatch_type === "platform_rider") {
+      await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number).catch(console.error);
+    }
+
     return NextResponse.json({ ok: true, status: newStatus, existing: true });
   }
 
