@@ -109,7 +109,13 @@
       "mcp__sentry__search_events",
       "Bash(sed -n '74,150p' components/dashboard/menu-manager-client.tsx)",
       "Bash(sed -n '595,618p' components/dashboard/menu-manager-client.tsx)",
-      "Bash(sed -n '905,935p' components/dashboard/menu-manager-client.tsx)"
+      "Bash(sed -n '905,935p' components/dashboard/menu-manager-client.tsx)",
+      "Bash(npx --prefix apps/web tsc --noEmit)",
+      "WebFetch(domain:developers.sendchamp.com)",
+      "Bash(vercel --version)",
+      "Bash(vercel env *)",
+      "Bash(sed -n '296,312p' supabase/migrations/001_initial_schema.sql)",
+      "Bash(awk '/CREATE TABLE IF NOT EXISTS delivery_assignments/,/\\\\\\);/' supabase/migrations/001_initial_schema.sql)"
     ]
   }
 }
