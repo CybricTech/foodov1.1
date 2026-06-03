@@ -50,8 +50,14 @@ export async function middleware(request: NextRequest) {
   //
   // Wrap in a 5s timeout so a Supabase connectivity issue never hangs the
   // middleware indefinitely. On timeout we skip the auth redirect and let the
-  // request reach the Server Component — getDashboardUser() reads from the
-  // session cookie (no network) so it can still enforce auth without this call.
+  // request reach the Server Component, where getDashboardUser() runs its own
+  // auth check and can still enforce access.
+  //
+  // PERF NOTE: getDashboardUser() calls supabase.auth.getUser() again — a second
+  // ~600ms auth-server round-trip per request on top of this one (the single
+  // biggest dashboard latency cost; see docs/performance-audit-2026-06.md). The
+  // safe fix is migrating Supabase to asymmetric JWT signing keys so both calls
+  // verify the token locally via getClaims() instead of over the network.
   let user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"] = null;
   let authCheckFailed = false;
   try {

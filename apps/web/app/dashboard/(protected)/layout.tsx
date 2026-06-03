@@ -37,6 +37,13 @@ export default async function DashboardLayout({
     redirect("/dashboard/frontline/orders");
   }
 
+  // Enrich this merchant's PostHog person profile (keyed by user id, matching
+  // our server-side capture events). Fire-and-forget: we do NOT await the flush
+  // so this analytics write never sits on the dashboard's render critical path.
+  // Previously `await posthog.shutdown()` added a ~70ms EU round-trip to every
+  // dashboard page load (confirmed in Sentry) AND closed the shared singleton —
+  // posthog-node docs are explicit that shutdown() must not be used on a client
+  // you intend to keep using; flush() is the correct per-request cleanup.
   const posthog = getPostHogClient();
   posthog.identify({
     distinctId: session.userId,
@@ -49,7 +56,7 @@ export default async function DashboardLayout({
       },
     },
   });
-  await posthog.shutdown();
+  void posthog.flush().catch(() => {});
 
   return (
     <ConnectionProvider>
