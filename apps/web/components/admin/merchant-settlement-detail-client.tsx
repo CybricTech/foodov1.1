@@ -3,7 +3,8 @@
 import { useState, useMemo } from "react";
 import { formatKobo, computeOrderNet } from "@foodo/utils";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, CheckCircle2, ChevronRight, X } from "lucide-react";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -56,6 +57,7 @@ type OrderRow = {
   service_fee_kobo: number;
   vat_kobo: number;
   total_kobo: number;
+  discount_kobo: number;
   settlement_id: string | null;
   dispatch_type: string | null;
   fulfillment_type: string;
@@ -100,6 +102,7 @@ export function MerchantSettlementDetailClient({
   orders,
   platformSettings,
 }: Props) {
+  const router = useRouter();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [settlementModal, setSettlementModal] = useState<string | null>(null);
   const [bankRef, setBankRef] = useState("");
@@ -115,6 +118,7 @@ export function MerchantSettlementDetailClient({
     let grossRevenue = 0;
     let totalMerchantCharge = 0;
     let totalCommissions = 0;
+    let totalDiscounts = 0;
     let unsettledCount = 0;
 
     const fees = { merchantChargePct, deliveryCommissionPct };
@@ -123,6 +127,7 @@ export function MerchantSettlementDetailClient({
       grossRevenue += n.gross;
       totalMerchantCharge += n.merchantCharge;
       totalCommissions += n.deliveryCommission;
+      totalDiscounts += o.discount_kobo ?? 0;
       if (!o.settlement_id) unsettledCount++;
     }
 
@@ -132,7 +137,7 @@ export function MerchantSettlementDetailClient({
       .filter((s) => s.status === "paid")
       .reduce((sum, s) => sum + s.amount_kobo, 0);
 
-    return { grossRevenue, totalFoodoFees, totalPaid, unsettledCount };
+    return { grossRevenue, totalFoodoFees, totalPaid, totalDiscounts, unsettledCount };
   }, [orders, settlements, merchantChargePct, deliveryCommissionPct]);
 
   /* ── Daily grouped orders ───────────────────────────────────────────────── */
@@ -158,12 +163,14 @@ export function MerchantSettlementDetailClient({
         let merchantCharge = 0;
         let serviceFee = 0;
         let deliveryFees = 0;
+        let discount = 0;
         for (const o of dayOrders) {
           const n = computeOrderNet(o, fees);
           gross += n.gross;
           merchantCharge += n.merchantCharge;
           serviceFee += o.service_fee_kobo ?? 0;
           deliveryFees += n.deliveryCommission;
+          discount += o.discount_kobo ?? 0;
         }
         const serviceMerchantCharge = serviceFee + merchantCharge;
         const net = gross - merchantCharge - deliveryFees;
@@ -179,6 +186,7 @@ export function MerchantSettlementDetailClient({
           serviceFee,
           serviceMerchantCharge,
           deliveryFees,
+          discount,
           net,
           allSettled,
           hasUnsettled,
@@ -248,9 +256,10 @@ export function MerchantSettlementDetailClient({
       </div>
 
       {/* ── Summary Cards ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card label="Total Gross Revenue" value={formatKobo(totals.grossRevenue)} sublabel="Subtotal + VAT + Delivery" />
         <Card label="Total Foodo Fees" value={formatKobo(totals.totalFoodoFees)} sublabel="Service fees + commissions" />
+        <Card label="Total Discounts" value={formatKobo(totals.totalDiscounts)} sublabel="Merchant-funded reductions" highlight={totals.totalDiscounts > 0 ? "red" : undefined} />
         <Card label="Total Paid Out" value={formatKobo(totals.totalPaid)} sublabel={`${settlements.filter((s) => s.status === "paid").length} payouts`} highlight="green" />
         <Card label="Unsettled Orders" value={String(totals.unsettledCount)} sublabel="Awaiting settlement" highlight={totals.unsettledCount > 0 ? "amber" : undefined} />
       </div>
@@ -300,6 +309,7 @@ export function MerchantSettlementDetailClient({
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-black-500">Date</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Orders</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Gross Total</th>
+                <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Discounts</th>
                 <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">
                   <span className="block">Service +</span>
                   <span className="block">Merchant Charge</span>
@@ -313,7 +323,7 @@ export function MerchantSettlementDetailClient({
             <tbody className="divide-y divide-black-50">
               {dailyGroups.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-black-400 text-sm">
+                  <td colSpan={9} className="text-center py-10 text-black-400 text-sm">
                     No completed orders found
                   </td>
                 </tr>
@@ -323,10 +333,17 @@ export function MerchantSettlementDetailClient({
                     weekday: "short", day: "numeric", month: "short",
                   });
                   return (
-                    <tr key={day.date} className="hover:bg-black-25 transition-colors">
+                    <tr
+                      key={day.date}
+                      onClick={() => router.push(`/admin/settlements/${restaurant.id}/${day.date}`)}
+                      className="hover:bg-black-25 transition-colors cursor-pointer"
+                    >
                       <td className="px-4 py-2.5 font-medium text-black-900 whitespace-nowrap">{dateLabel}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{day.orderCount}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-black-700">{formatKobo(day.gross)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-cinnabar-500">
+                        {day.discount > 0 ? `−${formatKobo(day.discount)}` : "—"}
+                      </td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.serviceMerchantCharge)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums text-purple-600">{formatKobo(day.deliveryFees)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-black-900">{formatKobo(day.net)}</td>
@@ -340,19 +357,23 @@ export function MerchantSettlementDetailClient({
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-center">
-                        {day.hasUnsettled && (
-                          <button
-                            onClick={() => {
-                              setSettlementModal(day.date);
-                              setBankRef("");
-                              setReceiptUrl("");
-                              setSubmitResult(null);
-                            }}
-                            className="text-xs bg-purple-500 hover:bg-purple-400 text-white font-medium px-3 py-1 rounded-lg transition-colors"
-                          >
-                            Record Settlement
-                          </button>
-                        )}
+                        <div className="flex items-center justify-center gap-2">
+                          {day.hasUnsettled && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSettlementModal(day.date);
+                                setBankRef("");
+                                setReceiptUrl("");
+                                setSubmitResult(null);
+                              }}
+                              className="text-xs bg-purple-500 hover:bg-purple-400 text-white font-medium px-3 py-1 rounded-lg transition-colors"
+                            >
+                              Record Settlement
+                            </button>
+                          )}
+                          <ChevronRight size={16} className="text-black-300" />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -460,6 +481,11 @@ export function MerchantSettlementDetailClient({
                   <span>= Net Payout</span>
                   <span className="tabular-nums">{formatKobo(modalDay.net)}</span>
                 </div>
+                {modalDay.discount > 0 && (
+                  <p className="text-[11px] text-cinnabar-500 pt-0.5">
+                    Incl. {formatKobo(modalDay.discount)} in merchant-funded discounts (already deducted from gross — borne by the merchant).
+                  </p>
+                )}
               </div>
 
               {restaurant.has_bank_account && (
@@ -527,10 +553,10 @@ function Card({
   label: string;
   value: string;
   sublabel: string;
-  highlight?: "green" | "amber";
+  highlight?: "green" | "amber" | "red";
 }) {
-  const bg = highlight === "green" ? "border-viridian-200 bg-viridian-50" : highlight === "amber" ? "border-dixie-200 bg-dixie-50" : "bg-white border-black-200";
-  const text = highlight === "green" ? "text-viridian-600" : highlight === "amber" ? "text-dixie-600" : "text-black-900";
+  const bg = highlight === "green" ? "border-viridian-200 bg-viridian-50" : highlight === "amber" ? "border-dixie-200 bg-dixie-50" : highlight === "red" ? "border-cinnabar-200 bg-cinnabar-100" : "bg-white border-black-200";
+  const text = highlight === "green" ? "text-viridian-600" : highlight === "amber" ? "text-dixie-600" : highlight === "red" ? "text-cinnabar-500" : "text-black-900";
 
   return (
     <div className={`rounded-2xl border px-4 py-4 ${bg}`}>

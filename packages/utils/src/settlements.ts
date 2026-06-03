@@ -100,6 +100,31 @@ export function deliveryCommissionFor(
   return 0;
 }
 
+/**
+ * Payment-gateway processing fee Paystack deducts from each transaction BEFORE
+ * remitting funds to the platform. This is Foodo's cost, NOT the merchant's — it
+ * is never subtracted from the merchant net (see {@link computeOrderNet}); it
+ * only affects Foodo's own revenue/reconciliation views.
+ *
+ * Rate: a flat 1.4% of the processed amount, no flat per-transaction component,
+ * capped at ₦2,000. This is a negotiated Paystack rate, verified against the
+ * Paystack settlement export docs/Hurdle_payouts_1780508359481.csv — from
+ * 13 May 2026 onward, 17 of 18 daily payouts reconcile to 1.4% × gross to the
+ * kobo (the lone outlier carried a higher-fee international card). The cap only
+ * bites above ~₦142k/transaction, so it never triggers for normal orders.
+ *
+ * (Before 13 May 2026 Paystack billed the standard 1.5% + ₦100/txn ≈ 2.03%
+ * effective; we don't retro-model that older regime. The Monnify-specific
+ * 1.5%/₦2,000 model is separate and lives in the web app's lib/monnify.ts.)
+ */
+export const GATEWAY_FEE_PCT = 0.014;
+export const GATEWAY_FEE_CAP_KOBO = 200000; // ₦2,000
+
+/** Paystack's processing fee on a single transaction total (kobo in, kobo out). */
+export function gatewayFee(totalKobo: number): number {
+  return Math.min(Math.round(totalKobo * GATEWAY_FEE_PCT), GATEWAY_FEE_CAP_KOBO);
+}
+
 export interface OrderNet {
   /** subtotal + VAT + delivery_fee */
   gross: number;

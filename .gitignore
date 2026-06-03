@@ -52,3 +52,7 @@ supabase/drop_policies.sql
 
 # Rider env
 apps/rider/.env
+
+# Payout/settlement exports — real payout & recipient data, keep out of the repo
+docs/*payouts*.csv
+docs/Hurdle_payouts_*.csv

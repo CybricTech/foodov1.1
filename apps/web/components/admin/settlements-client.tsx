@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { formatKobo, computeOrderNet } from "@foodo/utils";
+import { formatKobo, computeOrderNet, gatewayFee } from "@foodo/utils";
 import Link from "next/link";
 import { Download, ChevronDown, ChevronRight } from "lucide-react";
 
@@ -85,13 +85,9 @@ function paystackTotal(o: OrderRow): number {
   );
 }
 
-// Monnify pricing: 1.5% capped at ₦2,000. No flat fee component.
-// Renamed from paystackFee → gatewayFee at the Monnify cutover; the variable
-// name is intentionally generic so future gateway swaps don't repeat the
-// rename churn.
-function gatewayFee(totalKobo: number): number {
-  return Math.min(Math.round(totalKobo * 0.015), 200000);
-}
+// Payment-gateway fee model is the canonical Paystack 1.4% (cap ₦2,000) from
+// @foodo/utils — verified against docs/Hurdle_payouts_1780508359481.csv. See
+// the gatewayFee docs in packages/utils/src/settlements.ts for the derivation.
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-dixie-100 text-dixie-600",
