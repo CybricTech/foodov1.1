@@ -115,7 +115,9 @@
       "Bash(vercel --version)",
       "Bash(vercel env *)",
       "Bash(sed -n '296,312p' supabase/migrations/001_initial_schema.sql)",
-      "Bash(awk '/CREATE TABLE IF NOT EXISTS delivery_assignments/,/\\\\\\);/' supabase/migrations/001_initial_schema.sql)"
+      "Bash(awk '/CREATE TABLE IF NOT EXISTS delivery_assignments/,/\\\\\\);/' supabase/migrations/001_initial_schema.sql)",
+      "mcp__sentry__search_issues",
+      "mcp__sentry__get_sentry_resource"
     ]
   }
 }
