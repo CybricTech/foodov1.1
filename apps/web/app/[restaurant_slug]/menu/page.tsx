@@ -2,12 +2,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Clock, ShoppingBag, ArrowLeft } from "lucide-react";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getMenuCategories, getMenuItems } from "@foodo/database";
 import { getCachedRestaurant } from "@/lib/supabase/storefront-cache";
 import { transformImage } from "@/lib/images";
 import { CategoryTabs } from "@/components/storefront/category-tabs";
 import { MenuSections } from "@/components/storefront/menu-sections";
+import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { getActiveMenuSale } from "@/lib/discounts";
 
 export const revalidate = 60;
@@ -33,9 +34,50 @@ export default async function MenuPage({ params }: MenuPageProps) {
 
   const [categories, items, sale] = await Promise.all([
     getMenuCategories(supabase, restaurant.id),
-    getMenuItems(supabase, restaurant.id, { includeUnavailable: true }),
+    getMenuItems(supabase, restaurant.id),
     getActiveMenuSale(restaurant.id),
   ]);
+
+  // Switched-off items are hidden from public (anon) visitors by RLS, so a
+  // fully sold-out category arrives here with zero items and would silently
+  // vanish — leaving a nav tab that scrolls to nothing. Use the service client
+  // (same pattern as the sale banner) to read true per-category availability so
+  // we can surface sold-out categories as "restocking" instead of dropping them.
+  const serviceClient = createServiceClient();
+  const { data: availabilityRows } = await serviceClient
+    .from("menu_items")
+    .select("category_id, is_available")
+    .eq("restaurant_id", restaurant.id);
+
+  const totalByCategory = new Map<string, number>();
+  const availableByCategory = new Map<string, number>();
+  for (const row of availabilityRows ?? []) {
+    if (!row.category_id) continue;
+    totalByCategory.set(row.category_id, (totalByCategory.get(row.category_id) ?? 0) + 1);
+    if (row.is_available) {
+      availableByCategory.set(
+        row.category_id,
+        (availableByCategory.get(row.category_id) ?? 0) + 1
+      );
+    }
+  }
+
+  // Has items, but none available → sold out / restocking.
+  const soldOutCategoryIds = categories
+    .filter(
+      (cat) =>
+        (totalByCategory.get(cat.id) ?? 0) > 0 &&
+        (availableByCategory.get(cat.id) ?? 0) === 0
+    )
+    .map((cat) => cat.id);
+  const soldOutSet = new Set(soldOutCategoryIds);
+
+  // Only show categories that actually render something: ones with available
+  // items, or sold-out ones (which now render a restocking note). This also
+  // drops dead tabs for genuinely empty categories.
+  const visibleCategories = categories.filter(
+    (cat) => (availableByCategory.get(cat.id) ?? 0) > 0 || soldOutSet.has(cat.id)
+  );
 
   return (
     <div className="pb-24 bg-white min-h-screen">
@@ -122,21 +164,27 @@ export default async function MenuPage({ params }: MenuPageProps) {
       )}
 
       {/* Category sticky tabs */}
-      {categories.length > 0 && (
+      {visibleCategories.length > 0 && (
         <div className="mt-4">
-          <CategoryTabs categories={categories} />
+          <CategoryTabs
+            categories={visibleCategories}
+            soldOutCategoryIds={soldOutCategoryIds}
+          />
         </div>
       )}
 
       {/* Menu sections */}
       <div className="mt-4 px-4">
         <MenuSections
-          categories={categories}
+          categories={visibleCategories}
           items={items}
           restaurantAcceptsOrders={restaurant.accepts_orders}
           sale={sale}
         />
       </div>
+
+      {/* Footer */}
+      <StorefrontFooter restaurantName={restaurant.name} />
     </div>
   );
 }
