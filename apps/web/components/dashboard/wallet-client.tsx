@@ -47,6 +47,7 @@ type OrderRow = {
   id: string;
   order_number: string;
   subtotal_kobo: number;
+  discount_kobo: number;
   delivery_fee_kobo: number;
   service_fee_kobo: number;
   vat_kobo: number;
@@ -468,6 +469,104 @@ function SettlementPayoutRow({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Merchant-centric payout breakdown                                   */
+/* ------------------------------------------------------------------ */
+
+const IN_HOUSE_DISPATCH = new Set(["own_rider", "third_party"]);
+
+type PayoutBreakdown = {
+  /** Pre-discount food + VAT — the menu value of what was sold. */
+  foodKobo: number;
+  /** Promos the merchant funded. */
+  discountKobo: number;
+  /** What the merchant keeps on deliveries their own team handled (after our cut). */
+  ownDeliveryKobo: number;
+  /** Payment-processing fee. */
+  merchantChargeKobo: number;
+  /** Sum of per-order net — equals the payout when the order list is complete. */
+  netKobo: number;
+};
+
+/**
+ * Decompose a payout into the figures the MERCHANT cares about. Kitchyn-rider
+ * (platform) delivery fees and our delivery commission are deliberately not
+ * surfaced: for a platform delivery the fee is entirely ours, so it cancels out
+ * of net and has no place in the merchant's payout. The remaining lines always
+ * sum to net:  food − discount + in-house-delivery-kept − merchant charge.
+ */
+function computeMerchantBreakdown(
+  orders: OrderRow[],
+  settings: { merchantChargePct: number; deliveryCommissionPct: number }
+): PayoutBreakdown {
+  const b: PayoutBreakdown = {
+    foodKobo: 0,
+    discountKobo: 0,
+    ownDeliveryKobo: 0,
+    merchantChargeKobo: 0,
+    netKobo: 0,
+  };
+  for (const o of orders) {
+    const n = computeOrderNet(o, settings);
+    const fee = o.delivery_fee_kobo ?? 0;
+    const discount = o.discount_kobo ?? 0;
+    // gross = food_post + delivery_fee ⇒ post-discount food (+VAT) = gross − fee.
+    const foodPost = n.gross - fee;
+    b.foodKobo += foodPost + discount; // show the menu value…
+    b.discountKobo += discount; // …then the promo as its own reduction.
+    // Anything that isn't a Kitchyn rider is delivery the merchant keeps, after
+    // our commission. Platform-rider fees are ours and excluded entirely.
+    if (o.dispatch_type !== "platform_rider" && fee > 0) {
+      b.ownDeliveryKobo += fee - n.deliveryCommission;
+    }
+    b.merchantChargeKobo += n.merchantCharge;
+    b.netKobo += n.net;
+  }
+  return b;
+}
+
+/** Plain-language label for how an order was fulfilled (no fees exposed). */
+function dispatchLabel(o: OrderRow): string {
+  if (o.fulfillment_type === "pickup") return "Pickup";
+  if (o.dispatch_type === "platform_rider") return "Kitchyn delivery";
+  if (IN_HOUSE_DISPATCH.has(o.dispatch_type ?? "")) return "Your delivery";
+  return "Delivery";
+}
+
+/** One line of the payout breakdown, with an optional plain-language hint. */
+function BreakdownRow({
+  label,
+  hint,
+  amountKobo,
+  negative,
+}: {
+  label: string;
+  hint?: string;
+  amountKobo: number;
+  negative?: boolean;
+}) {
+  return (
+    <div className="flex justify-between items-start gap-3">
+      <div className="min-w-0">
+        <p className={negative ? "text-purple-600" : "text-black-700"}>
+          {negative ? "− " : ""}
+          {label}
+        </p>
+        {hint && <p className="text-[11px] leading-tight text-black-400 mt-0.5">{hint}</p>}
+      </div>
+      <span
+        className={
+          negative
+            ? "tabular-nums text-purple-600 flex-shrink-0"
+            : "tabular-nums font-medium text-black-700 flex-shrink-0"
+        }
+      >
+        {negative ? `(${formatKobo(amountKobo)})` : formatKobo(amountKobo)}
+      </span>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Payout Detail Modal                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -486,14 +585,15 @@ function PayoutDetailModal({
   deliveryCommissionPct: number;
   onClose: () => void;
 }) {
-  // Use the breakdown STORED on the settlement record — this is what was
-  // actually used for the transfer, so the figures always sum to the amount the
-  // merchant received (computedNet === settlement.amount_kobo). We never
-  // re-derive it from current orders/fee rates.
-  const gross = settlement.gross_total_kobo;
-  const merchantChargeTotal = settlement.merchant_charge_total_kobo;
-  const deliveryFeesTotal = settlement.delivery_commission_kobo;
-  const hasBreakdown = gross > 0;
+  // Merchant-centric breakdown derived from this payout's orders. We only show
+  // it when every order for the payout is loaded AND the derived net matches the
+  // amount actually paid — so the itemised lines always sum to the figure shown.
+  const breakdown = computeMerchantBreakdown(orders, {
+    merchantChargePct,
+    deliveryCommissionPct,
+  });
+  const ordersComplete = orders.length > 0 && orders.length === settlement.order_count;
+  const showBreakdown = ordersComplete && breakdown.netKobo === computedNet;
 
   const dateLabel = new Date(settlement.created_at).toLocaleDateString("en-NG", {
     weekday: "short", day: "numeric", month: "short", year: "numeric",
@@ -530,21 +630,35 @@ function PayoutDetailModal({
             <SettlementStatusBadge status={settlement.status} />
           </div>
 
-          {/* Breakdown */}
-          {hasBreakdown && (
-            <div className="bg-black-50 rounded-xl px-4 py-3 space-y-2 text-sm">
-              <div className="flex justify-between text-black-600">
-                <span>Gross Total</span>
-                <span className="tabular-nums font-medium">{formatKobo(gross)}</span>
-              </div>
-              <div className="flex justify-between text-purple-600">
-                <span>− Merchant Charge</span>
-                <span className="tabular-nums">({formatKobo(merchantChargeTotal)})</span>
-              </div>
-              <div className="flex justify-between text-purple-600">
-                <span>− Delivery Fees</span>
-                <span className="tabular-nums">({formatKobo(deliveryFeesTotal)})</span>
-              </div>
+          {/* Breakdown — what made up this payout, merchant's view */}
+          {showBreakdown && (
+            <div className="bg-black-50 rounded-xl px-4 py-3 space-y-2.5 text-sm">
+              <BreakdownRow
+                label="Food sales"
+                hint={breakdown.discountKobo > 0 ? "Your menu items, before promos" : "Your menu items"}
+                amountKobo={breakdown.foodKobo}
+              />
+              {breakdown.discountKobo > 0 && (
+                <BreakdownRow
+                  label="Promo discount"
+                  hint="Promotions you ran"
+                  amountKobo={breakdown.discountKobo}
+                  negative
+                />
+              )}
+              {breakdown.ownDeliveryKobo > 0 && (
+                <BreakdownRow
+                  label="Delivery (your riders)"
+                  hint="Delivery you earned on orders your team handled"
+                  amountKobo={breakdown.ownDeliveryKobo}
+                />
+              )}
+              <BreakdownRow
+                label="Merchant charge"
+                hint="Payment processing fee"
+                amountKobo={breakdown.merchantChargeKobo}
+                negative
+              />
               <div className="border-t border-black-200 pt-2 flex justify-between font-bold text-black-900">
                 <span>= Net Payout</span>
                 <span className="tabular-nums">{formatKobo(computedNet)}</span>
@@ -569,7 +683,7 @@ function PayoutDetailModal({
             ) : (
               <div className="space-y-2">
                 {orders.map((o) => {
-                  const { gross: oGross, net: oNet } = computeOrderNet(o, {
+                  const { net: oNet } = computeOrderNet(o, {
                     merchantChargePct,
                     deliveryCommissionPct,
                   });
@@ -585,11 +699,13 @@ function PayoutDetailModal({
                             day: "numeric", month: "short",
                             hour: "2-digit", minute: "2-digit",
                           })}
+                          {" · "}
+                          {dispatchLabel(o)}
                         </p>
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-sm font-bold text-black-900">{formatKobo(oNet)}</p>
-                        <p className="text-[10px] text-black-400">of {formatKobo(oGross)}</p>
+                        <p className="text-[10px] text-black-400">you earned</p>
                       </div>
                     </div>
                   );

@@ -63,7 +63,7 @@ export default async function WalletPage() {
     supabase
       .from("orders")
       .select(
-        `id, order_number, subtotal_kobo, delivery_fee_kobo, service_fee_kobo,
+        `id, order_number, subtotal_kobo, discount_kobo, delivery_fee_kobo, service_fee_kobo,
          vat_kobo, total_kobo, settlement_id, dispatch_type, fulfillment_type,
          status, created_at, delivery_assignments (dispatch_type)`
       )
@@ -115,6 +115,7 @@ export default async function WalletPage() {
       id: o.id as string,
       order_number: o.order_number as string,
       subtotal_kobo: (o.subtotal_kobo as number) ?? 0,
+      discount_kobo: (o.discount_kobo as number) ?? 0,
       delivery_fee_kobo: (o.delivery_fee_kobo as number) ?? 0,
       service_fee_kobo: (o.service_fee_kobo as number) ?? 0,
       vat_kobo: (o.vat_kobo as number) ?? 0,
