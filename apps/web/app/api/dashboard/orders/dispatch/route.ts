@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     // Telegram alert must fire here too — the early return below would otherwise
     // skip the notification block further down.
     if (dispatch_type === "platform_rider") {
-      await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number).catch(console.error);
+      await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number, "dispatch:existing").catch(console.error);
     }
 
     return NextResponse.json({ ok: true, status: newStatus, existing: true });
@@ -126,6 +126,20 @@ export async function POST(request: NextRequest) {
     });
 
   if (assignErr) {
+    // 23505 = unique_violation on delivery_assignments(order_id): a concurrent
+    // dispatch request already created the assignment. Treat as idempotent —
+    // refresh status and (de-duplicated) re-send the alert rather than 500.
+    if (assignErr.code === "23505") {
+      const dupStatus = dispatch_type === "platform_rider" ? "assigned_to_rider" : "in_transit";
+      await serviceClient
+        .from("orders")
+        .update({ status: dupStatus, dispatch_type })
+        .eq("id", order_id);
+      if (dispatch_type === "platform_rider") {
+        await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number, "dispatch:race").catch(console.error);
+      }
+      return NextResponse.json({ ok: true, status: dupStatus, existing: true });
+    }
     return NextResponse.json({ error: assignErr.message }, { status: 500 });
   }
 
@@ -233,7 +247,7 @@ export async function POST(request: NextRequest) {
 
   // Telegram notification — awaited so serverless doesn't kill it on response return
   if (dispatch_type === "platform_rider") {
-    await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number).catch(console.error);
+    await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number, "dispatch:new").catch(console.error);
   }
 
   // Customer "on its way" SMS — fired once at first dispatch (existing-assignment
