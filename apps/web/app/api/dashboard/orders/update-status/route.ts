@@ -132,7 +132,8 @@ export async function POST(req: NextRequest) {
         serviceClient,
         orderId,
         restaurantId,
-        orderRow.order_number
+        orderRow.order_number,
+        "status-update"
       ).catch(console.error);
     }
   }
