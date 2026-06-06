@@ -19,6 +19,26 @@ const CustomerSchema = z.object({
   email: z.string().email("Invalid email").optional().or(z.literal("")),
 });
 
+/**
+ * Error payloads from our own API routes are always strings, but a request can
+ * also fail at the platform/gateway layer (e.g. a Vercel function timeout in a
+ * flaky in-app browser), which returns a JSON body like
+ * `{ error: { code, id, message } }`. Putting that object into error state and
+ * rendering it as a React child throws "Objects are not valid as a React
+ * child", so always coerce an API error field to a string here.
+ */
+function errorText(value: unknown, fallback: string): string {
+  if (typeof value === "string" && value.trim()) return value;
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof (value as { message?: unknown }).message === "string"
+  ) {
+    return (value as { message: string }).message;
+  }
+  return fallback;
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
   const { restaurant } = useRestaurant();
@@ -128,7 +148,7 @@ export default function CheckoutPage() {
         } else {
           setDiscount(null);
           if (appliedCode && d.error) {
-            setDiscountError(d.error);
+            setDiscountError(errorText(d.error, "That code can't be applied."));
             setAppliedCode("");
           }
         }
@@ -172,7 +192,7 @@ export default function CheckoutPage() {
         });
       } else if (d.error) {
         // The code itself couldn't be used (expired, below minimum, etc.).
-        setDiscountError(d.error);
+        setDiscountError(errorText(d.error, "That code can't be applied."));
       } else if (d.discount) {
         // The code is valid but an automatic offer already matches or beats it.
         setDiscount(d.discount);
@@ -318,7 +338,7 @@ export default function CheckoutPage() {
         return;
       }
       if (!res.ok) {
-        setDeliveryFeeError(data.error ?? "Could not calculate delivery fee");
+        setDeliveryFeeError(errorText(data.error, "Could not calculate delivery fee"));
         setDeliveryFeeKobo(null);
       } else {
         setDeliveryFeeKobo(data.feeKobo);
@@ -437,7 +457,7 @@ export default function CheckoutPage() {
 
       const initData = await res.json();
       if (!res.ok) {
-        setError(initData.error ?? "Payment initialization failed");
+        setError(errorText(initData.error, "Payment initialization failed"));
         setLoading(false);
         return;
       }
