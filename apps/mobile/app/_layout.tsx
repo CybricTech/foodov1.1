@@ -21,6 +21,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { initObservability } from "../src/lib/observability";
+import { initPushHandlers } from "../src/lib/push";
 import { AuthProvider } from "../src/lib/auth";
 import { ConnectionProvider } from "../src/lib/connection";
 import { useBrandFonts, applyBrandFontPatch } from "../src/lib/fonts";
@@ -36,6 +37,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     initObservability();
+    // Mount the notification presentation + tap-response handlers once. No-ops
+    // safely when the notifications module is unavailable (e.g. web).
+    initPushHandlers();
   }, []);
 
   // Gate the app shell on font load so brand typography is in place before the

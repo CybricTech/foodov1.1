@@ -483,6 +483,19 @@ async function handleSuccessfulTransaction(
         orderNumber: order.order_number,
       }),
     }).catch(console.error),
+
+    // Merchant new order PUSH (Expo) — fire-and-forget alongside the SMS.
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-push`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurantId,
+        orderId: order.id,
+        orderNumber: order.order_number,
+        totalKobo: orderTotalKobo,
+        customerName: meta.customer_name as string,
+      }),
+    }).catch(console.error),
   ];
 
   await Promise.allSettled(smsRequests);

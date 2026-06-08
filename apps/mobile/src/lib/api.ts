@@ -287,6 +287,25 @@ export function resetStaffPassword(
   return apiPost("/api/dashboard/staff/reset-password", { newPassword });
 }
 
+/* ───────────────────────── Push notifications ───────────────────── */
+
+/**
+ * POST /api/merchant/notifications/register — store this device's Expo push
+ * token against the caller's restaurant. The web route re-derives restaurant_id
+ * from the caller's profile (no client-supplied id trusted).
+ */
+export function registerPushToken(
+  token: string,
+  platform: string
+): Promise<{ success: true }> {
+  return apiPost("/api/merchant/notifications/register", { token, platform });
+}
+
+/** POST /api/merchant/notifications/unregister — drop this device's token. */
+export function unregisterPushToken(token: string): Promise<{ success: true }> {
+  return apiPost("/api/merchant/notifications/unregister", { token });
+}
+
 /* ───────────────────────── Marketing ────────────────────────────── */
 
 /** Result envelope returned by the SMS-campaign route. */

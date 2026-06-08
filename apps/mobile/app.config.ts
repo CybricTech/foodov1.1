@@ -1,4 +1,6 @@
 import type { ExpoConfig, ConfigContext } from "expo/config";
+import { existsSync } from "fs";
+import { join } from "path";
 
 /**
  * Expo app configuration for the Kitchyn Merchant app.
@@ -13,6 +15,14 @@ import type { ExpoConfig, ConfigContext } from "expo/config";
  */
 
 const KITCHYN_PURPLE = "#7B2CBF";
+
+// Firebase config for Android FCM (delivery of Expo pushes on Android). The
+// file is provided out-of-band by the build operator and is REQUIRED for a real
+// Android build, but absent in a fresh clone. We only reference it when present
+// so `expo export` / config evaluation still work for local verification without
+// it — when missing, document: drop google-services.json here before EAS build.
+const GOOGLE_SERVICES_PATH = "./google-services.json";
+const hasGoogleServices = existsSync(join(__dirname, "google-services.json"));
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -36,8 +46,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: KITCHYN_PURPLE,
     },
-    // Minimal permissions in Phase 0. POST_NOTIFICATIONS is added in Phase 1.
-    permissions: [],
+    // Push: Android 13+ requires POST_NOTIFICATIONS for runtime prompts.
+    permissions: ["POST_NOTIFICATIONS"],
+    // FCM delivers Expo pushes on Android. Only set when the file exists so
+    // config evaluation (expo export / tsc) doesn't fail in a fresh clone;
+    // the operator must drop google-services.json here before an EAS build.
+    ...(hasGoogleServices ? { googleServicesFile: GOOGLE_SERVICES_PATH } : {}),
   },
   ios: {
     bundleIdentifier: "com.kitchyn.merchant",
@@ -53,6 +67,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-secure-store",
     "expo-font",
     "expo-audio",
+    [
+      "expo-notifications",
+      {
+        // Monochrome status-bar icon + brand purple accent (Android).
+        icon: "./assets/icon.png",
+        color: KITCHYN_PURPLE,
+        // Bundle the custom new-order chime so the "orders" channel / iOS alert
+        // can use it. Falls back to the system default sound if unsupported.
+        sounds: ["./assets/new-order.wav"],
+      },
+    ],
     [
       "expo-image-picker",
       {

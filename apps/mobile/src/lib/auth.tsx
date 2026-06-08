@@ -23,6 +23,10 @@ import type { Session } from "@supabase/supabase-js";
 
 import { getSupabase, isSupabaseConfigured } from "./supabase";
 import { capture, getPostHog } from "./observability";
+import {
+  registerForPushNotifications,
+  unregisterForPushNotifications,
+} from "./push";
 
 export type MerchantRole = "merchant_owner" | "merchant_staff";
 
@@ -89,6 +93,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const loaded = await loadProfile(next.user.id, next.user.email ?? "");
     if (!mounted.current) return;
     setProfile(loaded);
+    // Register this device for push once a merchant profile is in place
+    // (restored session). Fire-and-forget — never block auth on push, and the
+    // push module no-ops safely in Expo Go / on simulators.
+    if (loaded) {
+      void registerForPushNotifications().catch(() => undefined);
+    }
   }, []);
 
   useEffect(() => {
@@ -145,6 +155,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(loaded);
       getPostHog()?.identify(trimmed);
       capture("merchant_login", { email: trimmed, role: loaded.role });
+      // Register for push right after login (correct moment to prompt — not at
+      // cold start). Fire-and-forget; safe no-op in Expo Go / on simulators.
+      void registerForPushNotifications().catch(() => undefined);
       return { error: null };
     },
     []
@@ -153,6 +166,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     const supabase = getSupabase();
     capture("merchant_logout");
+    // Drop this device's push token BEFORE clearing the session — the unregister
+    // call is Bearer'd and needs the still-valid access token. Best-effort; we
+    // never block logout on it.
+    await unregisterForPushNotifications().catch(() => undefined);
     await supabase?.auth.signOut();
     setSession(null);
     setProfile(null);
