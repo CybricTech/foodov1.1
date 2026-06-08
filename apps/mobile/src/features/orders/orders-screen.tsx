@@ -23,8 +23,10 @@ import {
   Pressable,
   RefreshControl,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { useFocusEffect, useSegments } from "expo-router";
 
 import { getSupabase } from "../../lib/supabase";
 import { useConnection } from "../../lib/connection";
@@ -43,13 +45,74 @@ import {
   type OrderRow,
 } from "./types";
 
-interface OrdersScreenProps {
-  restaurantId: string;
+/* ------------------------------------------------------------------ */
+/*  Orientation control (frontline only) — every call fully guarded so  */
+/*  the app still runs where the native module is absent (web/Expo Go). */
+/* ------------------------------------------------------------------ */
+function allowAllOrientations() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ScreenOrientation = require("expo-screen-orientation");
+    ScreenOrientation?.unlockAsync?.().catch(() => {});
+  } catch {
+    /* module unavailable — no-op */
+  }
 }
 
-export function OrdersScreen({ restaurantId }: OrdersScreenProps) {
+function lockPortrait() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ScreenOrientation = require("expo-screen-orientation");
+    ScreenOrientation?.lockAsync?.(
+      ScreenOrientation.OrientationLock.PORTRAIT_UP
+    ).catch(() => {});
+  } catch {
+    /* module unavailable — no-op */
+  }
+}
+
+interface OrdersScreenProps {
+  restaurantId: string;
+  /**
+   * Override for landscape behaviour. When omitted it is derived from the active
+   * route group: ONLY the frontline Kitchen Display ((frontline)/orders) unlocks
+   * landscape + renders the multi-column board. The owner dashboard usage of this
+   * same component stays portrait-locked like the rest of the app.
+   */
+  allowLandscape?: boolean;
+}
+
+export function OrdersScreen({
+  restaurantId,
+  allowLandscape: allowLandscapeProp,
+}: OrdersScreenProps) {
   const supabase = getSupabase();
   const { reportRealtimeStatus, onReconnect } = useConnection();
+
+  // Scope rotation to the frontline Kitchen Display only. The owner dashboard
+  // reuses this same component but must stay portrait, so we gate on the active
+  // route group ((frontline)) unless an explicit prop overrides it.
+  const segments = useSegments();
+  const allowLandscape =
+    allowLandscapeProp ?? segments.some((s) => s === "(frontline)");
+
+  // Landscape detection. The board renders when held wider than tall AND the
+  // screen is allowed to rotate (frontline). Portrait keeps the tab view as-is.
+  const { width, height } = useWindowDimensions();
+  const isLandscape = allowLandscape && width > height;
+
+  // Frontline only: permit rotation while this screen is focused; re-lock the
+  // app back to portrait when navigating away (Menu tab, owner dashboard, etc.)
+  // so other screens never rotate. useFocusEffect re-runs on tab focus changes.
+  useFocusEffect(
+    useCallback(() => {
+      if (!allowLandscape) return;
+      allowAllOrientations();
+      return () => {
+        lockPortrait();
+      };
+    }, [allowLandscape])
+  );
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -304,25 +367,25 @@ export function OrdersScreen({ restaurantId }: OrdersScreenProps) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.black[50] }}>
-      {/* Header */}
+      {/* Header — compact vertical padding in landscape to give the board room */}
       <View
         style={{
           backgroundColor: theme.colors.white,
           borderBottomWidth: 1,
           borderBottomColor: theme.colors.black[100],
           paddingHorizontal: 16,
-          paddingTop: 12,
-          paddingBottom: 12,
+          paddingTop: isLandscape ? 8 : 12,
+          paddingBottom: isLandscape ? 8 : 12,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
         }}
       >
-        <View>
-          <Text style={{ fontSize: 19, fontWeight: "800", color: theme.colors.black[900] }}>
+        <View style={{ flexDirection: isLandscape ? "row" : "column", alignItems: isLandscape ? "center" : "flex-start", gap: isLandscape ? 10 : 0 }}>
+          <Text style={{ fontSize: isLandscape ? 16 : 19, fontWeight: "800", color: theme.colors.black[900] }}>
             Kitchen Display
           </Text>
-          <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: 2 }}>
+          <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: isLandscape ? 0 : 2 }}>
             {totalActive} active · {completedCount} completed
           </Text>
         </View>
@@ -353,71 +416,7 @@ export function OrdersScreen({ restaurantId }: OrdersScreenProps) {
         </Pressable>
       </View>
 
-      {/* Tab strip */}
-      <View
-        style={{
-          flexDirection: "row",
-          backgroundColor: theme.colors.white,
-          borderBottomWidth: 1,
-          borderBottomColor: theme.colors.black[100],
-        }}
-      >
-        {COLUMN_ORDER.map((col) => {
-          const config = COLUMN_CONFIG[col];
-          const count = col === "completed" ? completedCount : columns[col].length;
-          const isActive = activeTab === col;
-          return (
-            <Pressable
-              key={col}
-              onPress={() => setActiveTab(col)}
-              style={{
-                flex: 1,
-                paddingVertical: 12,
-                alignItems: "center",
-                borderBottomWidth: 2,
-                borderBottomColor: isActive ? config.accent : "transparent",
-              }}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: "700",
-                    color: isActive ? config.accent : theme.colors.black[400],
-                  }}
-                >
-                  {config.label}
-                </Text>
-                {count > 0 && (
-                  <View
-                    style={{
-                      minWidth: 18,
-                      height: 18,
-                      paddingHorizontal: 4,
-                      borderRadius: 9,
-                      backgroundColor: isActive ? config.accent : theme.colors.black[100],
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 10,
-                        fontWeight: "800",
-                        color: isActive ? "#fff" : theme.colors.black[500],
-                      }}
-                    >
-                      {count}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {/* Error banner */}
+      {/* Error banner — shared across portrait + landscape */}
       {!!actionError && (
         <Pressable
           onPress={() => setActionError(null)}
@@ -436,48 +435,239 @@ export function OrdersScreen({ restaurantId }: OrdersScreenProps) {
         </Pressable>
       )}
 
-      {/* Card list */}
-      <FlatList
-        data={tabOrders}
-        keyExtractor={(o) => o.id}
-        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[theme.colors.brand]}
-            tintColor={theme.colors.brand}
-          />
-        }
-        ListEmptyComponent={
-          <View style={{ alignItems: "center", paddingVertical: 64 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[400] }}>
-              {activeTab === "new"
-                ? "No new orders"
-                : activeTab === "in_progress"
-                  ? "Nothing in progress"
-                  : activeTab === "in_transit"
-                    ? "Nothing in transit"
-                    : "No completed orders"}
-            </Text>
-            {activeTab === "new" && (
-              <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: 4 }}>
-                New orders appear here in real time
-              </Text>
-            )}
+      {isLandscape ? (
+        /* ---- LANDSCAPE: multi-column Kanban board ----
+           The 4 COLUMN_ORDER columns side-by-side (equal flex), each scrolling
+           independently. Same tap-to-advance OrderCard as portrait — no literal
+           drag-and-drop, matching web parity. */
+        <View style={{ flex: 1, flexDirection: "row" }}>
+          {COLUMN_ORDER.map((col, idx) => {
+            const config = COLUMN_CONFIG[col];
+            const colOrders = columns[col];
+            const count = col === "completed" ? completedCount : colOrders.length;
+            return (
+              <View
+                key={col}
+                style={{
+                  flex: 1,
+                  borderLeftWidth: idx === 0 ? 0 : 1,
+                  borderLeftColor: theme.colors.black[100],
+                }}
+              >
+                {/* Column header */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    backgroundColor: theme.colors.white,
+                    borderBottomWidth: 2,
+                    borderBottomColor: config.accent,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "800",
+                      color: config.accent,
+                    }}
+                  >
+                    {config.label}
+                  </Text>
+                  {count > 0 && (
+                    <View
+                      style={{
+                        minWidth: 20,
+                        height: 20,
+                        paddingHorizontal: 5,
+                        borderRadius: 10,
+                        backgroundColor: config.accent,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#fff" }}>
+                        {count}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Independently scrolling card list */}
+                <FlatList
+                  data={colOrders}
+                  keyExtractor={(o) => o.id}
+                  contentContainerStyle={{
+                    padding: 10,
+                    gap: 10,
+                    paddingBottom: 24,
+                    flexGrow: 1,
+                  }}
+                  showsVerticalScrollIndicator={false}
+                  refreshControl={
+                    col === "new" ? (
+                      <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={[theme.colors.brand]}
+                        tintColor={theme.colors.brand}
+                      />
+                    ) : undefined
+                  }
+                  ListEmptyComponent={
+                    <View
+                      style={{
+                        flex: 1,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        paddingVertical: 40,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "600",
+                          color: theme.colors.black[400],
+                          textAlign: "center",
+                        }}
+                      >
+                        {col === "new"
+                          ? "No new orders"
+                          : col === "in_progress"
+                            ? "Nothing in progress"
+                            : col === "in_transit"
+                              ? "Nothing in transit"
+                              : "No completed orders"}
+                      </Text>
+                    </View>
+                  }
+                  renderItem={({ item }) => (
+                    <OrderCard
+                      order={item}
+                      column={col}
+                      isNew={newOrderIds.has(item.id)}
+                      loading={actionLoading === item.id}
+                      onUpdateStatus={handleUpdateStatus}
+                      onDispatchReady={openDispatch}
+                    />
+                  )}
+                />
+              </View>
+            );
+          })}
+        </View>
+      ) : (
+        <>
+          {/* Tab strip */}
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: theme.colors.white,
+              borderBottomWidth: 1,
+              borderBottomColor: theme.colors.black[100],
+            }}
+          >
+            {COLUMN_ORDER.map((col) => {
+              const config = COLUMN_CONFIG[col];
+              const count = col === "completed" ? completedCount : columns[col].length;
+              const isActive = activeTab === col;
+              return (
+                <Pressable
+                  key={col}
+                  onPress={() => setActiveTab(col)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                    borderBottomWidth: 2,
+                    borderBottomColor: isActive ? config.accent : "transparent",
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "700",
+                        color: isActive ? config.accent : theme.colors.black[400],
+                      }}
+                    >
+                      {config.label}
+                    </Text>
+                    {count > 0 && (
+                      <View
+                        style={{
+                          minWidth: 18,
+                          height: 18,
+                          paddingHorizontal: 4,
+                          borderRadius: 9,
+                          backgroundColor: isActive ? config.accent : theme.colors.black[100],
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            fontWeight: "800",
+                            color: isActive ? "#fff" : theme.colors.black[500],
+                          }}
+                        >
+                          {count}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
           </View>
-        }
-        renderItem={({ item }) => (
-          <OrderCard
-            order={item}
-            column={activeTab}
-            isNew={newOrderIds.has(item.id)}
-            loading={actionLoading === item.id}
-            onUpdateStatus={handleUpdateStatus}
-            onDispatchReady={openDispatch}
+
+          {/* Card list */}
+          <FlatList
+            data={tabOrders}
+            keyExtractor={(o) => o.id}
+            contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[theme.colors.brand]}
+                tintColor={theme.colors.brand}
+              />
+            }
+            ListEmptyComponent={
+              <View style={{ alignItems: "center", paddingVertical: 64 }}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[400] }}>
+                  {activeTab === "new"
+                    ? "No new orders"
+                    : activeTab === "in_progress"
+                      ? "Nothing in progress"
+                      : activeTab === "in_transit"
+                        ? "Nothing in transit"
+                        : "No completed orders"}
+                </Text>
+                {activeTab === "new" && (
+                  <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: 4 }}>
+                    New orders appear here in real time
+                  </Text>
+                )}
+              </View>
+            }
+            renderItem={({ item }) => (
+              <OrderCard
+                order={item}
+                column={activeTab}
+                isNew={newOrderIds.has(item.id)}
+                loading={actionLoading === item.id}
+                onUpdateStatus={handleUpdateStatus}
+                onDispatchReady={openDispatch}
+              />
+            )}
           />
-        )}
-      />
+        </>
+      )}
 
       <DispatchModal
         state={dispatchState}

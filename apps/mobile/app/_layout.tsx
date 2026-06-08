@@ -40,6 +40,20 @@ export default function RootLayout() {
     // Mount the notification presentation + tap-response handlers once. No-ops
     // safely when the notifications module is unavailable (e.g. web).
     initPushHandlers();
+    // App-wide default = portrait. app.config sets orientation:"default" so the
+    // OS permits rotation; we enforce portrait here so existing screens (owner
+    // dashboard, forms, login) never rotate. Only the frontline orders screen
+    // unlocks landscape, then re-locks on blur. Fully guarded so the app still
+    // runs where the native module is absent (web / Expo Go).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const ScreenOrientation = require("expo-screen-orientation");
+      ScreenOrientation?.lockAsync?.(
+        ScreenOrientation.OrientationLock.PORTRAIT_UP
+      ).catch(() => {});
+    } catch {
+      // expo-screen-orientation unavailable — no-op (web / Expo Go).
+    }
   }, []);
 
   // Gate the app shell on font load so brand typography is in place before the

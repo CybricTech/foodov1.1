@@ -166,13 +166,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     const supabase = getSupabase();
     capture("merchant_logout");
-    // Drop this device's push token BEFORE clearing the session — the unregister
-    // call is Bearer'd and needs the still-valid access token. Best-effort; we
-    // never block logout on it.
-    await unregisterForPushNotifications().catch(() => undefined);
-    await supabase?.auth.signOut();
+    // Best-effort: stop THIS device from receiving this account's order pushes.
+    // Fire-and-forget — we never await it, so a slow network can't stall logout.
+    // It only removes one device_tokens row (re-created on next login); the push
+    // system itself is untouched. It reads the still-valid session token at call
+    // time, so racing the sign-out below is fine (a 401 just no-ops).
+    void unregisterForPushNotifications().catch(() => undefined);
+    // Clear local auth state FIRST so the UI redirects to /login immediately,
+    // independent of any network round-trip.
     setSession(null);
     setProfile(null);
+    // Server sign-out with LOCAL scope: clears the on-device session WITHOUT a
+    // network call to the auth server, so a slow/unreachable Supabase can never
+    // hang logout (the default 'global' scope does a network request that can
+    // stall in React Native — the actual cause of the dead sign-out button).
+    try {
+      await supabase?.auth.signOut({ scope: "local" });
+    } catch {
+      /* state already cleared above */
+    }
   }, []);
 
   const value = useMemo<AuthContextValue>(

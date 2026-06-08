@@ -30,7 +30,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: "kitchyn-merchant",
   scheme: "kitchyn",
   version: "0.1.0",
-  orientation: "portrait",
+  // "default" lets the OS permit rotation so the frontline Kitchen Display can
+  // go landscape. App-wide portrait is then enforced in JS at the router root
+  // (app/_layout.tsx locks PORTRAIT_UP), and the frontline orders screen alone
+  // unlocks on focus / re-locks on blur. See expo-screen-orientation usage.
+  orientation: "default",
   icon: "./assets/icon.png",
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
@@ -75,7 +79,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         color: KITCHYN_PURPLE,
         // Bundle the custom new-order chime so the "orders" channel / iOS alert
         // can use it. Falls back to the system default sound if unsupported.
-        sounds: ["./assets/new-order.wav"],
+        // NOTE: filename must be a valid Android resource name ([a-z0-9_], no
+        // hyphens) or the expo-notifications prebuild fails.
+        sounds: ["./assets/new_order.wav"],
       },
     ],
     [
