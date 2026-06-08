@@ -45,9 +45,12 @@ import {
   ImagePlus,
 } from "lucide-react-native";
 
+import { router } from "expo-router";
+
 import type { Restaurant } from "@foodo/database";
 
 import { getSupabase } from "../../lib/supabase";
+import { ScreenHeader } from "../../components/screen-header";
 import { saveDeliveryPricing, saveLocation, ApiError } from "../../lib/api";
 import { theme } from "../../theme";
 import { pickMenuImage, uploadMenuImage } from "../menu-manager/image-upload";
@@ -411,9 +414,7 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.black[50] }}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
-      </View>
+      <ScreenHeader title="Settings" onBack={() => router.back()} />
 
       <ScrollView
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}
@@ -841,15 +842,6 @@ function RadioRow({
 }
 
 const styles = {
-  header: {
-    backgroundColor: theme.colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.black[100],
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 14,
-  },
-  headerTitle: { fontSize: 20, fontWeight: "800" as const, color: theme.colors.black[900] },
   retryBtn: {
     marginTop: 16,
     borderWidth: 1,

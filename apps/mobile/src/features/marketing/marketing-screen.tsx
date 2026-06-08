@@ -32,7 +32,6 @@ import {
 } from "react-native";
 
 import {
-  Megaphone,
   Plus,
   Sparkles,
   Ticket,
@@ -44,8 +43,11 @@ import {
 import { formatKobo, type DiscountType } from "@foodo/utils";
 import type { Discount } from "@foodo/database";
 
+import { router } from "expo-router";
+
 import { getSupabase } from "../../lib/supabase";
 import { theme } from "../../theme";
+import { ScreenHeader } from "../../components/screen-header";
 import { DiscountForm } from "./discount-form";
 import { SmsComposer } from "./sms-composer";
 
@@ -212,25 +214,16 @@ export function MarketingScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.black[50] }}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Megaphone size={18} color={theme.colors.brand} strokeWidth={2.25} />
-              <Text style={styles.headerTitle}>Marketing</Text>
-            </View>
-            {tab === "offers" ? (
-              <Text style={styles.headerSub}>
-                {discounts.length} offer{discounts.length === 1 ? "" : "s"} · {activeCount} active
-              </Text>
-            ) : (
-              <Text style={styles.headerSub}>
-                {customerCounts.all} customer{customerCounts.all === 1 ? "" : "s"} reachable
-              </Text>
-            )}
-          </View>
-          {tab === "offers" && (
+      <ScreenHeader
+        title="Marketing"
+        subtitle={
+          tab === "offers"
+            ? `${discounts.length} offer${discounts.length === 1 ? "" : "s"} · ${activeCount} active`
+            : `${customerCounts.all} customer${customerCounts.all === 1 ? "" : "s"} reachable`
+        }
+        onBack={() => router.back()}
+        right={
+          tab === "offers" ? (
             <Pressable
               onPress={() => setCreating(true)}
               style={[styles.newBtn, { flexDirection: "row", alignItems: "center", gap: 5 }]}
@@ -238,14 +231,14 @@ export function MarketingScreen({
               <Plus size={15} color={theme.colors.white} strokeWidth={2.5} />
               <Text style={styles.newBtnText}>New offer</Text>
             </Pressable>
-          )}
-        </View>
+          ) : null
+        }
+      />
 
-        {/* Tabs */}
-        <View style={{ flexDirection: "row", marginTop: 12, gap: 20 }}>
-          <TabBtn label="Offers" active={tab === "offers"} onPress={() => setTab("offers")} />
-          <TabBtn label="SMS Campaigns" active={tab === "sms"} onPress={() => setTab("sms")} />
-        </View>
+      {/* Tabs */}
+      <View style={styles.tabBar}>
+        <TabBtn label="Offers" active={tab === "offers"} onPress={() => setTab("offers")} />
+        <TabBtn label="SMS Campaigns" active={tab === "sms"} onPress={() => setTab("sms")} />
       </View>
 
       {tab === "offers" ? (
@@ -417,16 +410,14 @@ function Chip({ text, accent }: { text: string; accent?: boolean }) {
 }
 
 const styles = {
-  header: {
+  tabBar: {
+    flexDirection: "row" as const,
+    gap: 20,
     backgroundColor: theme.colors.white,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.black[100],
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
   },
-  headerTitle: { fontSize: 20, fontWeight: "800" as const, color: theme.colors.black[900] },
-  headerSub: { fontSize: 12, color: theme.colors.black[400], marginTop: 2 },
   newBtn: {
     backgroundColor: theme.colors.brand,
     borderRadius: 12,

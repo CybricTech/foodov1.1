@@ -40,8 +40,11 @@ import {
 import { formatKobo } from "@foodo/utils";
 import type { MenuCategory, MenuItemWithOptions } from "@foodo/database";
 
+import { router } from "expo-router";
+
 import { getSupabase } from "../../lib/supabase";
 import { theme } from "../../theme";
+import { ScreenHeader } from "../../components/screen-header";
 import { ItemFormModal } from "./item-form-modal";
 import { AddCategoryModal } from "./add-category-modal";
 import { RenameCategoryModal } from "./rename-category-modal";
@@ -277,19 +280,16 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.black[50] }}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Menu</Text>
-          <Text style={styles.subtitle}>
-            {items.length} item{items.length !== 1 ? "s" : ""} ·{" "}
-            {categories.length} categor{categories.length !== 1 ? "ies" : "y"}
-          </Text>
-        </View>
-        <Pressable onPress={() => setShowAddItem(true)} style={styles.addItemBtn}>
-          <Text style={styles.addItemText}>＋ Add item</Text>
-        </Pressable>
-      </View>
+      <ScreenHeader
+        title="Menu"
+        subtitle={`${items.length} item${items.length !== 1 ? "s" : ""} · ${categories.length} categor${categories.length !== 1 ? "ies" : "y"}`}
+        onBack={() => router.back()}
+        right={
+          <Pressable onPress={() => setShowAddItem(true)} style={styles.addItemBtn}>
+            <Text style={styles.addItemText}>＋ Add item</Text>
+          </Pressable>
+        }
+      />
 
       <FlatList
         data={categoryItems}
@@ -533,18 +533,6 @@ function Thumb({ url, available }: { url: string | null; available: boolean }) {
 }
 
 const styles = {
-  header: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    backgroundColor: theme.colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.black[100],
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 14,
-  },
-  title: { fontSize: 19, fontWeight: "800" as const, color: theme.colors.black[900] },
-  subtitle: { fontSize: 12, color: theme.colors.black[400], marginTop: 2 },
   addItemBtn: {
     backgroundColor: theme.colors.brand,
     borderRadius: 12,

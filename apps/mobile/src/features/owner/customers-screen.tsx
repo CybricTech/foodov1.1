@@ -22,6 +22,8 @@ import {
   View,
 } from "react-native";
 
+import { router } from "expo-router";
+
 import {
   Users,
   Search,
@@ -37,6 +39,7 @@ import type { Database } from "@foodo/database";
 import { getSupabase } from "../../lib/supabase";
 import { fetchCustomerOrders, ApiError, type CustomerOrder } from "../../lib/api";
 import { theme } from "../../theme";
+import { ScreenHeader } from "../../components/screen-header";
 
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
 type SortKey = "total_spent_kobo" | "total_orders" | "last_order_at" | "first_order_at";
@@ -138,26 +141,25 @@ export function CustomersScreen({ restaurantId }: CustomersScreenProps) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.black[50] }}>
-      {/* Header */}
+      <ScreenHeader
+        title="Customers"
+        subtitle={`${customers.length} total`}
+        onBack={() => router.back()}
+      />
+
+      {/* Search + sort */}
       <View
         style={{
           backgroundColor: theme.colors.white,
           borderBottomWidth: 1,
           borderBottomColor: theme.colors.black[100],
           paddingHorizontal: 16,
-          paddingTop: 16,
+          paddingTop: 14,
           paddingBottom: 14,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Users size={18} color={theme.colors.brand} strokeWidth={2.5} />
-          <Text style={{ fontSize: 18, fontWeight: "800", color: theme.colors.black[900] }}>
-            Customers ({customers.length})
-          </Text>
-        </View>
         <View
           style={{
-            marginTop: 12,
             flexDirection: "row",
             alignItems: "center",
             gap: 8,

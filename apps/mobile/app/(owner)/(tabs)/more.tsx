@@ -5,8 +5,8 @@
  */
 import { router } from "expo-router";
 
-import { useAuth } from "../../src/lib/auth";
-import { MoreScreen } from "../../src/features/owner/more-screen";
+import { useAuth } from "../../../src/lib/auth";
+import { MoreScreen } from "../../../src/features/owner/more-screen";
 
 export default function OwnerMoreRoute() {
   const { profile, signOut } = useAuth();

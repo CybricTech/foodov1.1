@@ -1,30 +1,21 @@
 /**
- * Owner route group — the full owner app, distinct from the (frontline) staff
- * group. Bottom tabs hold the primary destinations; the rest live behind "More"
- * (mirroring web, which surfaces primary nav items and tucks the overflow away).
+ * Owner area — a STACK that hosts the bottom-tab group plus the secondary
+ * screens reached from "More" (Customers / Menu / Marketing / Settings).
  *
- * Primary tabs:  Home · Orders · Wallet · Analytics · More
- * Behind "More": Customers (built), Menu/Marketing/Settings (Phase 2b
- *                placeholders), Frontline mode, Sign out.
+ * Why a stack: the secondary screens are now PUSHED on top of the tabs, which
+ * gives them (a) the native iOS/Android swipe-from-edge back gesture for free
+ * and (b) a back affordance — instead of the old setup where they were hidden
+ * tabs you switched into with no way back.
  *
- * Guards the group (no merchant profile → /login) and gates it to owners
- * (merchant_staff is bounced to the frontline queue). The ConnectionBanner sits
- * above the tabs so degraded connectivity is always visible.
+ * Headers are off here because each screen renders its own branded header (we
+ * inject a minimal back chevron into those). The swipe-back gesture works
+ * regardless of header visibility. Auth guarding lives here so it covers both
+ * the tabs and every pushed screen.
  */
-import { Redirect, Tabs } from "expo-router";
-import { View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Home,
-  ClipboardList,
-  Wallet as WalletIcon,
-  BarChart3,
-  MoreHorizontal,
-} from "lucide-react-native";
+import { Platform } from "react-native";
+import { Redirect, Stack } from "expo-router";
 
 import { useAuth } from "../../src/lib/auth";
-import { ConnectionBanner } from "../../src/components/connection-banner";
-import { theme } from "../../src/theme";
 
 export default function OwnerLayout() {
   const { loading, profile } = useAuth();
@@ -35,49 +26,22 @@ export default function OwnerLayout() {
   if (profile.role === "merchant_staff") return <Redirect href="/(frontline)/orders" />;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.white }} edges={["top"]}>
-      <ConnectionBanner />
-      <View style={{ flex: 1 }}>
-        <Tabs
-          screenOptions={{
-            headerShown: false,
-            tabBarActiveTintColor: theme.colors.brand,
-            tabBarInactiveTintColor: theme.colors.black[400],
-            tabBarStyle: {
-              backgroundColor: theme.colors.white,
-              borderTopColor: theme.colors.black[100],
-            },
-            tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
-          }}
-        >
-          <Tabs.Screen
-            name="index"
-            options={{ title: "Home", tabBarIcon: ({ color, size }) => <Home color={color} size={size ?? 22} /> }}
-          />
-          <Tabs.Screen
-            name="orders"
-            options={{ title: "Orders", tabBarIcon: ({ color, size }) => <ClipboardList color={color} size={size ?? 22} /> }}
-          />
-          <Tabs.Screen
-            name="wallet"
-            options={{ title: "Wallet", tabBarIcon: ({ color, size }) => <WalletIcon color={color} size={size ?? 22} /> }}
-          />
-          <Tabs.Screen
-            name="analytics"
-            options={{ title: "Analytics", tabBarIcon: ({ color, size }) => <BarChart3 color={color} size={size ?? 22} /> }}
-          />
-          <Tabs.Screen
-            name="more"
-            options={{ title: "More", tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size ?? 22} /> }}
-          />
-
-          {/* Reachable from "More" but not shown as tabs. */}
-          <Tabs.Screen name="customers" options={{ href: null }} />
-          <Tabs.Screen name="menu" options={{ href: null }} />
-          <Tabs.Screen name="marketing" options={{ href: null }} />
-          <Tabs.Screen name="settings" options={{ href: null }} />
-        </Tabs>
-      </View>
-    </SafeAreaView>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        gestureEnabled: true,
+        // Android: allow the swipe-back to start from anywhere on the screen,
+        // not just the very edge (closer to the iOS / Instagram feel).
+        ...(Platform.OS === "android" ? { fullScreenGestureEnabled: true } : null),
+      }}
+    >
+      {/* The bottom-tab group — the area's home. No card animation. */}
+      <Stack.Screen name="(tabs)" />
+      {/* Secondary screens push over the tabs with a swipe-back gesture. */}
+      <Stack.Screen name="customers" />
+      <Stack.Screen name="menu" />
+      <Stack.Screen name="marketing" />
+      <Stack.Screen name="settings" />
+    </Stack>
   );
 }
