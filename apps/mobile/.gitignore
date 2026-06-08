@@ -22,3 +22,5 @@ npm-debug.*
 
 expo-env.d.ts
 # @end expo-cli
+# Firebase / FCM secrets — never commit
+.secrets/

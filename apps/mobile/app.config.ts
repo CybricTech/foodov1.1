@@ -109,8 +109,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     appEnv: process.env.EXPO_PUBLIC_APP_ENV ?? "development",
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? null,
     eas: {
-      // Filled in by `eas init` (do not invent a real project id here).
-      projectId: process.env.EAS_PROJECT_ID ?? undefined,
+      // EAS project @amirtalib/kitchyn-merchant (created via `eas init`). The
+      // projectId is public (not a secret) and is required at runtime for
+      // getExpoPushTokenAsync(). Env var still wins if set.
+      projectId: process.env.EAS_PROJECT_ID ?? "fec93db7-9540-42c4-8fd7-79fb44ef7a3c",
     },
   },
 });
