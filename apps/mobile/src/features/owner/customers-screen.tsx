@@ -22,6 +22,15 @@ import {
   View,
 } from "react-native";
 
+import {
+  Users,
+  Search,
+  Phone,
+  ChevronLeft,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react-native";
+
 import { formatKobo } from "@foodo/utils";
 import type { Database } from "@foodo/database";
 
@@ -140,25 +149,38 @@ export function CustomersScreen({ restaurantId }: CustomersScreenProps) {
           paddingBottom: 14,
         }}
       >
-        <Text style={{ fontSize: 18, fontWeight: "800", color: theme.colors.black[900] }}>
-          Customers ({customers.length})
-        </Text>
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search by name or phone…"
-          placeholderTextColor={theme.colors.black[400]}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Users size={18} color={theme.colors.brand} strokeWidth={2.5} />
+          <Text style={{ fontSize: 18, fontWeight: "800", color: theme.colors.black[900] }}>
+            Customers ({customers.length})
+          </Text>
+        </View>
+        <View
           style={{
             marginTop: 12,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
             borderWidth: 1,
             borderColor: theme.colors.black[200],
             borderRadius: 12,
             paddingHorizontal: 14,
-            paddingVertical: 10,
-            fontSize: 14,
-            color: theme.colors.black[900],
           }}
-        />
+        >
+          <Search size={16} color={theme.colors.black[400]} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search by name or phone…"
+            placeholderTextColor={theme.colors.black[400]}
+            style={{
+              flex: 1,
+              paddingVertical: 10,
+              fontSize: 14,
+              color: theme.colors.black[900],
+            }}
+          />
+        </View>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -199,7 +221,8 @@ export function CustomersScreen({ restaurantId }: CustomersScreenProps) {
         keyExtractor={(c) => c.id}
         contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
         ListEmptyComponent={
-          <View style={{ paddingVertical: 48, alignItems: "center" }}>
+          <View style={{ paddingVertical: 48, alignItems: "center", gap: 8 }}>
+            <Users size={28} color={theme.colors.black[200]} strokeWidth={1.5} />
             <Text style={{ fontSize: 14, color: theme.colors.black[400] }}>
               {search ? "No matching customers" : "No customers yet"}
             </Text>
@@ -242,9 +265,17 @@ export function CustomersScreen({ restaurantId }: CustomersScreenProps) {
               >
                 {c.full_name ?? "—"}
               </Text>
-              <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: 2 }}>
-                {c.phone}
-              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  marginTop: 2,
+                }}
+              >
+                <Phone size={11} color={theme.colors.black[400]} />
+                <Text style={{ fontSize: 12, color: theme.colors.black[400] }}>{c.phone}</Text>
+              </View>
             </View>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.black[900] }}>
@@ -317,9 +348,14 @@ function CustomerDetail({
           paddingBottom: 8,
         }}
       >
-        <Pressable onPress={onBack} hitSlop={8} style={{ alignSelf: "flex-start" }}>
+        <Pressable
+          onPress={onBack}
+          hitSlop={8}
+          style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 2 }}
+        >
+          <ChevronLeft size={18} color={theme.colors.black[500]} />
           <Text style={{ fontSize: 14, color: theme.colors.black[500], fontWeight: "600" }}>
-            ‹ Back to customers
+            Back to customers
           </Text>
         </Pressable>
       </View>
@@ -441,7 +477,10 @@ function CustomerDetail({
               alignItems: "center",
             }}
           >
-            <Text style={{ fontSize: 14, color: theme.colors.black[400] }}>No orders found</Text>
+            <Search size={26} color={theme.colors.black[200]} strokeWidth={1.5} />
+            <Text style={{ fontSize: 14, color: theme.colors.black[400], marginTop: 8 }}>
+              No orders found
+            </Text>
           </View>
         ) : (
           <View style={{ gap: 12 }}>
@@ -519,9 +558,11 @@ function CustomerDetail({
                     >
                       {formatKobo(order.total_kobo)}
                     </Text>
-                    <Text style={{ fontSize: 14, color: theme.colors.black[400] }}>
-                      {isExpanded ? "▲" : "▼"}
-                    </Text>
+                    {isExpanded ? (
+                      <ChevronUp size={16} color={theme.colors.black[400]} />
+                    ) : (
+                      <ChevronDown size={16} color={theme.colors.black[400]} />
+                    )}
                   </Pressable>
 
                   {isExpanded ? (

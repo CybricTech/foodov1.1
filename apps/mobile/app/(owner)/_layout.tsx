@@ -14,6 +14,13 @@
 import { Redirect, Tabs } from "expo-router";
 import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  Home,
+  ClipboardList,
+  Wallet as WalletIcon,
+  BarChart3,
+  MoreHorizontal,
+} from "lucide-react-native";
 
 import { useAuth } from "../../src/lib/auth";
 import { ConnectionBanner } from "../../src/components/connection-banner";
@@ -45,23 +52,23 @@ export default function OwnerLayout() {
         >
           <Tabs.Screen
             name="index"
-            options={{ title: "Home", tabBarIcon: ({ color }) => <TabDot color={color} /> }}
+            options={{ title: "Home", tabBarIcon: ({ color, size }) => <Home color={color} size={size ?? 22} /> }}
           />
           <Tabs.Screen
             name="orders"
-            options={{ title: "Orders", tabBarIcon: ({ color }) => <TabDot color={color} /> }}
+            options={{ title: "Orders", tabBarIcon: ({ color, size }) => <ClipboardList color={color} size={size ?? 22} /> }}
           />
           <Tabs.Screen
             name="wallet"
-            options={{ title: "Wallet", tabBarIcon: ({ color }) => <TabDot color={color} /> }}
+            options={{ title: "Wallet", tabBarIcon: ({ color, size }) => <WalletIcon color={color} size={size ?? 22} /> }}
           />
           <Tabs.Screen
             name="analytics"
-            options={{ title: "Analytics", tabBarIcon: ({ color }) => <TabDot color={color} /> }}
+            options={{ title: "Analytics", tabBarIcon: ({ color, size }) => <BarChart3 color={color} size={size ?? 22} /> }}
           />
           <Tabs.Screen
             name="more"
-            options={{ title: "More", tabBarIcon: ({ color }) => <TabDot color={color} /> }}
+            options={{ title: "More", tabBarIcon: ({ color, size }) => <MoreHorizontal color={color} size={size ?? 22} /> }}
           />
 
           {/* Reachable from "More" but not shown as tabs. */}
@@ -72,12 +79,5 @@ export default function OwnerLayout() {
         </Tabs>
       </View>
     </SafeAreaView>
-  );
-}
-
-// Lightweight icon placeholder (no icon library dependency), matching frontline.
-function TabDot({ color }: { color: string }) {
-  return (
-    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }} />
   );
 }

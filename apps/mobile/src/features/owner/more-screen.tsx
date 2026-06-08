@@ -12,12 +12,23 @@
  *   - Sign out
  */
 import { Pressable, ScrollView, Text, View } from "react-native";
+import {
+  Users,
+  UtensilsCrossed,
+  Megaphone,
+  Settings,
+  LogOut,
+  LayoutDashboard,
+  ChevronRight,
+  type LucideIcon,
+} from "lucide-react-native";
 
 import { theme } from "../../theme";
 
 interface MoreLink {
   label: string;
   description: string;
+  icon: LucideIcon;
   onPress: () => void;
   badge?: string;
   destructive?: boolean;
@@ -49,21 +60,25 @@ export function MoreScreen({
         {
           label: "Customers",
           description: "Browse customers and order history",
+          icon: Users,
           onPress: onOpenCustomers,
         },
         {
           label: "Menu",
           description: "Edit items and categories",
+          icon: UtensilsCrossed,
           onPress: onOpenMenu,
         },
         {
           label: "Marketing",
           description: "Promotions and campaigns",
+          icon: Megaphone,
           onPress: onOpenMarketing,
         },
         {
           label: "Settings",
           description: "Store profile and preferences",
+          icon: Settings,
           onPress: onOpenSettings,
         },
       ],
@@ -74,6 +89,7 @@ export function MoreScreen({
         {
           label: "Frontline mode",
           description: "Open the live kitchen order queue",
+          icon: LayoutDashboard,
           onPress: onEnterFrontline,
         },
       ],
@@ -84,6 +100,7 @@ export function MoreScreen({
         {
           label: "Sign out",
           description: accountName,
+          icon: LogOut,
           onPress: onSignOut,
           destructive: true,
         },
@@ -136,7 +153,9 @@ export function MoreScreen({
                 overflow: "hidden",
               }}
             >
-              {section.links.map((link, i) => (
+              {section.links.map((link, i) => {
+                const Icon = link.icon;
+                return (
                 <Pressable
                   key={link.label}
                   onPress={link.onPress}
@@ -150,6 +169,26 @@ export function MoreScreen({
                     borderTopColor: theme.colors.black[100],
                   }}
                 >
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 10,
+                      backgroundColor: link.destructive
+                        ? theme.colors.cinnabar[100]
+                        : theme.colors.primary[50],
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Icon
+                      size={18}
+                      color={
+                        link.destructive ? theme.colors.cinnabar[500] : theme.colors.brand
+                      }
+                      strokeWidth={2.25}
+                    />
+                  </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text
                       style={{
@@ -185,10 +224,11 @@ export function MoreScreen({
                       </Text>
                     </View>
                   ) : (
-                    <Text style={{ fontSize: 18, color: theme.colors.black[200] }}>›</Text>
+                    <ChevronRight size={18} color={theme.colors.black[200]} />
                   )}
                 </Pressable>
-              ))}
+                );
+              })}
             </View>
           </View>
         ))}

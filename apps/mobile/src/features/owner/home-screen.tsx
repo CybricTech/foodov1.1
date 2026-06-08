@@ -21,6 +21,15 @@ import {
   View,
 } from "react-native";
 
+import {
+  TrendingUp,
+  ShoppingBag,
+  BarChart2,
+  Bike,
+  Store,
+  UtensilsCrossed,
+} from "lucide-react-native";
+
 import { formatKobo } from "@foodo/utils";
 
 import { getSupabase } from "../../lib/supabase";
@@ -163,10 +172,12 @@ function KpiCard({
   label,
   value,
   iconBg,
+  icon,
 }: {
   label: string;
   value: string;
   iconBg: string;
+  icon: React.ReactNode;
 }) {
   return (
     <View
@@ -186,8 +197,12 @@ function KpiCard({
           height: 32,
           borderRadius: 10,
           backgroundColor: iconBg,
+          alignItems: "center",
+          justifyContent: "center",
         }}
-      />
+      >
+        {icon}
+      </View>
       <View>
         <Text style={{ fontSize: 11, color: theme.colors.black[400], fontWeight: "500" }}>
           {label}
@@ -513,16 +528,19 @@ export function HomeScreen({ restaurantId }: HomeScreenProps) {
                 label="Revenue"
                 value={abbreviateKobo(revenue)}
                 iconBg={theme.colors.primary[100]}
+                icon={<TrendingUp size={16} color={theme.colors.primary[600]} strokeWidth={2.5} />}
               />
               <KpiCard
                 label="Orders"
                 value={orderCount.toString()}
                 iconBg={theme.colors.viridian[100]}
+                icon={<ShoppingBag size={16} color={theme.colors.viridian[500]} strokeWidth={2.5} />}
               />
               <KpiCard
                 label="Avg Order"
                 value={abbreviateKobo(avgOrderValue)}
                 iconBg={theme.colors.dixie[100]}
+                icon={<BarChart2 size={16} color={theme.colors.dixie[500]} strokeWidth={2.5} />}
               />
             </View>
 
@@ -576,6 +594,24 @@ export function HomeScreen({ restaurantId }: HomeScreenProps) {
                       borderTopColor: theme.colors.dixie[100],
                     }}
                   >
+                    <View
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 10,
+                        backgroundColor: theme.colors.white,
+                        borderWidth: 1,
+                        borderColor: theme.colors.dixie[500],
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {order.fulfillment_type === "delivery" ? (
+                        <Bike size={15} color={theme.colors.black[500]} />
+                      ) : (
+                        <Store size={15} color={theme.colors.black[500]} />
+                      )}
+                    </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                         <Text
@@ -624,6 +660,19 @@ export function HomeScreen({ restaurantId }: HomeScreenProps) {
               alignItems: "center",
             }}
           >
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 16,
+                backgroundColor: theme.colors.black[100],
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 12,
+              }}
+            >
+              <UtensilsCrossed size={22} color={theme.colors.black[400]} strokeWidth={1.5} />
+            </View>
             <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[500] }}>
               No orders yet
             </Text>

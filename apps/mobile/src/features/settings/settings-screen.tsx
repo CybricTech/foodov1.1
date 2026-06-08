@@ -32,6 +32,19 @@ import {
   View,
 } from "react-native";
 
+import {
+  Store,
+  Bell,
+  Share2,
+  ShoppingBag,
+  Power,
+  Clock,
+  Banknote,
+  MapPin,
+  Lock,
+  ImagePlus,
+} from "lucide-react-native";
+
 import type { Restaurant } from "@foodo/database";
 
 import { getSupabase } from "../../lib/supabase";
@@ -407,7 +420,10 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         keyboardShouldPersistTaps="handled"
       >
         {/* Restaurant profile */}
-        <Section title="Restaurant profile">
+        <Section
+          title="Restaurant profile"
+          icon={<Store size={18} color={theme.colors.brand} strokeWidth={2.25} />}
+        >
           <Field label="Restaurant name">
             <Input value={name} onChangeText={setName} />
           </Field>
@@ -476,7 +492,7 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
               </View>
             ) : (
               <Pressable onPress={() => handleImage("logo")} style={styles.uploadBox} disabled={logoUploading}>
-                <Text style={{ fontSize: 22 }}>🖼️</Text>
+                <ImagePlus size={24} color={theme.colors.black[400]} strokeWidth={1.75} />
                 <Text style={styles.uploadHint}>{logoUploading ? "Uploading…" : "Upload store logo"}</Text>
                 <Text style={styles.uploadSub}>JPG, PNG or WebP</Text>
               </Pressable>
@@ -501,7 +517,7 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
               </View>
             ) : (
               <Pressable onPress={() => handleImage("banner")} style={styles.uploadBox} disabled={bannerUploading}>
-                <Text style={{ fontSize: 22 }}>🖼️</Text>
+                <ImagePlus size={24} color={theme.colors.black[400]} strokeWidth={1.75} />
                 <Text style={styles.uploadHint}>{bannerUploading ? "Uploading…" : "Upload hero photo"}</Text>
                 <Text style={styles.uploadSub}>JPG, PNG or WebP</Text>
               </Pressable>
@@ -511,7 +527,10 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         </Section>
 
         {/* Notifications */}
-        <Section title="Notifications">
+        <Section
+          title="Notifications"
+          icon={<Bell size={18} color={theme.colors.brand} strokeWidth={2.25} />}
+        >
           <Field
             label="Order alert email"
             hint="New order alerts will be sent to this email address"
@@ -542,7 +561,10 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         </Section>
 
         {/* Social */}
-        <Section title="Social media">
+        <Section
+          title="Social media"
+          icon={<Share2 size={18} color={theme.colors.brand} strokeWidth={2.25} />}
+        >
           <Field label="Instagram">
             <Input value={instagramUrl} onChangeText={setInstagramUrl} autoCapitalize="none" placeholder="https://instagram.com/yourhandle" />
           </Field>
@@ -558,7 +580,10 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         </Section>
 
         {/* Ordering */}
-        <Section title="Ordering">
+        <Section
+          title="Ordering"
+          icon={<ShoppingBag size={18} color={theme.colors.brand} strokeWidth={2.25} />}
+        >
           <Field label="Minimum order (₦)">
             <Input value={minOrderNgn} onChangeText={setMinOrderNgn} keyboardType="numeric" placeholder="0" />
           </Field>
@@ -588,6 +613,7 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         {/* Close store */}
         <Section
           title="Close store"
+          icon={<Power size={18} color={theme.colors.brand} strokeWidth={2.25} />}
           subtitle="Manually close the store at any time — separate from operating hours. Use it for unexpected closures, breaks or holidays."
         >
           <View style={styles.toggleRow}>
@@ -616,6 +642,7 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         {/* Operating hours */}
         <Section
           title="Operating hours"
+          icon={<Clock size={18} color={theme.colors.brand} strokeWidth={2.25} />}
           subtitle="Customers see a closed notice outside these hours. Disabled days are closed all day."
         >
           {DAYS.map(({ key, label }) => {
@@ -682,6 +709,7 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         {/* Delivery pricing */}
         <Section
           title="Delivery pricing"
+          icon={<Banknote size={18} color={theme.colors.brand} strokeWidth={2.25} />}
           subtitle="Leave blank to use the platform default. Formula: base fee + (distance × per-km rate), capped at the max fee."
         >
           <View style={{ flexDirection: "row", gap: 12 }}>
@@ -724,6 +752,7 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         {/* Location */}
         <Section
           title="Restaurant location"
+          icon={<MapPin size={18} color={theme.colors.brand} strokeWidth={2.25} />}
           subtitle="Set your coordinates accurately — used to calculate delivery fees. In Google Maps, long-press your location and copy the numbers."
         >
           {hasLocation && (
@@ -761,7 +790,10 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         <StaffSection />
 
         {/* Password */}
-        <Section title="Change password">
+        <Section
+          title="Change password"
+          icon={<Lock size={18} color={theme.colors.brand} strokeWidth={2.25} />}
+        >
           {pwSuccess ? (
             <View style={styles.pwSuccessBox}>
               <Text style={styles.pwSuccessText}>{pwSuccess}</Text>

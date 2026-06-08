@@ -10,6 +10,8 @@
 import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 
+import { Banknote } from "lucide-react-native";
+
 import { fetchBanking, saveBanking, ApiError, type BankingInfo } from "../../lib/api";
 import { theme } from "../../theme";
 import { Section, Field, Input, PrimaryButton, SecondaryButton, ErrorText } from "./ui";
@@ -91,7 +93,10 @@ export function BankSection({ restaurantId }: { restaurantId: string }) {
   }
 
   return (
-    <Section title="Bank account">
+    <Section
+      title="Bank account"
+      icon={<Banknote size={18} color={theme.colors.brand} strokeWidth={2.25} />}
+    >
       {loading ? (
         <Text style={{ fontSize: 13, color: theme.colors.black[400] }}>Loading…</Text>
       ) : saved?.bank_account_name ? (

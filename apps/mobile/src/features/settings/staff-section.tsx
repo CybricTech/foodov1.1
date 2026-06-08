@@ -23,8 +23,14 @@ import {
   ApiError,
   type StaffUser,
 } from "../../lib/api";
+import { Users } from "lucide-react-native";
+
 import { theme } from "../../theme";
 import { Section, Field, Input, PrimaryButton, SecondaryButton, ErrorText } from "./ui";
+
+const STAFF_SECTION_ICON = (
+  <Users size={18} color={theme.colors.brand} strokeWidth={2.25} />
+);
 
 export function StaffSection() {
   const [staff, setStaff] = useState<StaffUser | null>(null);
@@ -132,7 +138,7 @@ export function StaffSection() {
 
   if (loading) {
     return (
-      <Section title="Frontline staff">
+      <Section title="Frontline staff" icon={STAFF_SECTION_ICON}>
         <View style={{ paddingVertical: 16, alignItems: "center" }}>
           <ActivityIndicator color={theme.colors.brand} />
         </View>
@@ -143,6 +149,7 @@ export function StaffSection() {
   return (
     <Section
       title="Frontline staff"
+      icon={STAFF_SECTION_ICON}
       subtitle="Create a staff account for your operations team. They'll get a simplified app with just Orders and Menu."
     >
       {successMsg ? (

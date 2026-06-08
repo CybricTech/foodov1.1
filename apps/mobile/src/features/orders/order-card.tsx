@@ -2,12 +2,12 @@
  * Frontline order card — RN port of the web `FrontlineOrderCard`.
  *
  * Built for one-handed kitchen use: large primary action button, high-contrast
- * status accents, tap-to-expand details (items + options + pricing breakdown),
- * tap-to-call customer, tap-to-open delivery address in maps. Status/dispatch
- * actions mirror the web column logic EXACTLY, including the platform-rider
- * "Kitchyn rider handling" lock state.
+ * status accents, and ALL details always visible (items + options + contact +
+ * pricing breakdown) — no tap-to-expand, so staff see the full order the moment
+ * it arrives. Tap-to-call customer, tap-to-open delivery address in maps.
+ * Status/dispatch actions mirror the web column logic EXACTLY, including the
+ * platform-rider "Kitchyn rider handling" lock state.
  */
-import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { formatKobo } from "@foodo/utils";
@@ -39,7 +39,6 @@ export function OrderCard({
   onUpdateStatus,
   onDispatchReady,
 }: OrderCardProps) {
-  const [expanded, setExpanded] = useState(false);
   const itemCount = getItemCount(order);
 
   return (
@@ -101,6 +100,9 @@ export function OrderCard({
         </View>
       </View>
 
+      {/* All order details — always visible (no expand/collapse). */}
+      <OrderDetails order={order} />
+
       {/* Action row */}
       <View
         style={{
@@ -108,7 +110,7 @@ export function OrderCard({
           alignItems: "center",
           gap: 8,
           paddingHorizontal: 14,
-          paddingTop: 8,
+          paddingTop: 10,
           paddingBottom: 12,
         }}
       >
@@ -119,34 +121,7 @@ export function OrderCard({
           onUpdateStatus={onUpdateStatus}
           onDispatchReady={onDispatchReady}
         />
-        <Pressable
-          onPress={() => setExpanded((e) => !e)}
-          style={({ pressed }) => ({
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: expanded ? theme.colors.primary[200] : theme.colors.black[200],
-            backgroundColor: expanded
-              ? theme.colors.primary[50]
-              : pressed
-                ? theme.colors.black[50]
-                : theme.colors.white,
-          })}
-        >
-          <Text
-            style={{
-              fontSize: 13,
-              fontWeight: "600",
-              color: expanded ? theme.colors.brand : theme.colors.black[500],
-            }}
-          >
-            {expanded ? "Hide" : "View"}
-          </Text>
-        </Pressable>
       </View>
-
-      {expanded && <OrderDetails order={order} />}
     </View>
   );
 }

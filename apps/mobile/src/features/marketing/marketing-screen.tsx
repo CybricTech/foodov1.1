@@ -31,6 +31,16 @@ import {
   View,
 } from "react-native";
 
+import {
+  Megaphone,
+  Plus,
+  Sparkles,
+  Ticket,
+  Power,
+  Pencil,
+  Trash2,
+} from "lucide-react-native";
+
 import { formatKobo, type DiscountType } from "@foodo/utils";
 import type { Discount } from "@foodo/database";
 
@@ -206,7 +216,10 @@ export function MarketingScreen({
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <View>
-            <Text style={styles.headerTitle}>Marketing</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Megaphone size={18} color={theme.colors.brand} strokeWidth={2.25} />
+              <Text style={styles.headerTitle}>Marketing</Text>
+            </View>
             {tab === "offers" ? (
               <Text style={styles.headerSub}>
                 {discounts.length} offer{discounts.length === 1 ? "" : "s"} · {activeCount} active
@@ -218,8 +231,12 @@ export function MarketingScreen({
             )}
           </View>
           {tab === "offers" && (
-            <Pressable onPress={() => setCreating(true)} style={styles.newBtn}>
-              <Text style={styles.newBtnText}>＋ New offer</Text>
+            <Pressable
+              onPress={() => setCreating(true)}
+              style={[styles.newBtn, { flexDirection: "row", alignItems: "center", gap: 5 }]}
+            >
+              <Plus size={15} color={theme.colors.white} strokeWidth={2.5} />
+              <Text style={styles.newBtnText}>New offer</Text>
             </Pressable>
           )}
         </View>
@@ -247,13 +264,17 @@ export function MarketingScreen({
           </View>
         ) : discounts.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={{ fontSize: 28 }}>✨</Text>
+            <Sparkles size={30} color={theme.colors.brand} strokeWidth={1.75} />
             <Text style={styles.emptyTitle}>No offers yet</Text>
             <Text style={styles.emptySub}>
               Create a promo code or a time-based discount to bring customers back and grow orders.
             </Text>
-            <Pressable onPress={() => setCreating(true)} style={styles.emptyBtn}>
-              <Text style={styles.emptyBtnText}>＋ Create your first offer</Text>
+            <Pressable
+              onPress={() => setCreating(true)}
+              style={[styles.emptyBtn, { flexDirection: "row", alignItems: "center", gap: 6 }]}
+            >
+              <Plus size={16} color={theme.colors.white} strokeWidth={2.5} />
+              <Text style={styles.emptyBtnText}>Create your first offer</Text>
             </Pressable>
           </View>
         ) : (
@@ -275,7 +296,22 @@ export function MarketingScreen({
 
                   <View style={styles.metaRow}>
                     {d.trigger === "code" && d.code ? (
-                      <Chip text={`🎟 ${d.code}`} accent />
+                      <View
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: theme.colors.primary[50],
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 4,
+                          },
+                        ]}
+                      >
+                        <Ticket size={12} color={theme.colors.brand} strokeWidth={2.25} />
+                        <Text style={[styles.chipText, { color: theme.colors.brand }]}>
+                          {d.code}
+                        </Text>
+                      </View>
                     ) : (
                       <Chip text="Automatic" />
                     )}
@@ -298,22 +334,25 @@ export function MarketingScreen({
                       <Pressable
                         onPress={() => toggleActive(d)}
                         disabled={busyId === d.id}
-                        style={styles.actionBtn}
+                        style={[styles.actionBtn, styles.actionBtnRow]}
                       >
+                        <Power size={13} color={theme.colors.black[500]} strokeWidth={2.25} />
                         <Text style={styles.actionText}>{d.is_active ? "Pause" : "Resume"}</Text>
                       </Pressable>
                       <Pressable
                         onPress={() => setEditing(d)}
                         disabled={busyId === d.id}
-                        style={styles.actionBtn}
+                        style={[styles.actionBtn, styles.actionBtnRow]}
                       >
+                        <Pencil size={13} color={theme.colors.black[500]} strokeWidth={2.25} />
                         <Text style={styles.actionText}>Edit</Text>
                       </Pressable>
                       <Pressable
                         onPress={() => archive(d)}
                         disabled={busyId === d.id}
-                        style={styles.actionBtn}
+                        style={[styles.actionBtn, styles.actionBtnRow]}
                       >
+                        <Trash2 size={13} color={theme.colors.cinnabar[500]} strokeWidth={2.25} />
                         <Text style={[styles.actionText, { color: theme.colors.cinnabar[500] }]}>
                           Archive
                         </Text>
@@ -450,5 +489,11 @@ const styles = {
     paddingTop: 8,
   },
   actionBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" as const },
+  actionBtnRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    gap: 5,
+  },
   actionText: { fontSize: 12, fontWeight: "600" as const, color: theme.colors.black[500] },
 };

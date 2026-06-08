@@ -17,17 +17,50 @@ import "../global.css";
 import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { ActivityIndicator, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { initObservability } from "../src/lib/observability";
 import { AuthProvider } from "../src/lib/auth";
 import { ConnectionProvider } from "../src/lib/connection";
+import { useBrandFonts, applyBrandFontPatch } from "../src/lib/fonts";
 import { theme } from "../src/theme";
 
+// Patch RN's <Text>/<TextInput> defaults once at module eval so the brand
+// fontFamily is injected globally based on each element's fontWeight. Idempotent
+// + crash-guarded (see src/lib/fonts.ts).
+applyBrandFontPatch();
+
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useBrandFonts();
+
   useEffect(() => {
     initObservability();
   }, []);
+
+  // Gate the app shell on font load so brand typography is in place before the
+  // first paint — no flash of system-font text that later restyles. If fonts
+  // fail to load we proceed anyway (system font) rather than hang forever.
+  if (!fontsLoaded && !fontError) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="light" backgroundColor={theme.colors.brand} />
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: theme.colors.brand,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ color: "#fff", fontSize: 28, fontWeight: "800", marginBottom: 16 }}>
+            Kitchyn
+          </Text>
+          <ActivityIndicator color="#fff" />
+        </View>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <SafeAreaProvider>

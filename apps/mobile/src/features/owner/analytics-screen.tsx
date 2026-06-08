@@ -21,6 +21,16 @@ import {
   View,
 } from "react-native";
 import { BarChart, LineChart, PieChart } from "react-native-gifted-charts";
+import {
+  TrendingUp,
+  ShoppingBag,
+  CreditCard,
+  Users,
+  BarChart2,
+  Clock,
+  PieChart as PieChartIcon,
+  Package,
+} from "lucide-react-native";
 
 import { formatKobo } from "@foodo/utils";
 
@@ -232,11 +242,13 @@ function KpiCard({
   label,
   value,
   iconBg,
+  icon,
   change,
 }: {
   label: string;
   value: string;
   iconBg: string;
+  icon: React.ReactNode;
   change: number;
 }) {
   const neutral = change === 0;
@@ -258,7 +270,18 @@ function KpiCard({
         gap: 10,
       }}
     >
-      <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: iconBg }} />
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 10,
+          backgroundColor: iconBg,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {icon}
+      </View>
       <View>
         <Text style={{ fontSize: 11, color: theme.colors.black[400], fontWeight: "500" }}>
           {label}
@@ -288,10 +311,12 @@ function KpiCard({
 function ChartCard({
   title,
   subtitle,
+  icon,
   children,
 }: {
   title: string;
   subtitle?: string;
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -312,9 +337,12 @@ function ChartCard({
           borderBottomColor: theme.colors.black[100],
         }}
       >
-        <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.black[900] }}>
-          {title}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {icon}
+          <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.black[900] }}>
+            {title}
+          </Text>
+        </View>
         {subtitle && (
           <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: 2 }}>
             {subtitle}
@@ -328,7 +356,8 @@ function ChartCard({
 
 function EmptyChart({ message }: { message: string }) {
   return (
-    <View style={{ paddingVertical: 40, alignItems: "center" }}>
+    <View style={{ paddingVertical: 40, alignItems: "center", gap: 8 }}>
+      <Package size={26} color={theme.colors.black[200]} strokeWidth={1.5} />
       <Text style={{ fontSize: 14, color: theme.colors.black[400] }}>{message}</Text>
     </View>
   );
@@ -547,24 +576,28 @@ export function AnalyticsScreen({ restaurantId }: AnalyticsScreenProps) {
                 label="Revenue"
                 value={formatKobo(currentMetrics.revenue)}
                 iconBg={theme.colors.primary[100]}
+                icon={<TrendingUp size={16} color={theme.colors.primary[600]} strokeWidth={2.5} />}
                 change={revenueChange}
               />
               <KpiCard
                 label="Orders"
                 value={currentMetrics.orders.toLocaleString()}
                 iconBg={theme.colors.viridian[100]}
+                icon={<ShoppingBag size={16} color={theme.colors.viridian[500]} strokeWidth={2.5} />}
                 change={ordersChange}
               />
               <KpiCard
                 label="Avg Order"
                 value={formatKobo(currentMetrics.aov)}
                 iconBg={theme.colors.dixie[100]}
+                icon={<CreditCard size={16} color={theme.colors.dixie[500]} strokeWidth={2.5} />}
                 change={aovChange}
               />
               <KpiCard
                 label="New Customers"
                 value={currentMetrics.newCustomers.toLocaleString()}
                 iconBg="#DBEAFE"
+                icon={<Users size={16} color="#2563EB" strokeWidth={2.5} />}
                 change={customersChange}
               />
             </View>
@@ -572,6 +605,7 @@ export function AnalyticsScreen({ restaurantId }: AnalyticsScreenProps) {
             {/* Revenue Trend */}
             <ChartCard
               title="Revenue Trend"
+              icon={<TrendingUp size={18} color={theme.colors.brand} strokeWidth={2.5} />}
               subtitle={
                 hasData
                   ? `${dailyData.length} day${dailyData.length !== 1 ? "s" : ""} · ${formatKobo(currentMetrics.revenue)} total`
@@ -608,6 +642,7 @@ export function AnalyticsScreen({ restaurantId }: AnalyticsScreenProps) {
             {/* Orders by Day */}
             <ChartCard
               title="Orders by Day"
+              icon={<BarChart2 size={18} color={theme.colors.brand} strokeWidth={2.5} />}
               subtitle={
                 hasData ? `${currentMetrics.orders} total orders` : "No data for selected period"
               }
@@ -636,6 +671,7 @@ export function AnalyticsScreen({ restaurantId }: AnalyticsScreenProps) {
             {/* Peak Hours */}
             <ChartCard
               title="Peak Hours"
+              icon={<Clock size={18} color={theme.colors.brand} strokeWidth={2.5} />}
               subtitle={hasData ? "Orders by hour of day" : "No data"}
             >
               {!hasData ? (
@@ -662,6 +698,7 @@ export function AnalyticsScreen({ restaurantId }: AnalyticsScreenProps) {
             {/* Order Status */}
             <ChartCard
               title="Order Status"
+              icon={<PieChartIcon size={18} color={theme.colors.brand} strokeWidth={2.5} />}
               subtitle={hasData ? `${orders.length} orders total` : "No data"}
             >
               {!hasData ? (

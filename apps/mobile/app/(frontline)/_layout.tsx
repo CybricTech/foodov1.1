@@ -15,6 +15,7 @@
 import { Redirect, router, Tabs } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ClipboardList, UtensilsCrossed } from "lucide-react-native";
 
 import { useAuth } from "../../src/lib/auth";
 import { ConnectionBanner } from "../../src/components/connection-banner";
@@ -67,27 +68,18 @@ export default function FrontlineLayout() {
             name="orders"
             options={{
               title: "Orders",
-              tabBarIcon: ({ color }) => <TabDot color={color} />,
+              tabBarIcon: ({ color, size }) => <ClipboardList color={color} size={size ?? 22} />,
             }}
           />
           <Tabs.Screen
             name="menu"
             options={{
               title: "Menu",
-              tabBarIcon: ({ color }) => <TabDot color={color} />,
+              tabBarIcon: ({ color, size }) => <UtensilsCrossed color={color} size={size ?? 22} />,
             }}
           />
         </Tabs>
       </View>
     </SafeAreaView>
-  );
-}
-
-// Lightweight icon placeholder (no icon library dependency added in Phase 1).
-function TabDot({ color }: { color: string }) {
-  return (
-    <View
-      style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }}
-    />
   );
 }

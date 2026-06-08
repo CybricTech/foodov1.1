@@ -21,16 +21,21 @@ import { theme } from "../../theme";
 export function Section({
   title,
   subtitle,
+  icon,
   children,
 }: {
   title: string;
   subtitle?: string;
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {icon}
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
       </View>
       <View style={styles.sectionBody}>
         {subtitle ? <Text style={styles.sectionSub}>{subtitle}</Text> : null}

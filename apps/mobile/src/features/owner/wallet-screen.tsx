@@ -27,6 +27,13 @@ import {
   View,
 } from "react-native";
 
+import {
+  Wallet,
+  Banknote,
+  ArrowDownToLine,
+  X,
+} from "lucide-react-native";
+
 import { formatKobo, computeOrderNet } from "@foodo/utils";
 
 import { getSupabase } from "../../lib/supabase";
@@ -300,7 +307,16 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
         />
       }
     >
-      <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+      <View
+        style={{
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <Wallet size={14} color={theme.colors.black[400]} strokeWidth={2.5} />
         <Text
           style={{
             fontSize: 11,
@@ -464,16 +480,12 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
             }}
           >
             {activityItems.length === 0 ? (
-              <Text
-                style={{
-                  textAlign: "center",
-                  paddingVertical: 40,
-                  fontSize: 14,
-                  color: theme.colors.black[400],
-                }}
-              >
-                No earnings yet
-              </Text>
+              <View style={{ paddingVertical: 40, alignItems: "center", gap: 8 }}>
+                <Banknote size={26} color={theme.colors.black[200]} strokeWidth={1.5} />
+                <Text style={{ fontSize: 14, color: theme.colors.black[400] }}>
+                  No earnings yet
+                </Text>
+              </View>
             ) : (
               activityGroups.map(({ label, items }) => (
                 <View key={label}>
@@ -561,16 +573,12 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
             }}
           >
             {settlements.length === 0 ? (
-              <Text
-                style={{
-                  textAlign: "center",
-                  paddingVertical: 40,
-                  fontSize: 14,
-                  color: theme.colors.black[400],
-                }}
-              >
-                No payouts yet
-              </Text>
+              <View style={{ paddingVertical: 40, alignItems: "center", gap: 8 }}>
+                <ArrowDownToLine size={26} color={theme.colors.black[200]} strokeWidth={1.5} />
+                <Text style={{ fontSize: 14, color: theme.colors.black[400] }}>
+                  No payouts yet
+                </Text>
+              </View>
             ) : (
               payoutGroups.map(({ label, items }) => (
                 <View key={label}>
@@ -620,6 +628,18 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
                           borderBottomColor: theme.colors.black[100],
                         }}
                       >
+                        <View
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 10,
+                            backgroundColor: theme.colors.primary[50],
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <ArrowDownToLine size={18} color={theme.colors.brand} strokeWidth={2.5} />
+                        </View>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text
                             style={{
@@ -746,7 +766,7 @@ function PayoutDetailModal({
               </Text>
             </View>
             <Pressable onPress={onClose} hitSlop={10}>
-              <Text style={{ fontSize: 20, color: theme.colors.black[400] }}>✕</Text>
+              <X size={22} color={theme.colors.black[400]} />
             </Pressable>
           </View>
 

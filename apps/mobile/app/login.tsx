@@ -2,12 +2,14 @@
  * Merchant login — branded email/password form mirroring the web login copy
  * ("Merchant Login" / "Sign in to manage your restaurant"). On success the auth
  * context resolves the merchant profile; a successful sign-in flips `profile`,
- * and the effect below redirects into the frontline group. PostHog
+ * and the effect below sends the user to "/" so index.tsx performs the single,
+ * role-based redirect (owner → dashboard, staff → frontline). PostHog
  * `merchant_login` is captured inside `signIn` (auth context).
  */
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -28,9 +30,11 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Once authenticated, leave the login screen.
+  // Once authenticated, hand off to "/" which routes by role (owner → owner
+  // dashboard, staff → frontline). Keeping that decision in one place (index.tsx)
+  // avoids the role-routing drifting between here and the entry redirect.
   useEffect(() => {
-    if (profile) router.replace("/(frontline)/orders");
+    if (profile) router.replace("/");
   }, [profile]);
 
   async function handleLogin() {
@@ -56,9 +60,12 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={{ alignItems: "center", marginBottom: 32 }}>
-          <Text style={{ fontSize: 32, fontWeight: "800", color: theme.colors.brand }}>
-            Kitchyn
-          </Text>
+          <Image
+            source={require("../assets/logo.png")}
+            style={{ width: 180, height: 62 }}
+            resizeMode="contain"
+            accessibilityLabel="Kitchyn"
+          />
           <Text style={{ fontSize: 22, fontWeight: "800", color: theme.colors.black[900], marginTop: 16 }}>
             Merchant Login
           </Text>
