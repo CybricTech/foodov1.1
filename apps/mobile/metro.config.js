@@ -46,12 +46,26 @@ const finalConfig = withNativeWind(config, {
   input: "./global.css",
 });
 
-// 5. Force a SINGLE copy of `react` and `react-native` into the bundle.
+// 5. Force a SINGLE copy of the React/runtime singletons into the bundle.
 //    A transitive dep (nativewind → react-native-css-interop) nests its own
-//    newer react-native, which Metro would otherwise bundle alongside the
-//    Expo SDK copy — producing duplicate-RN codegen errors. We redirect every
-//    `react`/`react-native` request to resolve from the app's node_modules by
-//    resetting the resolution origin, guaranteeing one version (the SDK's).
+//    NEWER react-native / react-dom / reanimated / worklets, which Metro would
+//    otherwise bundle alongside the Expo SDK copies. Two copies of react-native
+//    cause codegen errors at build time; two copies of reanimated/worklets are
+//    a classic runtime crash (the worklets runtime must be a single instance).
+//    We redirect every request for these packages to resolve from the app's
+//    node_modules by resetting the resolution origin, guaranteeing one version
+//    (the Expo SDK's). `expo-doctor` reports the on-disk duplicates; this makes
+//    the BUNDLE single-copy regardless.
+const SINGLETON_PACKAGES = [
+  "react",
+  "react-dom",
+  "react-native",
+  "react-native-reanimated",
+  "react-native-worklets",
+];
+const singletonPattern = new RegExp(
+  `^(${SINGLETON_PACKAGES.map((p) => p.replace(/[-]/g, "\\$&")).join("|")})(\\/|$)`
+);
 const previousResolveRequest = finalConfig.resolver.resolveRequest;
 const singletonOrigin = path.resolve(projectRoot, "node_modules", "__singleton__.js");
 finalConfig.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -63,7 +77,7 @@ finalConfig.resolver.resolveRequest = (context, moduleName, platform) => {
   if (/^react-native-linear-gradient(\/|$)/.test(moduleName)) {
     return context.resolveRequest(context, "expo-linear-gradient", platform);
   }
-  if (/^(react-native|react)(\/|$)/.test(moduleName)) {
+  if (singletonPattern.test(moduleName)) {
     return context.resolveRequest(
       { ...context, originModulePath: singletonOrigin },
       moduleName,
