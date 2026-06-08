@@ -1,17 +1,20 @@
-import { NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { NextRequest, NextResponse } from "next/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { getRequestUser } from "@/lib/supabase/get-request-user";
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createServerClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Auth check — accepts a mobile Bearer token OR the web cookie session.
+  const user = await getRequestUser(request);
 
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Bearer requests carry no cookie-backed RLS session, so use the service
+  // client for the lookups below (each is scoped to the caller's own
+  // restaurant_id, mirroring the Phase 1 dashboard routes).
+  const supabase = createServiceClient();
 
   const { data: profile } = await supabase
     .from("user_profiles")

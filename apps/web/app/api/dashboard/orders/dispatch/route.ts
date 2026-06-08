@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { getRequestUser } from "@/lib/supabase/get-request-user";
 import { sendTelegramRiderAlert } from "@/lib/telegram";
 
 /**
@@ -11,10 +12,8 @@ import { sendTelegramRiderAlert } from "@/lib/telegram";
  * Body: { order_id: string, dispatch_type: "platform_rider" | "own_rider" }
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Auth check — accepts a mobile Bearer token OR the web cookie session.
+  const user = await getRequestUser(request);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

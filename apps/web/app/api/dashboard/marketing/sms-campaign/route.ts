@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getRequestUser } from "@/lib/supabase/get-request-user";
 
 const SENDCHAMP_API = "https://api.sendchamp.com/api/v1/sms/send";
 const DEFAULT_SENDER = process.env.SENDCHAMP_DEFAULT_SENDER_ID ?? "Kitchyn";
@@ -53,10 +53,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const session = await getDashboardUser();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Accept a mobile Bearer token OR the web cookie session. Scope is then
+  // derived from the caller's own merchant profile (never a client-supplied id),
+  // so every downstream query below stays bound to the authenticated
+  // restaurant — matching the other dashboard routes and preserving behavior.
+  const user = await getRequestUser(request);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { restaurantId } = session;
+  const serviceClient = createServiceClient();
+
+  const { data: callerProfile } = await serviceClient
+    .from("user_profiles")
+    .select("role, restaurant_id")
+    .eq("id", user.id)
+    .single();
+
+  if (
+    !callerProfile ||
+    !["merchant_owner", "merchant_staff"].includes(callerProfile.role) ||
+    !callerProfile.restaurant_id
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const restaurantId = callerProfile.restaurant_id;
 
   let body: { audience?: string; message?: string };
   try {
@@ -76,8 +96,6 @@ export async function POST(request: NextRequest) {
   if (!["all", "inactive_30", "vip"].includes(audience)) {
     return NextResponse.json({ error: "Invalid audience" }, { status: 400 });
   }
-
-  const serviceClient = createServiceClient();
 
   const { data: restaurant } = await serviceClient
     .from("restaurants")
