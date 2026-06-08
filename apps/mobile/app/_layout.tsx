@@ -64,7 +64,10 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" backgroundColor={theme.colors.brand} />
+      {/* App screens are predominantly white, so the OS status bar (battery,
+          clock, signal) needs DARK text to be visible. The purple splash above
+          keeps light text. */}
+      <StatusBar style="dark" backgroundColor={theme.colors.white} />
       <AuthProvider>
         <ConnectionProvider>
           <Stack
