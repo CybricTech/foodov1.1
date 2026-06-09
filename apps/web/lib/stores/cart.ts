@@ -4,6 +4,16 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { SelectedOptionSnapshot } from "@foodo/database";
 
+/**
+ * How long a cart may sit untouched before it's considered stale and dropped on
+ * next load. The cart persists in localStorage indefinitely, so without this a
+ * customer can return days later to prices/items that have since changed. Live
+ * price + availability are still re-verified server-side at checkout
+ * (see app/api/checkout/initialize) — this is the complementary front-end
+ * guard that stops a long-abandoned cart from showing stale contents at all.
+ */
+const CART_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
+
 export interface CartItem {
   menuItemId: string;
   name: string;
@@ -25,6 +35,8 @@ interface CartStore {
   restaurantSlug: string | null;
   items: CartItem[];
   fulfillmentType: "delivery" | "pickup";
+  /** Epoch ms the cart contents were last modified — drives staleness expiry. */
+  updatedAt: number;
   setFulfillmentType: (type: "delivery" | "pickup") => void;
   addItem: (
     restaurantId: string,
@@ -49,6 +61,7 @@ export const useCartStore = create<CartStore>()(
       restaurantSlug: null,
       items: [],
       fulfillmentType: "delivery",
+      updatedAt: 0,
 
       setFulfillmentType(type) {
         set({ fulfillmentType: type });
@@ -62,6 +75,7 @@ export const useCartStore = create<CartStore>()(
               restaurantId,
               restaurantSlug,
               items: [{ ...item, lineTotal: item.price * item.quantity }],
+              updatedAt: Date.now(),
             };
           }
 
@@ -85,6 +99,7 @@ export const useCartStore = create<CartStore>()(
                     }
                   : i
               ),
+              updatedAt: Date.now(),
             };
           }
 
@@ -95,6 +110,7 @@ export const useCartStore = create<CartStore>()(
               ...state.items,
               { ...item, lineTotal: item.price * item.quantity },
             ],
+            updatedAt: Date.now(),
           };
         });
       },
@@ -104,6 +120,7 @@ export const useCartStore = create<CartStore>()(
           items: state.items.filter(
             (i) => !(i.menuItemId === menuItemId && i.optionsKey === optionsKey)
           ),
+          updatedAt: Date.now(),
         }));
       },
 
@@ -118,11 +135,12 @@ export const useCartStore = create<CartStore>()(
               ? { ...i, quantity, lineTotal: i.price * quantity }
               : i
           ),
+          updatedAt: Date.now(),
         }));
       },
 
       clear() {
-        set({ restaurantId: null, restaurantSlug: null, items: [], fulfillmentType: "delivery" });
+        set({ restaurantId: null, restaurantSlug: null, items: [], fulfillmentType: "delivery", updatedAt: 0 });
       },
 
       totalItems() {
@@ -138,6 +156,14 @@ export const useCartStore = create<CartStore>()(
       storage: createJSONStorage(() =>
         typeof window !== "undefined" ? localStorage : (null as never)
       ),
+      // On load, drop a cart that's been untouched past the TTL (or one persisted
+      // before updatedAt existed, which we can't date and treat as stale) so the
+      // customer never sees days-old items/prices. clear() resets the timestamp.
+      onRehydrateStorage: () => (state) => {
+        if (!state || state.items.length === 0) return;
+        const age = Date.now() - (state.updatedAt || 0);
+        if (age > CART_TTL_MS) state.clear();
+      },
     }
   )
 );
