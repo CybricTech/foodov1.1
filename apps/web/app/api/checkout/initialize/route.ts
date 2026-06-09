@@ -126,21 +126,41 @@ export async function POST(request: NextRequest) {
 
   const { data: menuItems } = await supabase
     .from("menu_items")
-    .select("id, price_kobo")
+    .select("id, price_kobo, is_available")
     .in("id", menuItemIds);
 
   const menuItemPriceMap = new Map(
     (menuItems ?? []).map((m) => [m.id, m.price_kobo])
   );
+  const menuItemAvailableMap = new Map(
+    (menuItems ?? []).map((m) => [m.id, m.is_available])
+  );
 
-  // Validate all submitted items exist in the menu
+  // Validate every submitted item still exists AND is switched on. Carts persist
+  // in localStorage indefinitely, so a customer can reach checkout with an item a
+  // merchant has since marked unavailable — this is the last server-side gate
+  // before payment, so availability MUST be enforced here, not just hidden on the
+  // storefront. Collect every offending line so the client can flag them precisely.
+  const unavailable: { menuItemId: string; name: string }[] = [];
   for (const item of data.items) {
-    if (!menuItemPriceMap.has(item.menuItemId)) {
-      return NextResponse.json(
-        { error: "One or more items are no longer available" },
-        { status: 422 }
-      );
+    if (
+      !menuItemPriceMap.has(item.menuItemId) ||
+      menuItemAvailableMap.get(item.menuItemId) === false
+    ) {
+      unavailable.push({ menuItemId: item.menuItemId, name: item.name });
     }
+  }
+  if (unavailable.length > 0) {
+    const names = unavailable.map((u) => u.name).join(", ");
+    return NextResponse.json(
+      {
+        error: `No longer available: ${names}. Please remove ${
+          unavailable.length > 1 ? "these items" : "this item"
+        } and try again.`,
+        unavailableItemIds: unavailable.map((u) => u.menuItemId),
+      },
+      { status: 409 }
+    );
   }
 
   // Fetch all choice modifier prices from DB
@@ -158,12 +178,41 @@ export async function POST(request: NextRequest) {
   if (allChoiceIds.length > 0) {
     const { data: choices } = await supabase
       .from("menu_item_option_choices")
-      .select("id, price_modifier_kobo")
+      .select("id, price_modifier_kobo, is_available")
       .in("id", allChoiceIds);
 
     choicePriceMap = new Map(
       (choices ?? []).map((c) => [c.id, c.price_modifier_kobo ?? 0])
     );
+
+    // A selected option (e.g. a size/extra) can also be switched off. Reject the
+    // order if any chosen modifier no longer exists or is unavailable.
+    const choiceAvailableMap = new Map(
+      (choices ?? []).map((c) => [c.id, c.is_available])
+    );
+    const unavailableChoices: string[] = [];
+    data.items.forEach((item) => {
+      item.selectedOptions?.forEach((opt) => {
+        opt.choices?.forEach((choice) => {
+          if (
+            !choiceAvailableMap.has(choice.choiceId) ||
+            choiceAvailableMap.get(choice.choiceId) === false
+          ) {
+            unavailableChoices.push(choice.choiceName);
+          }
+        });
+      });
+    });
+    if (unavailableChoices.length > 0) {
+      return NextResponse.json(
+        {
+          error: `No longer available: ${unavailableChoices.join(
+            ", "
+          )}. Please update your cart and try again.`,
+        },
+        { status: 409 }
+      );
+    }
   }
 
   // Recompute each item's true unit price from DB — client priceKobo is ignored

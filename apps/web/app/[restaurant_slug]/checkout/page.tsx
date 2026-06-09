@@ -45,6 +45,7 @@ export default function CheckoutPage() {
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore((s) => s.subtotalKobo)();
   const clearCart = useCartStore((s) => s.clear);
+  const removeItem = useCartStore((s) => s.removeItem);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -457,6 +458,15 @@ export default function CheckoutPage() {
 
       const initData = await res.json();
       if (!res.ok) {
+        // Items a merchant switched off while they sat in the cart are rejected
+        // server-side (409). Strip them so the shown total matches what can
+        // actually be ordered and the customer can retry without hunting.
+        if (Array.isArray(initData.unavailableItemIds)) {
+          const dead = new Set<string>(initData.unavailableItemIds);
+          items
+            .filter((i) => dead.has(i.menuItemId))
+            .forEach((i) => removeItem(i.menuItemId, i.optionsKey));
+        }
         setError(errorText(initData.error, "Payment initialization failed"));
         setLoading(false);
         return;
