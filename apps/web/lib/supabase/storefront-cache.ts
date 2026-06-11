@@ -22,7 +22,34 @@
  */
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
+import * as Sentry from "@sentry/nextjs";
 import { createServiceClient } from "./server";
+
+/**
+ * Degrade gracefully instead of crashing the page. Supabase occasionally
+ * returns transient infra errors (e.g. the Cloudflare 525 on 2026-06-11 that
+ * took down a live storefront — Sentry JAVASCRIPT-NEXTJS-Z). Non-critical
+ * reads (reviews, ratings, sales, featured items) should never turn one
+ * failed request into a dead page. The error is still reported to Sentry.
+ *
+ * Note: failures are NOT cached — unstable_cache only caches resolved
+ * values, so the next request retries the real query.
+ */
+export async function withFallback<T>(
+  promise: Promise<T>,
+  fallback: T,
+  context: string
+): Promise<T> {
+  try {
+    return await promise;
+  } catch (error) {
+    Sentry.captureException(error, {
+      level: "warning",
+      tags: { degraded_fetch: context },
+    });
+    return fallback;
+  }
+}
 import {
   getRestaurantBySlug,
   getRestaurantReviews,

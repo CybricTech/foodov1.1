@@ -6,6 +6,20 @@ import { ClosedNotice } from "@/components/storefront/closed-notice";
 import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
 import { StorefrontSplash } from "@/components/storefront/storefront-splash";
 
+/**
+ * THE key to storefront caching. Without generateStaticParams, a
+ * dynamic-segment route is ALWAYS fully dynamic at runtime — `revalidate = 60`
+ * on the pages is silently ignored (verified: .next/prerender-manifest.json
+ * had an empty dynamicRoutes, and production served cache-control: no-store
+ * on every request). Exporting it — even returning [] — opts the whole
+ * segment into on-demand ISR: first hit renders, subsequent hits are served
+ * from the CDN until each page's `revalidate` window expires. Slugs are
+ * deliberately NOT prefetched here so builds don't depend on DB reachability.
+ */
+export function generateStaticParams(): Array<{ restaurant_slug: string }> {
+  return [];
+}
+
 export default async function StorefrontLayout({
   children,
   params,

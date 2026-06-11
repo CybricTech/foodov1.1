@@ -7,6 +7,7 @@ import {
   getCachedReviews,
   getCachedRatingSummary,
   getCachedMenuItems,
+  withFallback,
 } from "@/lib/supabase/storefront-cache";
 import { LandingFeatured } from "@/components/storefront/landing-featured";
 import { transformImage } from "@/lib/images";
@@ -34,11 +35,19 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) notFound();
 
+  // Non-critical reads degrade gracefully: a transient Supabase failure on
+  // reviews/featured/sale must not crash the storefront (it did on 2026-06-11
+  // via a Cloudflare 525 — Sentry JAVASCRIPT-NEXTJS-Z). Only the restaurant
+  // lookup above is fatal, and it's caught by error.tsx.
   const [items, reviews, ratingSummary, sale] = await Promise.all([
-    getCachedMenuItems(restaurant.id),
-    getCachedReviews(restaurant.id),
-    getCachedRatingSummary(restaurant.id),
-    getActiveMenuSale(restaurant.id),
+    withFallback(getCachedMenuItems(restaurant.id), [], "storefront:menu-items"),
+    withFallback(getCachedReviews(restaurant.id), [], "storefront:reviews"),
+    withFallback(
+      getCachedRatingSummary(restaurant.id),
+      { average: 0, count: 0 },
+      "storefront:rating"
+    ),
+    withFallback(getActiveMenuSale(restaurant.id), null, "storefront:sale"),
   ]);
   const featured = items
     .filter((i) => i.is_featured)

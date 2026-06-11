@@ -19,10 +19,15 @@ Sentry.init({
     // Safari extensions / in-app WebViews referencing globals we never ship.
     // None of these identifiers exist anywhere in our codebase.
     "Can't find variable: CONFIG",
+    // Snapchat in-app browser bridge global.
+    "Can't find variable: SCDynimacBridge",
     // We render no iframes — injected scripts poking a torn-down iframe.
     /contentWindow\.postMessage/,
     // Android POS / WebView vendor bridge callback (frontline devices).
     "onModuleDataArrival is not defined",
+    // iOS WKWebView native bridge poked by scripts injected into in-app
+    // browsers (Instagram/TikTok) on the storefront. Not our code.
+    /window\.webkit\.messageHandlers/,
     // Next.js RSC stream interrupted mid-flight (tab closed, network drop).
     // Expected on admin pages that auto-refresh on reconnect/visibility.
     "Connection closed.",

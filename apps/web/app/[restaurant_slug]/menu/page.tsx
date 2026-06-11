@@ -7,6 +7,7 @@ import {
   getCachedMenuItems,
   getCachedMenuCategories,
   getCachedMenuAvailability,
+  withFallback,
 } from "@/lib/supabase/storefront-cache";
 import { transformImage } from "@/lib/images";
 import { CategoryTabs } from "@/components/storefront/category-tabs";
@@ -33,14 +34,21 @@ export default async function MenuPage({ params }: MenuPageProps) {
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) notFound();
 
+  // Categories + items are critical (a menu page without a menu should hit
+  // error.tsx and offer a retry, not render empty). Sale + availability are
+  // cosmetic — degrade gracefully on transient Supabase failures.
   const [categories, items, sale, availabilityRows] = await Promise.all([
     getCachedMenuCategories(restaurant.id),
     getCachedMenuItems(restaurant.id),
-    getActiveMenuSale(restaurant.id),
+    withFallback(getActiveMenuSale(restaurant.id), null, "menu:sale"),
     // Per-category availability incl. sold-out items, so a fully sold-out
     // category renders a "restocking" note instead of silently vanishing (its
     // items are hidden from getCachedMenuItems by the is_available filter).
-    getCachedMenuAvailability(restaurant.id),
+    withFallback(
+      getCachedMenuAvailability(restaurant.id),
+      [],
+      "menu:availability"
+    ),
   ]);
 
   const totalByCategory = new Map<string, number>();
