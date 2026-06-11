@@ -13,6 +13,7 @@ import {
   ArrowRight,
   UtensilsCrossed,
   ChevronRight,
+  StickyNote,
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
@@ -38,6 +39,7 @@ interface Order {
   payment_status: string;
   fulfillment_type: string;
   customer_name: string | null;
+  special_instructions: string | null;
   total_kobo: number;
   created_at: string;
 }
@@ -454,6 +456,12 @@ export function DashboardHomeClient({
                       <StatusBadge status={order.status} />
                     </div>
                     <p className="text-xs text-black-500 mt-0.5 truncate">{order.customer_name}</p>
+                    {order.special_instructions && (
+                      <p className="text-[11px] text-dixie-500 mt-0.5 flex items-center gap-1">
+                        <StickyNote size={10} className="flex-shrink-0" />
+                        <span className="truncate">{order.special_instructions}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Amount + chevron */}
@@ -518,6 +526,12 @@ export function DashboardHomeClient({
                       <StatusBadge status={order.status} />
                     </div>
                     <p className="text-xs text-black-400 mt-0.5 truncate">{order.customer_name}</p>
+                    {order.special_instructions && (
+                      <p className="text-[11px] text-dixie-500 mt-0.5 flex items-center gap-1">
+                        <StickyNote size={10} className="flex-shrink-0" />
+                        <span className="truncate">{order.special_instructions}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Amount + time */}

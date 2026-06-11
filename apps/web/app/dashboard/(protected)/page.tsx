@@ -23,7 +23,7 @@ export default async function DashboardHomePage() {
   const { data: orders } = await supabase
     .from("orders")
     .select(
-      "id, order_number, status, payment_status, fulfillment_type, customer_name, total_kobo, created_at"
+      "id, order_number, status, payment_status, fulfillment_type, customer_name, special_instructions, total_kobo, created_at"
     )
     .eq("restaurant_id", restaurantId)
     .neq("status", "cancelled")

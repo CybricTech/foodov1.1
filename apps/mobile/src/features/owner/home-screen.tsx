@@ -52,6 +52,7 @@ interface HomeOrder {
   payment_status: string;
   fulfillment_type: string;
   customer_name: string | null;
+  special_instructions: string | null;
   total_kobo: number;
   created_at: string;
 }
@@ -241,7 +242,7 @@ export function HomeScreen({ restaurantId }: HomeScreenProps) {
   const [, setTick] = useState(0);
 
   const ORDERS_SELECT =
-    "id, order_number, status, payment_status, fulfillment_type, customer_name, total_kobo, created_at";
+    "id, order_number, status, payment_status, fulfillment_type, customer_name, special_instructions, total_kobo, created_at";
 
   const fetchData = useCallback(async () => {
     if (!supabase) return;
@@ -627,6 +628,14 @@ export function HomeScreen({ restaurantId }: HomeScreenProps) {
                       >
                         {order.customer_name ?? "—"}
                       </Text>
+                      {!!order.special_instructions && (
+                        <Text
+                          style={{ fontSize: 11, color: theme.colors.black[500], marginTop: 2 }}
+                          numberOfLines={2}
+                        >
+                          📝 {order.special_instructions}
+                        </Text>
+                      )}
                     </View>
                     <Text
                       style={{ fontSize: 14, fontWeight: "700", color: theme.colors.black[900] }}
@@ -711,6 +720,14 @@ export function HomeScreen({ restaurantId }: HomeScreenProps) {
               >
                 {order.customer_name ?? "—"}
               </Text>
+              {!!order.special_instructions && (
+                <Text
+                  style={{ fontSize: 11, color: theme.colors.black[500], marginTop: 2 }}
+                  numberOfLines={2}
+                >
+                  📝 {order.special_instructions}
+                </Text>
+              )}
             </View>
             <View style={{ alignItems: "flex-end" }}>
               <Text

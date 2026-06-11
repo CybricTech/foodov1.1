@@ -73,7 +73,7 @@ export default function CheckoutPage() {
   const paidRef = useRef(false);
 
   const [aptSuiteFloor, setAptSuiteFloor] = useState("");
-  const [deliveryInstructions, setDeliveryInstructions] = useState("");
+  const [restaurantNote, setRestaurantNote] = useState("");
 
   const [serviceChargePct, setServiceChargePct] = useState(0);
   const [serviceChargeFixedKobo, setServiceChargeFixedKobo] = useState(0);
@@ -270,7 +270,8 @@ export default function CheckoutPage() {
       setDistanceKm(null);
       setDurationMinutes(null);
       setAptSuiteFloor("");
-      setDeliveryInstructions("");
+      // Note: restaurantNote is intentionally NOT cleared — it applies to both
+      // pickup and delivery now, so it should survive switching fulfillment type.
     }
   }, [fulfillmentType]);
 
@@ -442,7 +443,7 @@ export default function CheckoutPage() {
               : selectedPlaceAddress
             : undefined,
           deliveryBaseAddress: selectedPlaceAddress || undefined,
-          specialInstructions: deliveryInstructions.trim() || undefined,
+          specialInstructions: restaurantNote.trim() || undefined,
           deliveryFeeKobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
           deliveryDistanceKm: distanceKm ?? undefined,
           discountCode: appliedCode || undefined,
@@ -928,20 +929,24 @@ export default function CheckoutPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-black-500 mb-1.5">
-                  Delivery instructions <span className="text-black-300 font-normal">(optional)</span>
-                </label>
-                <textarea
-                  placeholder="Leave at front door, don't ring the bell…"
-                  value={deliveryInstructions}
-                  onChange={(e) => setDeliveryInstructions(e.target.value)}
-                  rows={3}
-                  className={cn(inputClass(false), "resize-none")}
-                />
-              </div>
             </div>
           )}
+
+          {/* Note for the restaurant — shown for both pickup & delivery so any
+              customer can leave a kitchen note (allergies, prep requests, etc.),
+              not just delivery instructions. Maps to orders.special_instructions. */}
+          <div className="px-4 py-4 border-t border-black-100">
+            <label className="block text-xs font-medium text-black-500 mb-1.5">
+              Note for the restaurant <span className="text-black-300 font-normal">(optional)</span>
+            </label>
+            <textarea
+              placeholder="Allergies, no onions, birthday message…"
+              value={restaurantNote}
+              onChange={(e) => setRestaurantNote(e.target.value)}
+              rows={3}
+              className={cn(inputClass(false), "resize-none")}
+            />
+          </div>
 
           {/* Order summary */}
           <div className="border-t border-black-100 divide-y divide-black-50">

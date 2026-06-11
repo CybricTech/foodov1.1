@@ -69,13 +69,26 @@ export async function sendTelegramRiderAlert(
       .single(),
   ]);
 
+  // parse_mode is HTML, so escape interpolated values — names/addresses can
+  // contain & < >, which would otherwise break the message or be dropped.
+  const esc = (v: string | number | null | undefined) =>
+    String(v ?? "—")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+  // Driver note: a self-contained block the dispatcher copies (the <pre> is
+  // tap-to-copy in Telegram) and pastes straight into Bolt's “Note to driver”
+  // when booking the ride manually. Reads as instructions to the driver.
+  const driverNote =
+    `Collect order #${esc(orderNumber)} from ${esc(restaurant?.name)}.\n` +
+    `Deliver to: ${esc(order?.customer_name)} (${esc(order?.customer_phone)})\n` +
+    `Address: ${esc(order?.delivery_address)}`;
+
   const text =
-    `🔔 <b>New Rider Request</b>\n\n` +
-    `Pickup restaurant: ${restaurant?.name ?? "—"}\n` +
-    `Pickup code: #${orderNumber}\n` +
-    `Receivers address: ${order?.delivery_address ?? "—"}\n` +
-    `Receivers phone number: ${order?.customer_phone ?? "—"}\n` +
-    `Receivers name: ${order?.customer_name ?? "—"}`;
+    `🔔 <b>New Rider Request</b>\n` +
+    `Copy the note below → paste into Bolt’s “Note to driver”:\n\n` +
+    `<pre>${driverNote}</pre>`;
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
