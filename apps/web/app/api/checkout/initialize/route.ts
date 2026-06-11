@@ -351,18 +351,28 @@ export async function POST(request: NextRequest) {
     deliveryFeeKobo,
     fulfillmentType: data.fulfillmentType,
     customerPhone: data.customerPhone,
+    // Exact destination — required for zone-targeted (geo-fenced) offers.
+    destinationLat: data.deliveryLat,
+    destinationLng: data.deliveryLng,
   });
 
   let discountSubtotalKobo = 0;
   let discountDeliveryKobo = 0;
   let discountId: string | null = null;
   let discountCode: string | null = null;
+  // Dispatch attribution to stamp onto the order. A free-delivery promo
+  // declares who delivers (own_rider / platform_rider); stamping it at
+  // creation lets settlement attribute the (waived) delivery fee correctly —
+  // platform_rider => merchant is debited the full fee (merchant-funded).
+  let dispatchType: string | null = null;
 
   if (appliedDiscount) {
     discountId = appliedDiscount.rule.id;
     discountCode = appliedDiscount.rule.code;
     if (appliedDiscount.result.freeDelivery) {
       discountDeliveryKobo = appliedDiscount.result.discountKobo;
+      dispatchType =
+        (appliedDiscount.rule.free_delivery_dispatch as string | null) ?? null;
     } else {
       discountSubtotalKobo = appliedDiscount.result.discountKobo;
     }
@@ -434,6 +444,9 @@ export async function POST(request: NextRequest) {
     // re-orders price from these coords with zero geocoding.
     delivery_lat: data.deliveryLat ?? null,
     delivery_lng: data.deliveryLng ?? null,
+    // Stamped onto the order by the webhook (free-delivery promo's declared
+    // rider) so settlement attributes the waived delivery fee correctly.
+    dispatch_type: dispatchType,
     discount_id: discountId,
     discount_code: discountCode,
     discount_kobo: discountKobo,

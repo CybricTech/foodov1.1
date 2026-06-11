@@ -205,6 +205,9 @@ async function handleSuccessfulTransaction(
     // or device GPS). Powers rider navigation deep-links to the precise pin.
     delivery_lat: (meta.delivery_lat as number) ?? null,
     delivery_lng: (meta.delivery_lng as number) ?? null,
+    // Free-delivery promos declare the rider; stamping it now lets settlement
+    // attribute the waived delivery fee (platform_rider => merchant-funded).
+    dispatch_type: (meta.dispatch_type as string) || null,
     order_number: fallbackOrderNumber,
   };
 

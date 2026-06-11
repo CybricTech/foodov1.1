@@ -18,6 +18,8 @@ const QuoteSchema = z.object({
   deliveryFeeKobo: z.number().int().min(0).default(0),
   fulfillmentType: z.enum(["delivery", "pickup"]),
   customerPhone: z.string().max(20).optional(),
+  destLat: z.number().min(-90).max(90).optional(),
+  destLng: z.number().min(-180).max(180).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -46,6 +48,8 @@ export async function POST(request: NextRequest) {
     deliveryFeeKobo: data.deliveryFeeKobo,
     fulfillmentType: data.fulfillmentType,
     customerPhone: data.customerPhone,
+    destinationLat: data.destLat,
+    destinationLng: data.destLng,
   });
 
   if (data.code && codeNotFound) {

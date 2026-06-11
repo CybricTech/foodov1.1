@@ -638,8 +638,10 @@ export type Database = {
         Row: {
           code: string | null
           created_at: string
+          delivery_zones: Json | null
           description: string | null
           ends_at: string | null
+          free_delivery_dispatch: string | null
           fulfillment_type: string | null
           id: string
           is_active: boolean
@@ -659,8 +661,10 @@ export type Database = {
         Insert: {
           code?: string | null
           created_at?: string
+          delivery_zones?: Json | null
           description?: string | null
           ends_at?: string | null
+          free_delivery_dispatch?: string | null
           fulfillment_type?: string | null
           id?: string
           is_active?: boolean
@@ -680,8 +684,10 @@ export type Database = {
         Update: {
           code?: string | null
           created_at?: string
+          delivery_zones?: Json | null
           description?: string | null
           ends_at?: string | null
+          free_delivery_dispatch?: string | null
           fulfillment_type?: string | null
           id?: string
           is_active?: boolean

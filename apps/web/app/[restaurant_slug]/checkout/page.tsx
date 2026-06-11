@@ -147,6 +147,9 @@ export default function CheckoutPage() {
         subtotalKobo: subtotal,
         deliveryFeeKobo: grossDelivery,
         fulfillmentType,
+        // Exact destination so geo-fenced free-delivery offers preview correctly.
+        destLat: fulfillmentType === "delivery" && selectedLat !== null ? selectedLat : undefined,
+        destLng: fulfillmentType === "delivery" && selectedLng !== null ? selectedLng : undefined,
         // Normalized to match how redemptions are stored, so per-customer
         // limits preview accurately.
         customerPhone: isValidNigerianPhone(phone) ? normalizeToE164(phone) : undefined,
@@ -169,7 +172,7 @@ export default function CheckoutPage() {
       .catch(() => {});
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurant?.id, subtotal, fulfillmentType, deliveryFeeKobo, appliedCode, phone]);
+  }, [restaurant?.id, subtotal, fulfillmentType, deliveryFeeKobo, appliedCode, phone, selectedLat, selectedLng]);
 
   async function applyPromo() {
     const code = promoInput.trim().toUpperCase();
@@ -187,6 +190,8 @@ export default function CheckoutPage() {
           subtotalKobo: subtotal,
           deliveryFeeKobo: grossDelivery,
           fulfillmentType,
+          destLat: fulfillmentType === "delivery" && selectedLat !== null ? selectedLat : undefined,
+          destLng: fulfillmentType === "delivery" && selectedLng !== null ? selectedLng : undefined,
           customerPhone: isValidNigerianPhone(phone) ? normalizeToE164(phone) : undefined,
         }),
       });

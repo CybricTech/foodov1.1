@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
 import {
   DISCOUNT_TYPE_LABELS,
   type DiscountType,
   type DiscountTrigger,
+  type DeliveryZone,
 } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import {
@@ -27,8 +28,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   Send,
+  MapPin,
+  Loader2,
+  Search,
 } from "lucide-react";
-import type { Discount } from "@foodo/database";
+import type { Discount, Json } from "@foodo/database";
 
 interface MarketingClientProps {
   restaurantId: string;
@@ -366,6 +370,22 @@ export function MarketingClient({
                       {d.fulfillment_type && (
                         <span className="text-[11px] font-medium text-black-500 bg-black-50 px-2 py-0.5 rounded-md capitalize">
                           {d.fulfillment_type} only
+                        </span>
+                      )}
+                      {d.type === "free_delivery" && Array.isArray(d.delivery_zones) && d.delivery_zones.length > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-black-500 bg-black-50 px-2 py-0.5 rounded-md">
+                          <MapPin size={12} /> {d.delivery_zones.length} area{d.delivery_zones.length > 1 ? "s" : ""}
+                        </span>
+                      )}
+                      {d.type === "free_delivery" && d.free_delivery_dispatch && (
+                        <span className={cn(
+                          "inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md",
+                          d.free_delivery_dispatch === "own_rider"
+                            ? "text-emerald-700 bg-emerald-50"
+                            : "text-purple-700 bg-purple-50"
+                        )}>
+                          {d.free_delivery_dispatch === "own_rider" ? <Truck size={12} /> : <Sparkles size={12} />}
+                          {d.free_delivery_dispatch === "own_rider" ? "Own rider" : "Platform-funded"}
                         </span>
                       )}
                     </div>
@@ -815,6 +835,22 @@ function DiscountForm({
       : ""
   );
 
+  // Geo-fenced free delivery: target specific areas (campuses, estates). Empty
+  // = free delivery everywhere (the original behaviour).
+  const [zones, setZones] = useState<DeliveryZone[]>(
+    Array.isArray(discount?.delivery_zones)
+      ? (discount!.delivery_zones as unknown as DeliveryZone[])
+      : []
+  );
+  // Who fulfils/funds a free-delivery order. Reuses orders.dispatch_type
+  // vocabulary so it stamps straight onto the order and settles correctly:
+  // 'platform_rider' => merchant-funded (debited the full fee at settlement);
+  // 'own_rider' => merchant delivers, Foodo takes only the 10% commission.
+  const [dispatch, setDispatch] = useState<"own_rider" | "platform_rider">(
+    (discount?.free_delivery_dispatch as "own_rider" | "platform_rider" | null) ??
+      "own_rider"
+  );
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -866,6 +902,12 @@ function DiscountForm({
       ends_at: endsAt ? new Date(endsAt).toISOString() : null,
       usage_limit_total: usageTotal ? Number(usageTotal) : null,
       usage_limit_per_customer: perCustomer ? Number(perCustomer) : null,
+      // Geo-fencing + dispatch attribution only apply to free-delivery offers.
+      delivery_zones:
+        type === "free_delivery" && zones.length > 0
+          ? (zones as unknown as Json)
+          : null,
+      free_delivery_dispatch: type === "free_delivery" ? dispatch : null,
     };
 
     let result;
@@ -1025,10 +1067,40 @@ function DiscountForm({
           )}
 
           {type === "free_delivery" && (
-            <p className="text-xs text-black-400 bg-black-50 rounded-xl px-3 py-2.5">
-              Waives the delivery fee on qualifying delivery orders. Tip: set a
-              minimum order below so it stays profitable.
-            </p>
+            <>
+              <p className="text-xs text-black-400 bg-black-50 rounded-xl px-3 py-2.5">
+                Waives the delivery fee on qualifying delivery orders. Tip: set a
+                minimum order below so it stays profitable.
+              </p>
+
+              {/* Who delivers / who pays */}
+              <Field label="Who delivers these orders?">
+                <div className="grid grid-cols-2 gap-2">
+                  <SegBtn
+                    active={dispatch === "own_rider"}
+                    onClick={() => setDispatch("own_rider")}
+                    icon={<Truck size={15} />}
+                    label="My own rider"
+                  />
+                  <SegBtn
+                    active={dispatch === "platform_rider"}
+                    onClick={() => setDispatch("platform_rider")}
+                    icon={<Sparkles size={15} />}
+                    label="Platform rider"
+                  />
+                </div>
+                <p className="text-[11px] text-black-400 mt-1.5">
+                  {dispatch === "own_rider"
+                    ? "You deliver with your own rider — the platform isn't dispatched and only takes its standard delivery commission."
+                    : "The platform dispatches a rider, and you fund the delivery — the full delivery fee is deducted from your settlement. A free-delivery promo never bills the platform."}
+                </p>
+              </Field>
+
+              {/* Geo-fenced areas (optional) */}
+              <Field label="Free delivery to specific areas (optional)">
+                <ZoneEditor zones={zones} onChange={setZones} />
+              </Field>
+            </>
           )}
 
           {/* Conditions */}
@@ -1198,6 +1270,187 @@ function NairaInput({
         placeholder={placeholder}
         className={cn(INPUT_CLS, "pl-7")}
       />
+    </div>
+  );
+}
+
+/** Radius presets shown per zone, in metres. */
+const ZONE_RADIUS_OPTIONS = [
+  { m: 500, label: "0.5 km" },
+  { m: 1000, label: "1 km" },
+  { m: 2000, label: "2 km" },
+  { m: 3000, label: "3 km" },
+];
+
+/**
+ * Places-powered editor for a discount's delivery zones. Searches addresses
+ * via our server proxy (/api/places/*), resolves the pick to exact
+ * coordinates, and stores each as a { name, lat, lng, radius_m } zone. The
+ * customer's destination is matched against these at checkout — no string
+ * matching, so "Baze University" means the campus, not a same-named street.
+ */
+function ZoneEditor({
+  zones,
+  onChange,
+}: {
+  zones: DeliveryZone[];
+  onChange: (zones: DeliveryZone[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [predictions, setPredictions] = useState<
+    Array<{ description: string; placeId: string }>
+  >([]);
+  const [showPred, setShowPred] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  function onQueryChange(val: string) {
+    setQuery(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (val.trim().length < 3) {
+      setPredictions([]);
+      setShowPred(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      try {
+        const res = await fetch(
+          `/api/places/autocomplete?input=${encodeURIComponent(val)}`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) {
+          setPredictions([]);
+          setShowPred(false);
+          return;
+        }
+        const data = await res.json();
+        const mapped = (data.suggestions ?? []) as Array<{
+          description: string;
+          placeId: string;
+        }>;
+        setPredictions(mapped);
+        setShowPred(mapped.length > 0);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setPredictions([]);
+        setShowPred(false);
+      }
+    }, 300);
+  }
+
+  async function addZone(p: { description: string; placeId: string }) {
+    setShowPred(false);
+    setQuery("");
+    setPredictions([]);
+    setResolving(true);
+    try {
+      const res = await fetch(
+        `/api/places/resolve?placeId=${encodeURIComponent(p.placeId)}`
+      );
+      if (res.ok) {
+        const d = await res.json();
+        if (typeof d.lat === "number" && typeof d.lng === "number") {
+          const dup = zones.some(
+            (z) =>
+              Math.abs(z.lat - d.lat) < 1e-5 && Math.abs(z.lng - d.lng) < 1e-5
+          );
+          if (!dup) {
+            const name = (p.description.split(",")[0] || p.description).trim();
+            onChange([...zones, { name, lat: d.lat, lng: d.lng, radius_m: 1000 }]);
+          }
+        }
+      }
+    } catch {
+      // ignore — merchant can retry
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  function setRadius(i: number, radius_m: number) {
+    onChange(zones.map((z, idx) => (idx === i ? { ...z, radius_m } : z)));
+  }
+  function remove(i: number) {
+    onChange(zones.filter((_, idx) => idx !== i));
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-black-400">
+          {resolving ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+        </span>
+        <input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onFocus={() => predictions.length > 0 && setShowPred(true)}
+          onBlur={() => setTimeout(() => setShowPred(false), 150)}
+          placeholder="Search a place, e.g. Baze University"
+          className={cn(INPUT_CLS, "pl-9")}
+          autoComplete="off"
+        />
+        {showPred && predictions.length > 0 && (
+          <div className="absolute z-50 w-full bg-white border border-black-200 rounded-xl shadow-lg mt-1 overflow-hidden">
+            {predictions.map((p) => (
+              <button
+                key={p.placeId}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  void addZone(p);
+                }}
+                className="w-full text-left px-3 py-2.5 text-sm text-black-900 hover:bg-black-50 border-b border-black-50 last:border-0 flex items-start gap-2"
+              >
+                <MapPin size={13} className="text-black-400 mt-0.5 flex-shrink-0" />
+                <span>{p.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {zones.length === 0 ? (
+        <p className="text-[11px] text-black-400">
+          Leave empty to waive delivery everywhere. Add areas to limit the offer
+          (e.g. campuses, estates).
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {zones.map((z, i) => (
+            <div
+              key={`${z.lat},${z.lng}`}
+              className="flex items-center gap-2 bg-black-50 rounded-xl px-3 py-2"
+            >
+              <MapPin size={14} className="text-purple-600 flex-shrink-0" />
+              <span className="text-sm text-black-800 truncate flex-1">{z.name}</span>
+              <select
+                value={z.radius_m}
+                onChange={(e) => setRadius(i, Number(e.target.value))}
+                className="text-xs bg-white border border-black-200 rounded-lg px-1.5 py-1 text-black-600"
+                aria-label="Coverage radius"
+              >
+                {ZONE_RADIUS_OPTIONS.map((o) => (
+                  <option key={o.m} value={o.m}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                className="w-6 h-6 rounded-lg hover:bg-black-100 flex items-center justify-center text-black-400 flex-shrink-0"
+                aria-label={`Remove ${z.name}`}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

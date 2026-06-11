@@ -15,6 +15,52 @@
 
 import type { DiscountTrigger, DiscountType } from "./constants";
 
+/**
+ * A geo-fenced delivery zone targeting a discount (e.g. a campus). The
+ * discount only applies when the order's destination falls within `radius_m`
+ * metres of the centre. Coordinates come from Google Places / device GPS, so
+ * matching is exact — no string matching.
+ */
+export interface DeliveryZone {
+  /** Human label shown to the merchant, e.g. "Baze University". */
+  name: string;
+  lat: number;
+  lng: number;
+  /** Match radius in metres. */
+  radius_m: number;
+}
+
+/**
+ * Great-circle distance between two coordinates, in metres (haversine).
+ * Used for delivery-zone matching; accurate enough at city scale.
+ */
+export function haversineMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const R = 6_371_000; // Earth radius, metres
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/** True when the destination falls within any of the given zones. */
+export function isWithinAnyZone(
+  zones: DeliveryZone[],
+  destLat: number,
+  destLng: number
+): boolean {
+  return zones.some(
+    (z) => haversineMeters(z.lat, z.lng, destLat, destLng) <= z.radius_m
+  );
+}
+
 /** The discount rule, mirroring the `discounts` table row (subset used here). */
 export interface DiscountRule {
   id: string;
@@ -32,6 +78,12 @@ export interface DiscountRule {
   usage_limit_per_customer: number | null;
   times_redeemed: number;
   is_active: boolean;
+  /**
+   * Optional geo-fencing. When non-empty, the discount applies only to
+   * delivery orders whose destination falls within one of these zones.
+   * Empty/null = applies everywhere (default).
+   */
+  delivery_zones?: DeliveryZone[] | null;
 }
 
 export interface DiscountContext {
@@ -42,6 +94,13 @@ export interface DiscountContext {
   customerRedemptionCount?: number;
   /** Defaults to now. Pass a fixed clock in tests. */
   now?: Date;
+  /**
+   * Exact destination coordinates (picked Places suggestion or device GPS).
+   * Required for a zone-targeted discount to match; absent => can't verify the
+   * zone, so a zoned discount is treated as ineligible.
+   */
+  destinationLat?: number | null;
+  destinationLng?: number | null;
 }
 
 export type DiscountIneligibleReason =
@@ -53,6 +112,7 @@ export type DiscountIneligibleReason =
   | "usage_limit_reached"
   | "per_customer_limit_reached"
   | "no_delivery_fee"
+  | "outside_delivery_zone"
   | "no_benefit";
 
 export interface DiscountResult {
@@ -90,6 +150,8 @@ export function discountIneligibleMessage(reason: DiscountIneligibleReason): str
       return "You've already used this offer.";
     case "no_delivery_fee":
       return "This is a free-delivery offer and there's no delivery fee to waive.";
+    case "outside_delivery_zone":
+      return "This offer only applies to delivery within specific areas.";
     case "no_benefit":
       return "This offer doesn't reduce your total.";
     default:
@@ -134,6 +196,22 @@ export function computeDiscount(
   // Fulfillment restriction
   if (rule.fulfillment_type && rule.fulfillment_type !== ctx.fulfillmentType) {
     return INELIGIBLE("wrong_fulfillment");
+  }
+
+  // Delivery-zone restriction. A zoned discount only applies to delivery
+  // orders whose destination falls within one of the zones. Without exact
+  // coordinates (free-text address) we can't verify it, so it doesn't apply.
+  if (rule.delivery_zones && rule.delivery_zones.length > 0) {
+    if (ctx.fulfillmentType !== "delivery") {
+      return INELIGIBLE("wrong_fulfillment");
+    }
+    if (
+      typeof ctx.destinationLat !== "number" ||
+      typeof ctx.destinationLng !== "number" ||
+      !isWithinAnyZone(rule.delivery_zones, ctx.destinationLat, ctx.destinationLng)
+    ) {
+      return INELIGIBLE("outside_delivery_zone");
+    }
   }
 
   // Minimum order (always measured on subtotal)

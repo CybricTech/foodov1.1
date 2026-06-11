@@ -1,5 +1,5 @@
 -- ============================================================
--- 066: Coordinate-backed delivery addresses (Phase 1 of
+-- 067: Coordinate-backed delivery addresses (Phase 1 of
 -- coordinates-first delivery pricing).
 --
 -- Saved addresses now store the lat/lng captured when the customer

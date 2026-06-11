@@ -14,6 +14,7 @@ import {
   formatKobo,
   type DiscountRule,
   type DiscountResult,
+  type DeliveryZone,
 } from "@foodo/utils";
 import type { Discount, TypedSupabaseClient } from "@foodo/database";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -26,6 +27,26 @@ export interface ResolveDiscountInput {
   deliveryFeeKobo: number;
   fulfillmentType: "delivery" | "pickup";
   customerPhone?: string | null;
+  /** Exact destination coordinates — required to match zone-targeted offers. */
+  destinationLat?: number | null;
+  destinationLng?: number | null;
+}
+
+/**
+ * Parse the `delivery_zones` JSONB column into validated zones. Defensive:
+ * tolerates legacy/null/malformed rows by returning null (= applies everywhere).
+ */
+function parseDeliveryZones(raw: unknown): DeliveryZone[] | null {
+  if (!Array.isArray(raw)) return null;
+  const zones = raw.filter(
+    (z): z is DeliveryZone =>
+      !!z &&
+      typeof z === "object" &&
+      typeof (z as DeliveryZone).lat === "number" &&
+      typeof (z as DeliveryZone).lng === "number" &&
+      typeof (z as DeliveryZone).radius_m === "number"
+  );
+  return zones.length > 0 ? zones : null;
 }
 
 export interface ResolvedDiscount {
@@ -61,6 +82,7 @@ function toRule(d: Discount): DiscountRule {
     usage_limit_per_customer: d.usage_limit_per_customer,
     times_redeemed: d.times_redeemed,
     is_active: d.is_active,
+    delivery_zones: parseDeliveryZones(d.delivery_zones),
   };
 }
 
@@ -135,6 +157,8 @@ export async function resolveDiscount(
     subtotalKobo: input.subtotalKobo,
     deliveryFeeKobo: input.deliveryFeeKobo,
     fulfillmentType: input.fulfillmentType,
+    destinationLat: input.destinationLat,
+    destinationLng: input.destinationLng,
     now: new Date(),
   };
 
