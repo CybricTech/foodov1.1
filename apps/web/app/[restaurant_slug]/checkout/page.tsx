@@ -410,9 +410,14 @@ export default function CheckoutPage() {
         // so checkout re-verification measures the same destination.
         setSelectedPlaceId(placeId ?? null);
         // Coordinates are the highest-trust destination — carry them to the
-        // submit payload so the server re-prices to the exact pin.
-        setSelectedLat(hasCoords ? (lat as number) : null);
-        setSelectedLng(hasCoords ? (lng as number) : null);
+        // submit payload so the server re-prices to the exact pin, and so
+        // geo-fenced offers (e.g. free delivery to a campus) can match. Prefer
+        // the exact picked/GPS coords; otherwise use the point the fee API
+        // resolved for a typed address.
+        const respLat = typeof data.destLat === "number" ? data.destLat : null;
+        const respLng = typeof data.destLng === "number" ? data.destLng : null;
+        setSelectedLat(hasCoords ? (lat as number) : respLat);
+        setSelectedLng(hasCoords ? (lng as number) : respLng);
       }
     } catch (err) {
       // AbortError is expected when the effect cleans up — don't surface it as a UI error.

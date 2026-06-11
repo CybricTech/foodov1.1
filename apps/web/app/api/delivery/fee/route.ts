@@ -114,9 +114,27 @@ export async function GET(request: NextRequest) {
 
   const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&units=metric&key=${apiKey}`;
 
-  const mapsRes = await fetch(mapsUrl);
-  const mapsData = await mapsRes.json();
+  // When the caller didn't already pass exact coordinates (i.e. a typed /
+  // free-text address), resolve the destination's coordinates in parallel with
+  // the distance lookup. Returning them lets the checkout match geo-fenced
+  // offers (e.g. free delivery to a campus) no matter how the address was
+  // entered — picked, GPS, or typed. Same geocode basis Distance Matrix used.
+  const geocodeUrl = !hasCoords
+    ? `https://maps.googleapis.com/maps/api/geocode/json?${
+        placeId
+          ? `place_id=${encodeURIComponent(placeId)}`
+          : `address=${encodeURIComponent(destinationAddress)}`
+      }&key=${apiKey}`
+    : null;
 
+  const [mapsData, geoData] = await Promise.all([
+    fetch(mapsUrl).then((r) => r.json()),
+    geocodeUrl
+      ? fetch(geocodeUrl)
+          .then((r) => r.json())
+          .catch(() => null)
+      : Promise.resolve(null),
+  ]);
 
   const element = mapsData?.rows?.[0]?.elements?.[0];
 
@@ -152,10 +170,26 @@ export async function GET(request: NextRequest) {
   const calculatedFee = baseFeeKobo + Math.round(distanceKm * perKmRateKobo);
   const feeKobo = Math.min(calculatedFee, maxFeeKobo);
 
+  // Destination coordinates the fee was priced against — exact when provided,
+  // else the geocoded point. The checkout uses these for geo-fenced offers.
+  const geoLoc = geoData?.results?.[0]?.geometry?.location;
+  const resolvedDestLat = hasCoords
+    ? destLat
+    : typeof geoLoc?.lat === "number"
+      ? geoLoc.lat
+      : null;
+  const resolvedDestLng = hasCoords
+    ? destLng
+    : typeof geoLoc?.lng === "number"
+      ? geoLoc.lng
+      : null;
+
   return NextResponse.json({
     feeKobo,
     distanceKm: Math.round(distanceKm * 10) / 10,
     durationMinutes,
+    destLat: resolvedDestLat,
+    destLng: resolvedDestLng,
     breakdown: {
       baseFeeKobo,
       distanceKm: Math.round(distanceKm * 10) / 10,
