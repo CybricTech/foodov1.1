@@ -6,6 +6,13 @@
  *   /admin/*     — requires authenticated super_admin
  *   /[slug]/*    — public; slug validation happens in the layout Server Component
  *   /delivery/*  — public; token validation happens in the page Server Component
+ *
+ * PERF: anonymous public-storefront traffic (no Supabase auth cookie, not headed
+ * for /dashboard or /admin) takes a FAST PATH that skips the Supabase client and
+ * getUser() entirely — no auth round-trip and no Set-Cookie, so those responses
+ * stay edge-cacheable. The session-refresh + poisoned-cookie logic only runs when
+ * an sb-* cookie is actually present or the route is auth-gated. (See the
+ * 2026-06-11 usage-exhaustion incident: getUser() ran on every request.)
  */
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
@@ -13,6 +20,54 @@ import type { Database } from "@foodo/database";
 import type { CookieOptions } from "@supabase/ssr";
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const hostname = request.headers.get("host") ?? "";
+
+  // ─── Subdomain routing classification (no Supabase needed) ──────────────────
+  const isDashboardSub = hostname === "dashboard.kitchyn.app";
+  const isAdminSub     = hostname === "admin.kitchyn.app";
+  // Reserved subdomains that are NOT restaurant storefronts. "staging" is the
+  // staging environment and must behave like the apex domain (path-based slug
+  // routing, e.g. /get-drizzys), not be treated as a restaurant named "staging".
+  const isReservedSub  =
+    hostname === "www.kitchyn.app" || hostname === "staging.kitchyn.app";
+  const isStorefrontSub =
+    hostname.endsWith(".kitchyn.app") &&
+    !isDashboardSub &&
+    !isAdminSub &&
+    !isReservedSub;
+
+  // Only /dashboard and /admin (by path or subdomain) require a session.
+  const isProtectedPath =
+    (pathname.startsWith("/dashboard") && !pathname.startsWith("/dashboard/login")) ||
+    (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login"));
+  const needsAuth = isDashboardSub || isAdminSub || isProtectedPath;
+
+  // ─── Fast path: anonymous public traffic ────────────────────────────────────
+  // No sb-* auth cookie and not auth-gated → skip the Supabase client + the
+  // getUser() round-trip entirely. The response carries no Set-Cookie, so the
+  // storefront stays edge-cacheable. Anything carrying an sb-* cookie (a logged-in
+  // merchant/admin browsing a storefront, or a poisoned stale cookie) falls
+  // through to the full path below, preserving all existing behaviour.
+  const hasAuthCookie = request.cookies
+    .getAll()
+    .some((c) => c.name.startsWith("sb-"));
+  if (!needsAuth && !hasAuthCookie) {
+    if (isStorefrontSub) {
+      const slug = hostname.replace(".kitchyn.app", "");
+      if (
+        !pathname.startsWith("/api") &&
+        !pathname.startsWith("/ingest") &&
+        !pathname.startsWith(`/${slug}`)
+      ) {
+        const rewritePath = pathname === "/" ? `/${slug}` : `/${slug}${pathname}`;
+        return NextResponse.rewrite(new URL(rewritePath, request.url));
+      }
+    }
+    return NextResponse.next();
+  }
+
+  // ─── Authenticated / cookie-bearing path ────────────────────────────────────
   let supabaseResponse = NextResponse.next({ request });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -78,9 +133,6 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const { pathname } = request.nextUrl;
-  const hostname = request.headers.get("host") ?? "";
-
   // Copy supabaseResponse cookies onto any new response we create.
   // Per Supabase SSR docs: every response returned from middleware MUST carry
   // the same Set-Cookie headers as supabaseResponse, otherwise the browser and
@@ -106,19 +158,6 @@ export async function middleware(request: NextRequest) {
   }
 
   // ─── Subdomain routing ─────────────────────────────────────────────────────
-  const isDashboardSub = hostname === "dashboard.kitchyn.app";
-  const isAdminSub     = hostname === "admin.kitchyn.app";
-  // Reserved subdomains that are NOT restaurant storefronts. "staging" is the
-  // staging environment and must behave like the apex domain (path-based slug
-  // routing, e.g. /get-drizzys), not be treated as a restaurant named "staging".
-  const isReservedSub  =
-    hostname === "www.kitchyn.app" || hostname === "staging.kitchyn.app";
-  const isStorefrontSub =
-    hostname.endsWith(".kitchyn.app") &&
-    !isDashboardSub &&
-    !isAdminSub &&
-    !isReservedSub;
-
   // dashboard.kitchyn.app/ → redirect to /dashboard (all /dashboard/* paths work as-is)
   if (isDashboardSub && pathname === "/") {
     return withSessionCookies(NextResponse.redirect(new URL("/dashboard", request.url)));
