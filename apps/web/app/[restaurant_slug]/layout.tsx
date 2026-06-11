@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import { createServerClient } from "@/lib/supabase/server";
-import { getRestaurantBySlug } from "@foodo/database";
+import { getCachedRestaurant } from "@/lib/supabase/storefront-cache";
 import { RestaurantProvider } from "@/components/storefront/restaurant-context";
 import { CartGuard } from "@/components/storefront/cart-guard";
 import { ClosedNotice } from "@/components/storefront/closed-notice";
@@ -14,8 +13,7 @@ export default async function StorefrontLayout({
   children: React.ReactNode;
   params: { restaurant_slug: string };
 }) {
-  const supabase = await createServerClient();
-  const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
 
   if (!restaurant) notFound();
 

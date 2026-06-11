@@ -3,8 +3,10 @@ import { runHealthChecks } from "@/lib/admin/health-checks";
 
 export const dynamic = "force-dynamic";
 
-// Push interval in ms — external API calls need ~2-5s headroom
-const PUSH_INTERVAL = 10_000;
+// Push interval in ms. Kept deliberately slow: each run fires 5 DB queries +
+// 3 external API probes, so a tight loop here meaningfully loads the database
+// (see 2026-06-11 usage-exhaustion incident). 30s is plenty for a status page.
+const PUSH_INTERVAL = 30_000;
 // Close the stream after this long; EventSource auto-reconnects seamlessly.
 // Keeps us well within Vercel's function timeout limits.
 const MAX_DURATION = 55_000;

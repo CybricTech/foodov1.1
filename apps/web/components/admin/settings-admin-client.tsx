@@ -21,6 +21,28 @@ interface SettingsAdminClientProps {
 }
 
 export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
+  // Test-order helper (dev tool) — drops a fake new order on CopperPot.
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  async function sendTestOrder() {
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/admin/test-order", { method: "POST" });
+      const data = await res.json();
+      setTestResult(
+        res.ok
+          ? `✅ Sent order ${data.orderNumber} to ${data.restaurant}`
+          : `❌ ${data.error ?? "Failed to send test order"}`
+      );
+    } catch (e) {
+      setTestResult(`❌ ${e instanceof Error ? e.message : "Network error"}`);
+    } finally {
+      setTestLoading(false);
+    }
+  }
+
   // Service charge config form state
   const [pct, setPct] = useState(
     settings ? (Number(settings.service_charge_pct) * 100).toFixed(1) : "3.0"
@@ -457,6 +479,31 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
             {savingDelivery ? "Saving…" : deliverySaved ? "Saved!" : "Save delivery pricing"}
           </button>
         </form>
+      </div>
+
+      {/* ── Testing (dev tool) ──────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <h2 className="font-bold text-black-900 text-sm">Testing</h2>
+          <p className="text-xs text-black-400 mt-0.5">
+            Drop a fake new order on CopperPot. It appears in the live orders
+            queue (realtime) and fires a push notification — the fast way to
+            test the merchant app without paying for a real order.
+          </p>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <button
+            type="button"
+            onClick={sendTestOrder}
+            disabled={testLoading}
+            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+          >
+            {testLoading ? "Sending…" : "Send test order to CopperPot"}
+          </button>
+          {testResult && (
+            <p className="text-xs font-medium text-black-700">{testResult}</p>
+          )}
+        </div>
       </div>
     </div>
   );

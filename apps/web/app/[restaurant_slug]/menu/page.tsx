@@ -2,9 +2,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Clock, ShoppingBag, ArrowLeft } from "lucide-react";
-import { createServerClient, createServiceClient } from "@/lib/supabase/server";
-import { getMenuCategories, getMenuItems } from "@foodo/database";
-import { getCachedRestaurant } from "@/lib/supabase/storefront-cache";
+import {
+  getCachedRestaurant,
+  getCachedMenuItems,
+  getCachedMenuCategories,
+  getCachedMenuAvailability,
+} from "@/lib/supabase/storefront-cache";
 import { transformImage } from "@/lib/images";
 import { CategoryTabs } from "@/components/storefront/category-tabs";
 import { MenuSections } from "@/components/storefront/menu-sections";
@@ -27,27 +30,18 @@ export async function generateMetadata({ params }: MenuPageProps) {
 }
 
 export default async function MenuPage({ params }: MenuPageProps) {
-  const supabase = await createServerClient();
-
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) notFound();
 
-  const [categories, items, sale] = await Promise.all([
-    getMenuCategories(supabase, restaurant.id),
-    getMenuItems(supabase, restaurant.id),
+  const [categories, items, sale, availabilityRows] = await Promise.all([
+    getCachedMenuCategories(restaurant.id),
+    getCachedMenuItems(restaurant.id),
     getActiveMenuSale(restaurant.id),
+    // Per-category availability incl. sold-out items, so a fully sold-out
+    // category renders a "restocking" note instead of silently vanishing (its
+    // items are hidden from getCachedMenuItems by the is_available filter).
+    getCachedMenuAvailability(restaurant.id),
   ]);
-
-  // Switched-off items are hidden from public (anon) visitors by RLS, so a
-  // fully sold-out category arrives here with zero items and would silently
-  // vanish — leaving a nav tab that scrolls to nothing. Use the service client
-  // (same pattern as the sale banner) to read true per-category availability so
-  // we can surface sold-out categories as "restocking" instead of dropping them.
-  const serviceClient = createServiceClient();
-  const { data: availabilityRows } = await serviceClient
-    .from("menu_items")
-    .select("category_id, is_available")
-    .eq("restaurant_id", restaurant.id);
 
   const totalByCategory = new Map<string, number>();
   const availableByCategory = new Map<string, number>();

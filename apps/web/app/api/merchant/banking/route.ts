@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { getRequestUser } from "@/lib/supabase/get-request-user";
 import { validateMonnifyBankAccount } from "@/lib/monnify";
 import { getPostHogClient } from "@/lib/posthog";
 
@@ -11,10 +12,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing restaurantId" }, { status: 400 });
   }
 
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getRequestUser(request);
 
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -46,10 +44,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getRequestUser(request);
 
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
