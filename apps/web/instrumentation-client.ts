@@ -16,6 +16,16 @@ Sentry.init({
   ignoreErrors: [
     "Java object is gone",
     "Error invoking postMessage",
+    // Safari extensions / in-app WebViews referencing globals we never ship.
+    // None of these identifiers exist anywhere in our codebase.
+    "Can't find variable: CONFIG",
+    // We render no iframes — injected scripts poking a torn-down iframe.
+    /contentWindow\.postMessage/,
+    // Android POS / WebView vendor bridge callback (frontline devices).
+    "onModuleDataArrival is not defined",
+    // Next.js RSC stream interrupted mid-flight (tab closed, network drop).
+    // Expected on admin pages that auto-refresh on reconnect/visibility.
+    "Connection closed.",
   ],
   denyUrls: [
     // Scripts injected by native in-app browser WebViews, not served by us.

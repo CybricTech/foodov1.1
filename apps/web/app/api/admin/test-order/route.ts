@@ -36,8 +36,11 @@ export async function POST(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const supabase = auth.serviceClient;
 
-  // Optional override; defaults to CopperPot.
-  let target = "copperpot";
+  // Optional override; defaults to CopperPot. Matched with ILIKE %target%, so
+  // keep this a substring shared by both the slug ("the-copper-pot") and the
+  // name ("The Copper Pot") — "copperpot" matches neither (the words aren't
+  // contiguous in the data).
+  let target = "copper";
   try {
     const body = (await req.json()) as { restaurant?: string };
     if (body?.restaurant) target = body.restaurant;
