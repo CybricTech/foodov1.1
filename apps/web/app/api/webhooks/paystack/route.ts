@@ -142,6 +142,10 @@ export async function POST(request: NextRequest) {
       ((meta.discount_kobo as number) || 0),
     delivery_distance_km: (meta.delivery_distance_km as number) || null,
     delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
+    // Exact destination coordinates the fee was priced from (picked suggestion
+    // or device GPS). Powers rider navigation deep-links to the precise pin.
+    delivery_lat: (meta.delivery_lat as number) ?? null,
+    delivery_lng: (meta.delivery_lng as number) ?? null,
     order_number: fallbackOrderNumber,
   };
 
@@ -285,6 +289,10 @@ export async function POST(request: NextRequest) {
             customer_id: customerRow.id,
             restaurant_id: restaurantId,
             address: deliveryAddress,
+            // Coordinate-back the saved address so re-selecting it re-prices
+            // from lat/lng with zero geocoding (eliminates the wrong-street snap).
+            lat: (meta.delivery_lat as number) ?? null,
+            lng: (meta.delivery_lng as number) ?? null,
           },
           { onConflict: "customer_id, address" }
         );

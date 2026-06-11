@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 
   const { data: addresses } = await supabase
     .from("customer_addresses")
-    .select("id, address, label, is_default")
+    .select("id, address, label, is_default, lat, lng")
     .eq("customer_id", customer.id)
     .eq("restaurant_id", restaurantId)
     .order("is_default", { ascending: false })

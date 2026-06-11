@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check } from "lucide-react";
+import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check, Navigation } from "lucide-react";
 import { z } from "zod";
 import posthog from "posthog-js";
 import { useCartStore } from "@/lib/stores/cart";
@@ -62,6 +62,12 @@ export default function CheckoutPage() {
   // same-named street elsewhere (GD-1331: "Mallam el rufai street …Lugbe"
   // resolved 9.3km to Wuse instead of 22.2km to River Park → ₦1.9k undercharge).
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  // Exact destination coordinates for the picked suggestion or device GPS.
+  // When set, these are the priced destination — Distance Matrix measures to
+  // the pin, never re-geocoding a string (GD-1331 fix, generalized to coords).
+  const [selectedLat, setSelectedLat] = useState<number | null>(null);
+  const [selectedLng, setSelectedLng] = useState<number | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
   const [deliveryFeeKobo, setDeliveryFeeKobo] = useState<number | null>(null);
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
@@ -69,8 +75,8 @@ export default function CheckoutPage() {
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
 
-  const placesReadyRef = useRef(false);
   const predictionsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const predictionsAbortRef = useRef<AbortController | null>(null);
   const deliveryFeeAbortRef = useRef<AbortController | null>(null);
   // Set in onSuccess so the empty-cart redirect below doesn't race the
   // navigation to /orders/pending. Without this guard a slow live Paystack
@@ -261,7 +267,7 @@ export default function CheckoutPage() {
   }, [addressInput, fulfillmentType]);
 
   const [savedAddresses, setSavedAddresses] = useState<
-    Array<{ id: string; address: string; label: string | null; is_default: boolean }>
+    Array<{ id: string; address: string; label: string | null; is_default: boolean; lat: number | null; lng: number | null }>
   >([]);
   const [phoneLoading, setPhoneLoading] = useState(false);
 
@@ -270,6 +276,8 @@ export default function CheckoutPage() {
       setAddressInput("");
       setSelectedPlaceAddress("");
       setSelectedPlaceId(null);
+      setSelectedLat(null);
+      setSelectedLng(null);
       setPredictions([]);
       setShowPredictions(false);
       setDeliveryFeeKobo(null);
@@ -282,61 +290,93 @@ export default function CheckoutPage() {
     }
   }, [fulfillmentType]);
 
-  useEffect(() => {
-    if (fulfillmentType !== "delivery") return;
-    let cancelled = false;
+  // Address autocomplete and place resolution are now served by our own
+  // /api/places/* proxy (server-side key), so there is no Google Maps JS to
+  // load in the browser — the old in-browser SDK silently failed in production
+  // because NEXT_PUBLIC_GOOGLE_MAPS_API_KEY was never set, leaving every order
+  // free-text priced.
 
-    async function loadPlaces() {
-      if (placesReadyRef.current) return;
-
-      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-        console.warn("[Checkout] NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set");
-        return;
+  // Resolve a picked suggestion to coordinates, then price from those coords.
+  // Trust hierarchy on the server: coordinates > place_id > free text — so a
+  // failed resolve still prices correctly via place_id.
+  async function selectPrediction(description: string, placeId: string | null) {
+    let lat: number | null = null;
+    let lng: number | null = null;
+    if (placeId) {
+      try {
+        const res = await fetch(
+          `/api/places/resolve?placeId=${encodeURIComponent(placeId)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.lat === "number" && typeof data.lng === "number") {
+            lat = data.lat;
+            lng = data.lng;
+          }
+        }
+      } catch {
+        // fall through — fee falls back to place_id, then text
       }
-
-      if (!document.getElementById("google-maps-script")) {
-        const script = document.createElement("script");
-        script.id = "google-maps-script";
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-        script.async = true;
-        document.head.appendChild(script);
-
-        await new Promise<void>((resolve, reject) => {
-          script.onload = () => resolve();
-          script.onerror = (e) => reject(e);
-        });
-      }
-
-      if (cancelled) return;
-
-      await new Promise<void>((resolve) => {
-        if (window.google?.maps?.places) { resolve(); return; }
-        const iv = setInterval(() => {
-          if (window.google?.maps?.places) { clearInterval(iv); resolve(); }
-        }, 100);
-      });
-
-      placesReadyRef.current = true;
     }
+    await calculateDeliveryFee(description, undefined, placeId, lat, lng);
+  }
 
-    loadPlaces().catch((err) =>
-      console.error("[Checkout] Failed to load Google Places:", err)
+  // Device GPS → coordinates are the priced destination; the reverse-geocoded
+  // string is only a label for the customer and rider.
+  async function useMyLocation() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setDeliveryFeeError("Location isn't available on this device — please type your address.");
+      return;
+    }
+    setGpsLoading(true);
+    setDeliveryFeeError("");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        let label = `Pinned location (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+        try {
+          const res = await fetch(`/api/places/reverse-geocode?lat=${lat}&lng=${lng}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.address) label = data.address as string;
+          }
+        } catch {
+          // keep the coordinate label — pricing never depends on this
+        }
+        setAddressInput(label);
+        setSelectedPlaceAddress(label);
+        setPredictions([]);
+        setShowPredictions(false);
+        setGpsLoading(false);
+        await calculateDeliveryFee(label, undefined, null, lat, lng);
+      },
+      (err) => {
+        setGpsLoading(false);
+        setDeliveryFeeError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission denied — please type your address."
+            : "Couldn't get your location — please type your address."
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
-
-    return () => { cancelled = true; };
-  }, [fulfillmentType]);
+  }
 
   async function calculateDeliveryFee(
     address: string,
     signal?: AbortSignal,
-    placeId?: string | null
+    placeId?: string | null,
+    lat?: number | null,
+    lng?: number | null
   ) {
     setDeliveryFeeLoading(true);
     setDeliveryFeeError("");
+    const hasCoords = typeof lat === "number" && typeof lng === "number";
     try {
       const url =
         `/api/delivery/fee?restaurantId=${restaurant.id}&destinationAddress=${encodeURIComponent(address)}` +
+        (hasCoords ? `&destLat=${lat}&destLng=${lng}` : "") +
         (placeId ? `&placeId=${encodeURIComponent(placeId)}` : "");
       const res = await fetch(url, signal ? { signal } : undefined);
       // If this request was aborted after it completed, discard the response so
@@ -364,6 +404,10 @@ export default function CheckoutPage() {
         // Remember which place_id this fee was computed for (null = free text),
         // so checkout re-verification measures the same destination.
         setSelectedPlaceId(placeId ?? null);
+        // Coordinates are the highest-trust destination — carry them to the
+        // submit payload so the server re-prices to the exact pin.
+        setSelectedLat(hasCoords ? (lat as number) : null);
+        setSelectedLng(hasCoords ? (lng as number) : null);
       }
     } catch (err) {
       // AbortError is expected when the effect cleans up — don't surface it as a UI error.
@@ -412,10 +456,16 @@ export default function CheckoutPage() {
     }
   }
 
-  function selectSavedAddress(addr: string) {
-    setAddressInput(addr);
-    setSelectedPlaceAddress(addr);
-    calculateDeliveryFee(addr);
+  function selectSavedAddress(addr: {
+    address: string;
+    lat: number | null;
+    lng: number | null;
+  }) {
+    setAddressInput(addr.address);
+    setSelectedPlaceAddress(addr.address);
+    // Coordinate-backed saved addresses re-price with zero geocoding; legacy
+    // rows (no coords) fall back to text pricing.
+    calculateDeliveryFee(addr.address, undefined, null, addr.lat, addr.lng);
   }
 
   function validate(): boolean {
@@ -462,6 +512,14 @@ export default function CheckoutPage() {
           deliveryPlaceId:
             fulfillmentType === "delivery" && selectedPlaceId
               ? selectedPlaceId
+              : undefined,
+          deliveryLat:
+            fulfillmentType === "delivery" && selectedLat !== null
+              ? selectedLat
+              : undefined,
+          deliveryLng:
+            fulfillmentType === "delivery" && selectedLng !== null
+              ? selectedLng
               : undefined,
           specialInstructions: restaurantNote.trim() || undefined,
           deliveryFeeKobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
@@ -826,7 +884,7 @@ export default function CheckoutPage() {
                       <button
                         key={addr.id}
                         type="button"
-                        onClick={() => selectSavedAddress(addr.address)}
+                        onClick={() => selectSavedAddress(addr)}
                         className={cn(
                           "text-xs px-3 py-1.5 rounded-lg border transition-colors",
                           addressInput === addr.address
@@ -842,12 +900,27 @@ export default function CheckoutPage() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-black-700 mb-1.5">
-                  <span className="flex items-center gap-1.5">
-                    <MapPin size={13} className="text-black-400" />
-                    Delivery address
-                  </span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium text-black-700">
+                    <span className="flex items-center gap-1.5">
+                      <MapPin size={13} className="text-black-400" />
+                      Delivery address
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={useMyLocation}
+                    disabled={gpsLoading}
+                    className="flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {gpsLoading ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Navigation size={12} />
+                    )}
+                    {gpsLoading ? "Locating…" : "Use my location"}
+                  </button>
+                </div>
                 <div className="relative">
                   <input
                     type="text"
@@ -857,7 +930,11 @@ export default function CheckoutPage() {
                       const val = e.target.value;
                       setAddressInput(val);
                       setSelectedPlaceAddress("");
-                      setSelectedPlaceId(null); // typed text invalidates the picked place
+                      // Typed text invalidates the picked place AND its coords,
+                      // so a stale pin can never price a different address.
+                      setSelectedPlaceId(null);
+                      setSelectedLat(null);
+                      setSelectedLng(null);
                       setDeliveryFeeKobo(null);
                       setDeliveryFeeError("");
                       setDistanceKm(null);
@@ -866,32 +943,40 @@ export default function CheckoutPage() {
                       if (predictionsDebounceRef.current) clearTimeout(predictionsDebounceRef.current);
 
                       if (val.trim().length < 3) {
+                        predictionsAbortRef.current?.abort();
                         setPredictions([]);
                         setShowPredictions(false);
                         return;
                       }
 
                       predictionsDebounceRef.current = setTimeout(async () => {
-                        if (!placesReadyRef.current) return;
+                        // Cancel any in-flight lookup so out-of-order responses
+                        // can't overwrite suggestions for newer input.
+                        predictionsAbortRef.current?.abort();
+                        const controller = new AbortController();
+                        predictionsAbortRef.current = controller;
                         try {
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          const ACS = (google.maps.places as any).AutocompleteSuggestion;
-                          const { suggestions } = await ACS.fetchAutocompleteSuggestions({
-                            input: val,
-                            includedRegionCodes: ["ng"],
-                            locationBias: {
-                              center: { lat: 9.0579, lng: 7.4951 },
-                              radius: 50000,
-                            },
-                          });
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          const mapped = (suggestions as any[]).filter((s: any) => s.placePrediction).map((s: any) => ({
-                            description: s.placePrediction.text?.text ?? s.placePrediction.description ?? "",
-                            place_id: s.placePrediction.placeId ?? "",
+                          const res = await fetch(
+                            `/api/places/autocomplete?input=${encodeURIComponent(val)}`,
+                            { signal: controller.signal }
+                          );
+                          if (!res.ok) {
+                            setPredictions([]);
+                            setShowPredictions(false);
+                            return;
+                          }
+                          const data = await res.json();
+                          const mapped = ((data.suggestions ?? []) as Array<{
+                            description: string;
+                            placeId: string;
+                          }>).map((s) => ({
+                            description: s.description,
+                            place_id: s.placeId,
                           }));
                           setPredictions(mapped);
                           setShowPredictions(mapped.length > 0);
-                        } catch {
+                        } catch (err) {
+                          if (err instanceof DOMException && err.name === "AbortError") return;
                           setPredictions([]);
                           setShowPredictions(false);
                         }
@@ -916,7 +1001,7 @@ export default function CheckoutPage() {
                             setSelectedPlaceAddress(p.description);
                             setPredictions([]);
                             setShowPredictions(false);
-                            calculateDeliveryFee(p.description, undefined, p.place_id || null);
+                            void selectPrediction(p.description, p.place_id || null);
                           }}
                           className="w-full text-left px-4 py-3 text-sm text-black-900 hover:bg-black-50 border-b border-black-50 last:border-0 cursor-pointer transition-colors"
                         >

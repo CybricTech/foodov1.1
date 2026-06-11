@@ -171,6 +171,8 @@ export type Database = {
           id: string
           is_default: boolean
           label: string | null
+          lat: number | null
+          lng: number | null
           restaurant_id: string
           updated_at: string
         }
@@ -181,6 +183,8 @@ export type Database = {
           id?: string
           is_default?: boolean
           label?: string | null
+          lat?: number | null
+          lng?: number | null
           restaurant_id: string
           updated_at?: string
         }
@@ -191,6 +195,8 @@ export type Database = {
           id?: string
           is_default?: boolean
           label?: string | null
+          lat?: number | null
+          lng?: number | null
           restaurant_id?: string
           updated_at?: string
         }

@@ -17,6 +17,22 @@ export async function GET(request: NextRequest) {
   // district (e.g. GD-1331: "Mallam el rufai street …Lugbe" resolved to a
   // street in Wuse at 9.3km instead of River Park Estate at 22.2km).
   const placeId = searchParams.get("placeId");
+  // Exact destination coordinates (picked suggestion resolved via
+  // /api/places/resolve, or device GPS). Highest-priority destination:
+  // coordinates skip geocoding entirely.
+  const destLatRaw = searchParams.get("destLat");
+  const destLngRaw = searchParams.get("destLng");
+  const destLat = destLatRaw !== null ? Number(destLatRaw) : null;
+  const destLng = destLngRaw !== null ? Number(destLngRaw) : null;
+  const hasCoords =
+    destLat !== null &&
+    destLng !== null &&
+    Number.isFinite(destLat) &&
+    Number.isFinite(destLng) &&
+    destLat >= -90 &&
+    destLat <= 90 &&
+    destLng >= -180 &&
+    destLng <= 180;
 
   if (!restaurantId || !destinationAddress) {
     return NextResponse.json(
@@ -89,9 +105,12 @@ export async function GET(request: NextRequest) {
   }
 
   const origin = `${restaurant.latitude},${restaurant.longitude}`;
-  const destination = placeId
-    ? encodeURIComponent(`place_id:${placeId}`)
-    : encodeURIComponent(destinationAddress);
+  // Destination trust hierarchy: exact coordinates > place_id > free text.
+  const destination = hasCoords
+    ? encodeURIComponent(`${destLat},${destLng}`)
+    : placeId
+      ? encodeURIComponent(`place_id:${placeId}`)
+      : encodeURIComponent(destinationAddress);
 
   const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&units=metric&key=${apiKey}`;
 

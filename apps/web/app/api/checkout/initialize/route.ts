@@ -37,6 +37,9 @@ const InitializeSchema = z.object({
   deliveryBaseAddress: z.string().optional(),
   /** Google place_id of the picked autocomplete prediction (exact destination). */
   deliveryPlaceId: z.string().max(300).optional(),
+  /** Exact destination coordinates (resolved suggestion or device GPS). */
+  deliveryLat: z.number().min(-90).max(90).optional(),
+  deliveryLng: z.number().min(-180).max(180).optional(),
   specialInstructions: z.string().max(500).optional(),
   deliveryFeeKobo: z.number().int().min(0).optional(),
   deliveryDistanceKm: z.number().min(0).optional(),
@@ -290,9 +293,15 @@ export async function POST(request: NextRequest) {
         // ₦1.9k undercharge). Fall back to the raw Places text — never the
         // combined string with the apt/floor field, which can also mislead
         // geocoding ("House 14a Addis Ababa" → Addis Ababa Crescent).
-        const destination = data.deliveryPlaceId
-          ? encodeURIComponent(`place_id:${data.deliveryPlaceId}`)
-          : encodeURIComponent(data.deliveryBaseAddress ?? data.deliveryAddress ?? "");
+        // Coordinates (resolved suggestion or device GPS) are the most
+        // trusted destination — no geocoding at all.
+        const hasCoords =
+          data.deliveryLat !== undefined && data.deliveryLng !== undefined;
+        const destination = hasCoords
+          ? encodeURIComponent(`${data.deliveryLat},${data.deliveryLng}`)
+          : data.deliveryPlaceId
+            ? encodeURIComponent(`place_id:${data.deliveryPlaceId}`)
+            : encodeURIComponent(data.deliveryBaseAddress ?? data.deliveryAddress ?? "");
         const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&units=metric&key=${process.env.GOOGLE_MAPS_API_KEY}`;
 
         const mapsRes = await fetch(mapsUrl);
@@ -420,6 +429,11 @@ export async function POST(request: NextRequest) {
     service_fee_kobo: serviceFeeKobo,
     service_charge_pct: serviceChargePct,
     delivery_distance_km: data.deliveryDistanceKm ?? null,
+    // Exact destination coordinates (picked suggestion or device GPS), so the
+    // webhook can persist them onto the order and the saved address — future
+    // re-orders price from these coords with zero geocoding.
+    delivery_lat: data.deliveryLat ?? null,
+    delivery_lng: data.deliveryLng ?? null,
     discount_id: discountId,
     discount_code: discountCode,
     discount_kobo: discountKobo,
