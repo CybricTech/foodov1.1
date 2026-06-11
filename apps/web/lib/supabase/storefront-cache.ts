@@ -13,9 +13,12 @@
  *   - restaurant record (branding/hours/settings) — tag `restaurant:<slug>`
  *   - reviews + rating summary                    — tag `reviews:<restaurantId>`
  *
- * Menu items/categories (prices + availability) are deliberately NOT cached here
- * yet — that needs explicit invalidation on merchant edits. See
- * docs/storefront-caching-plan.md (Tier 2).
+ * Menu items/categories (prices + availability) are cached here too, but on a
+ * deliberately SHORT 30s TTL (Tier 2). Merchant menu edits happen client-side
+ * direct to Supabase, so there's no server-side hook to call revalidateTag() —
+ * the short TTL is the invalidation mechanism. 30s of staleness on prices/
+ * sold-out is acceptable and takes the hottest storefront queries off the DB
+ * (see the 2026-06-11 usage-exhaustion incident). See docs/storefront-caching-plan.md.
  */
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
@@ -24,12 +27,16 @@ import {
   getRestaurantBySlug,
   getRestaurantReviews,
   getRestaurantRatingSummary,
+  getMenuItems,
+  getMenuCategories,
 } from "@foodo/database";
 
 /** Tag for a restaurant's cached record. Revalidate after a settings save. */
 export const restaurantTag = (slug: string) => `restaurant:${slug}`;
 /** Tag for a restaurant's cached reviews/rating. Revalidate after a new review. */
 export const reviewsTag = (restaurantId: string) => `reviews:${restaurantId}`;
+/** Tag for a restaurant's cached menu (items + categories + availability). */
+export const menuTag = (restaurantId: string) => `menu:${restaurantId}`;
 
 /**
  * Cached restaurant lookup by slug. 5-minute TTL — branding/hours/settings
@@ -59,5 +66,47 @@ export const getCachedRatingSummary = cache((restaurantId: string) =>
     async () => getRestaurantRatingSummary(createServiceClient(), restaurantId),
     ["restaurant-rating", restaurantId],
     { tags: [reviewsTag(restaurantId)], revalidate: 300 }
+  )()
+);
+
+/**
+ * Cached available menu items (with options + choices). 30s TTL. Service client
+ * bypasses RLS, but getMenuItems' own `is_available = true` filter returns the
+ * same set anon visitors would see via RLS — same pattern as the cached reads
+ * above. The caller validates the restaurant is active before calling this.
+ */
+export const getCachedMenuItems = cache((restaurantId: string) =>
+  unstable_cache(
+    async () => getMenuItems(createServiceClient(), restaurantId),
+    ["menu-items", restaurantId],
+    { tags: [menuTag(restaurantId)], revalidate: 30 }
+  )()
+);
+
+/** Cached active menu categories (display order). 30s TTL. */
+export const getCachedMenuCategories = cache((restaurantId: string) =>
+  unstable_cache(
+    async () => getMenuCategories(createServiceClient(), restaurantId),
+    ["menu-categories", restaurantId],
+    { tags: [menuTag(restaurantId)], revalidate: 30 }
+  )()
+);
+
+/**
+ * Cached per-item availability projection (category_id + is_available, ALL items
+ * incl. unavailable). Drives sold-out/"restocking" category detection on the menu
+ * page, which needs the unfiltered view RLS would hide — hence the service client.
+ */
+export const getCachedMenuAvailability = cache((restaurantId: string) =>
+  unstable_cache(
+    async () => {
+      const { data } = await createServiceClient()
+        .from("menu_items")
+        .select("category_id, is_available")
+        .eq("restaurant_id", restaurantId);
+      return (data ?? []) as { category_id: string | null; is_available: boolean }[];
+    },
+    ["menu-availability", restaurantId],
+    { tags: [menuTag(restaurantId)], revalidate: 30 }
   )()
 );

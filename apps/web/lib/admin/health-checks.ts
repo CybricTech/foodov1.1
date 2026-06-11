@@ -51,19 +51,22 @@ export async function runHealthChecks(): Promise<HealthResponse> {
   const results = await Promise.all([
     // ── Internal: Supabase ─────────────────────────────────────────────────
     probe("Database", "database", "internal", async () => {
+      // `estimated` count reads pg_class.reltuples (near-zero cost) instead of
+      // scanning the whole table. We only need a liveness/latency signal here,
+      // not an exact figure — exact counts every 30s were needless DB load.
       const { count, error } = await supabase
         .from("restaurants")
-        .select("id", { count: "exact", head: true });
+        .select("id", { count: "estimated", head: true });
       if (error) throw new Error(error.message);
-      return `${count ?? 0} restaurants`;
+      return `~${count ?? 0} restaurants`;
     }),
 
     probe("Auth Service", "auth", "internal", async () => {
       const { count, error } = await supabase
         .from("user_profiles")
-        .select("id", { count: "exact", head: true });
+        .select("id", { count: "estimated", head: true });
       if (error) throw new Error(error.message);
-      return `${count ?? 0} profiles`;
+      return `~${count ?? 0} profiles`;
     }),
 
     probe("Order Processing", "orders", "internal", async () => {
