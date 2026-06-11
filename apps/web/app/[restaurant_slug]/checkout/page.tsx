@@ -56,6 +56,12 @@ export default function CheckoutPage() {
   const [addressInput, setAddressInput] = useState("");
   const [selectedPlaceAddress, setSelectedPlaceAddress] = useState("");
   const [predictions, setPredictions] = useState<Array<{ description: string; place_id: string }>>([]);
+  // The Google place_id of the prediction the customer actually picked.
+  // Passed to the fee API + checkout so the server measures distance to the
+  // exact place — never re-geocoding a free-text string that can snap to a
+  // same-named street elsewhere (GD-1331: "Mallam el rufai street …Lugbe"
+  // resolved 9.3km to Wuse instead of 22.2km to River Park → ₦1.9k undercharge).
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [showPredictions, setShowPredictions] = useState(false);
   const [deliveryFeeKobo, setDeliveryFeeKobo] = useState<number | null>(null);
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
@@ -263,6 +269,7 @@ export default function CheckoutPage() {
     if (fulfillmentType === "pickup") {
       setAddressInput("");
       setSelectedPlaceAddress("");
+      setSelectedPlaceId(null);
       setPredictions([]);
       setShowPredictions(false);
       setDeliveryFeeKobo(null);
@@ -320,11 +327,17 @@ export default function CheckoutPage() {
     return () => { cancelled = true; };
   }, [fulfillmentType]);
 
-  async function calculateDeliveryFee(address: string, signal?: AbortSignal) {
+  async function calculateDeliveryFee(
+    address: string,
+    signal?: AbortSignal,
+    placeId?: string | null
+  ) {
     setDeliveryFeeLoading(true);
     setDeliveryFeeError("");
     try {
-      const url = `/api/delivery/fee?restaurantId=${restaurant.id}&destinationAddress=${encodeURIComponent(address)}`;
+      const url =
+        `/api/delivery/fee?restaurantId=${restaurant.id}&destinationAddress=${encodeURIComponent(address)}` +
+        (placeId ? `&placeId=${encodeURIComponent(placeId)}` : "");
       const res = await fetch(url, signal ? { signal } : undefined);
       // If this request was aborted after it completed, discard the response so
       // the result for a stale address is never committed to state.
@@ -348,6 +361,9 @@ export default function CheckoutPage() {
         setDurationMinutes(data.durationMinutes);
         // Accept manually-typed addresses too — not just Google Places predictions
         setSelectedPlaceAddress(address);
+        // Remember which place_id this fee was computed for (null = free text),
+        // so checkout re-verification measures the same destination.
+        setSelectedPlaceId(placeId ?? null);
       }
     } catch (err) {
       // AbortError is expected when the effect cleans up — don't surface it as a UI error.
@@ -443,6 +459,10 @@ export default function CheckoutPage() {
               : selectedPlaceAddress
             : undefined,
           deliveryBaseAddress: selectedPlaceAddress || undefined,
+          deliveryPlaceId:
+            fulfillmentType === "delivery" && selectedPlaceId
+              ? selectedPlaceId
+              : undefined,
           specialInstructions: restaurantNote.trim() || undefined,
           deliveryFeeKobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
           deliveryDistanceKm: distanceKm ?? undefined,
@@ -837,6 +857,7 @@ export default function CheckoutPage() {
                       const val = e.target.value;
                       setAddressInput(val);
                       setSelectedPlaceAddress("");
+                      setSelectedPlaceId(null); // typed text invalidates the picked place
                       setDeliveryFeeKobo(null);
                       setDeliveryFeeError("");
                       setDistanceKm(null);
@@ -895,7 +916,7 @@ export default function CheckoutPage() {
                             setSelectedPlaceAddress(p.description);
                             setPredictions([]);
                             setShowPredictions(false);
-                            calculateDeliveryFee(p.description);
+                            calculateDeliveryFee(p.description, undefined, p.place_id || null);
                           }}
                           className="w-full text-left px-4 py-3 text-sm text-black-900 hover:bg-black-50 border-b border-black-50 last:border-0 cursor-pointer transition-colors"
                         >

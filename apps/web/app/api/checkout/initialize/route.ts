@@ -35,6 +35,8 @@ const InitializeSchema = z.object({
   fulfillmentType: z.enum(["delivery", "pickup"]),
   deliveryAddress: z.string().optional(),
   deliveryBaseAddress: z.string().optional(),
+  /** Google place_id of the picked autocomplete prediction (exact destination). */
+  deliveryPlaceId: z.string().max(300).optional(),
   specialInstructions: z.string().max(500).optional(),
   deliveryFeeKobo: z.number().int().min(0).optional(),
   deliveryDistanceKm: z.number().min(0).optional(),
@@ -280,11 +282,17 @@ export async function POST(request: NextRequest) {
 
       if (rest?.latitude && rest?.longitude) {
         const origin = `${rest.latitude},${rest.longitude}`;
-        // Use the raw Places result for geocoding — not the combined string that
-        // includes the apt/floor field, which can confuse Maps into resolving to
-        // a completely different location (e.g. "House 14a Addis Ababa" causes
-        // Maps to snap to Addis Ababa Crescent instead of the actual estate).
-        const destination = encodeURIComponent(data.deliveryBaseAddress ?? data.deliveryAddress ?? "");
+        // Prefer the exact place_id the customer picked from autocomplete —
+        // Distance Matrix then measures to that place, never re-geocoding a
+        // free-text string. Free text can snap to a same-named street in a
+        // different district (GD-1331: "Mallam el rufai street …Lugbe"
+        // resolved to Wuse at 9.3km instead of River Park Estate at 22.2km →
+        // ₦1.9k undercharge). Fall back to the raw Places text — never the
+        // combined string with the apt/floor field, which can also mislead
+        // geocoding ("House 14a Addis Ababa" → Addis Ababa Crescent).
+        const destination = data.deliveryPlaceId
+          ? encodeURIComponent(`place_id:${data.deliveryPlaceId}`)
+          : encodeURIComponent(data.deliveryBaseAddress ?? data.deliveryAddress ?? "");
         const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&units=metric&key=${process.env.GOOGLE_MAPS_API_KEY}`;
 
         const mapsRes = await fetch(mapsUrl);

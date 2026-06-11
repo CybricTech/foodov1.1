@@ -11,6 +11,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const restaurantId = searchParams.get("restaurantId");
   const destinationAddress = searchParams.get("destinationAddress");
+  // Google place_id of the picked autocomplete prediction. When present,
+  // Distance Matrix measures to the exact place instead of re-geocoding the
+  // free-text address — which can snap to a same-named street in a different
+  // district (e.g. GD-1331: "Mallam el rufai street …Lugbe" resolved to a
+  // street in Wuse at 9.3km instead of River Park Estate at 22.2km).
+  const placeId = searchParams.get("placeId");
 
   if (!restaurantId || !destinationAddress) {
     return NextResponse.json(
@@ -83,7 +89,9 @@ export async function GET(request: NextRequest) {
   }
 
   const origin = `${restaurant.latitude},${restaurant.longitude}`;
-  const destination = encodeURIComponent(destinationAddress);
+  const destination = placeId
+    ? encodeURIComponent(`place_id:${placeId}`)
+    : encodeURIComponent(destinationAddress);
 
   const mapsUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${destination}&mode=driving&units=metric&key=${apiKey}`;
 
