@@ -260,13 +260,28 @@ export function LiveOpsClient({
       supabase
         .from("restaurants")
         .select(
-          "id, name, slug, logo_url, accepts_orders, opening_hours, closure_message, city, estimated_delivery_minutes"
+          "id, name, slug, logo_url, accepts_orders, opening_hours, closure_message, city, estimated_delivery_minutes, is_test"
         )
         .eq("is_active", true)
         .order("name"),
     ]);
-    if (freshOrders) setOrders(freshOrders as unknown as LiveOrderRow[]);
-    if (freshMerchants) setMerchants(freshMerchants as unknown as MerchantRow[]);
+    // Exclude test/demo restaurants (and their orders) — same rule as the
+    // server page, so a snapshot refresh never reintroduces them.
+    const all =
+      (freshMerchants as unknown as (MerchantRow & { is_test?: boolean })[]) ??
+      null;
+    const real = all?.filter((m) => !m.is_test) ?? null;
+    if (real) setMerchants(real);
+    if (freshOrders && real) {
+      const realIds = new Set(real.map((m) => m.id));
+      setOrders(
+        (freshOrders as unknown as LiveOrderRow[]).filter((o) =>
+          realIds.has(o.restaurant_id)
+        )
+      );
+    } else if (freshOrders) {
+      setOrders(freshOrders as unknown as LiveOrderRow[]);
+    }
     setLastSync(Date.now());
   }, [supabase]);
 
@@ -279,6 +294,10 @@ export function LiveOpsClient({
         { event: "INSERT", schema: "public", table: "orders" },
         (payload) => {
           const row = payload.new as LiveOrderRow;
+          // Drop events from restaurants not on the board (test/demo
+          // merchants, or brand-new ones until the next snapshot refresh).
+          if (!merchantsRef.current.some((m) => m.id === row.restaurant_id))
+            return;
           setOrders((prev) =>
             prev.some((o) => o.id === row.id) ? prev : [row, ...prev]
           );
@@ -301,6 +320,8 @@ export function LiveOpsClient({
         { event: "UPDATE", schema: "public", table: "orders" },
         (payload) => {
           const row = payload.new as LiveOrderRow;
+          if (!merchantsRef.current.some((m) => m.id === row.restaurant_id))
+            return;
           // payload.old only carries the PK — compare against our own state
           const prevStatus = ordersRef.current.find(
             (o) => o.id === row.id
