@@ -45,8 +45,22 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
     quantity: number;
     line_total_kobo: number;
     selected_options: OptionSnapshot[] | null;
+    // Embedded from menu_items so the confirm dialog can default the ETA to the
+    // longest item prep time. Null when the menu item was since deleted.
+    menu_items?: { prep_time_minutes: number | null } | null;
   }>;
 };
+
+/** Platform fallback when no item carries a prep time (matches the checkout webhook). */
+const DEFAULT_PREP_MINUTES = 20;
+
+/** The order's default estimated-ready time: the longest prep time of its items. */
+function defaultPrepMinutes(order: OrderRow): number {
+  const times = order.order_items
+    .map((i) => i.menu_items?.prep_time_minutes)
+    .filter((p): p is number => typeof p === "number" && p > 0);
+  return times.length > 0 ? Math.max(...times) : DEFAULT_PREP_MINUTES;
+}
 
 type Tab = "new" | "in_progress" | "completed";
 
@@ -108,7 +122,7 @@ export function OrderQueueClient({
           if (payload.eventType === "INSERT") {
             const { data } = await supabase
               .from("orders")
-              .select(`*, order_items (id, item_name, quantity, line_total_kobo, selected_options)`)
+              .select(`*, order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))`)
               .eq("id", (payload.new as OrderRow).id)
               .single();
             if (data) {
@@ -156,7 +170,11 @@ export function OrderQueueClient({
     }
   }
 
-  async function updateStatus(orderId: string, newStatus: string) {
+  async function updateStatus(
+    orderId: string,
+    newStatus: string,
+    estimatedReadyMinutes?: number
+  ) {
     setActionLoading(orderId);
     setActionError(null);
     const previous = orders.find((x) => x.id === orderId)?.status;
@@ -167,7 +185,11 @@ export function OrderQueueClient({
       const res = await fetch("/api/dashboard/orders/update-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, status: newStatus }),
+        body: JSON.stringify({
+          orderId,
+          status: newStatus,
+          ...(estimatedReadyMinutes != null ? { estimatedReadyMinutes } : {}),
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -439,7 +461,7 @@ function OrderCard({
   loading,
 }: {
   order: OrderRow;
-  onUpdateStatus: (id: string, status: string) => void;
+  onUpdateStatus: (id: string, status: string, estimatedReadyMinutes?: number) => void;
   onDispatch: (orderId: string, dispatchType: "platform_rider" | "own_rider") => void;
   onCancel: (id: string, reason: string) => void;
   loading: boolean;
@@ -447,6 +469,10 @@ function OrderCard({
   const [expanded, setExpanded] = useState(true);
   const [showCancel, setShowCancel] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  // Confirm dialog lets the merchant adjust the estimated-ready time (pre-filled
+  // with the longest item prep time) before the order moves to confirmed.
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmMinutes, setConfirmMinutes] = useState<number>(20);
 
   // Once a Foodo platform rider has the order, completion is handled exclusively
   // from the admin riders page. The merchant sees a status pill, not an action.
@@ -692,7 +718,17 @@ function OrderCard({
             <div className="px-4 py-3 flex gap-2">
               {next && (
                 <button
-                  onClick={() => onUpdateStatus(order.id, next)}
+                  onClick={() => {
+                    // First acceptance of a new paid order (pending→confirmed or
+                    // confirmed→preparing) opens the ETA dialog; later transitions
+                    // (preparing→ready, etc.) go straight through.
+                    if (order.status === "pending" || order.status === "confirmed") {
+                      setConfirmMinutes(defaultPrepMinutes(order));
+                      setShowConfirm(true);
+                    } else {
+                      onUpdateStatus(order.id, next);
+                    }
+                  }}
                   disabled={loading}
                   className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors duration-150 cursor-pointer"
                 >
@@ -708,6 +744,76 @@ function OrderCard({
                   Cancel
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Inline confirm-with-ETA panel — pre-filled with the longest item
+              prep time; merchant accepts or adjusts before confirming. */}
+          {showConfirm && (
+            <div className="px-4 py-3 space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-black-900">Confirm order #{order.order_number}</p>
+                <p className="text-xs text-black-400 mt-0.5">
+                  How long until it&rsquo;s ready? The customer sees this estimate.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmMinutes((m) => Math.max(1, m - 5))}
+                  disabled={loading}
+                  className="w-10 h-10 rounded-xl border border-black-200 text-black-600 text-lg font-semibold hover:bg-black-50 transition-colors cursor-pointer disabled:opacity-50"
+                  aria-label="Decrease 5 minutes"
+                >
+                  −
+                </button>
+                <div className="flex items-baseline gap-1.5 min-w-[7rem] justify-center">
+                  <input
+                    type="number"
+                    min={1}
+                    max={240}
+                    value={confirmMinutes}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      setConfirmMinutes(Number.isFinite(v) ? Math.min(240, Math.max(1, v)) : 1);
+                    }}
+                    className="w-16 text-center text-2xl font-extrabold text-black-900 border-b-2 border-black-200 focus:outline-none focus:border-purple-500 tabular-nums"
+                  />
+                  <span className="text-sm text-black-500">min</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmMinutes((m) => Math.min(240, m + 5))}
+                  disabled={loading}
+                  className="w-10 h-10 rounded-xl border border-black-200 text-black-600 text-lg font-semibold hover:bg-black-50 transition-colors cursor-pointer disabled:opacity-50"
+                  aria-label="Increase 5 minutes"
+                >
+                  +
+                </button>
+              </div>
+              {order.fulfillment_type === "delivery" && (
+                <p className="text-[11px] text-black-400 text-center">
+                  Delivery travel time is added automatically.
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    if (next) onUpdateStatus(order.id, next, confirmMinutes);
+                    setShowConfirm(false);
+                  }}
+                  disabled={loading}
+                  className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors duration-150 cursor-pointer"
+                >
+                  {loading ? "Confirming…" : actionLabel[order.status] ?? "Confirm Order"}
+                </button>
+                <button
+                  onClick={() => setShowConfirm(false)}
+                  className="px-4 text-black-500 border border-black-200 text-sm font-medium rounded-xl hover:bg-black-50 transition-colors duration-150 cursor-pointer"
+                >
+                  Back
+                </button>
+              </div>
             </div>
           )}
 

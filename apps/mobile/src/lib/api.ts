@@ -137,9 +137,14 @@ async function apiSend<T>(
 /** POST /api/dashboard/orders/update-status */
 export function updateOrderStatus(
   orderId: string,
-  status: string
+  status: string,
+  estimatedReadyMinutes?: number
 ): Promise<{ success: true }> {
-  return apiPost("/api/dashboard/orders/update-status", { orderId, status });
+  return apiPost("/api/dashboard/orders/update-status", {
+    orderId,
+    status,
+    ...(estimatedReadyMinutes != null ? { estimatedReadyMinutes } : {}),
+  });
 }
 
 /** POST /api/dashboard/orders/dispatch */

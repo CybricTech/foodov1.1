@@ -194,7 +194,7 @@ export function OrdersScreen({
             const { data } = await supabase
               .from("orders")
               .select(
-                `*, order_items (id, item_name, quantity, line_total_kobo, selected_options)`
+                `*, order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))`
               )
               .eq("id", (payload.new as { id: string }).id)
               .single();
@@ -276,7 +276,7 @@ export function OrdersScreen({
 
   /* ---- Status update (optimistic + revert) ---- */
   const handleUpdateStatus = useCallback(
-    async (orderId: string, newStatus: string) => {
+    async (orderId: string, newStatus: string, estimatedReadyMinutes?: number) => {
       setActionLoading(orderId);
       setActionError(null);
       const prevStatus = orders.find((o) => o.id === orderId)?.status;
@@ -286,7 +286,7 @@ export function OrdersScreen({
         )
       );
       try {
-        await updateOrderStatus(orderId, newStatus);
+        await updateOrderStatus(orderId, newStatus, estimatedReadyMinutes);
         capture("order_status_updated", { new_status: newStatus });
       } catch (err) {
         setOrders((prev) =>

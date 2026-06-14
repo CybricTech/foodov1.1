@@ -115,6 +115,14 @@ export function ItemFormModal({
     item && item.price_kobo > 0 ? (item.price_kobo / 100).toString() : ""
   );
 
+  // Per-item prep time (minutes). An order's estimated-ready ETA uses the longest
+  // prep time across its items. Blank ⇒ platform default.
+  const [prepMinutes, setPrepMinutes] = useState(
+    (item as { prep_time_minutes?: number | null } | null)?.prep_time_minutes != null
+      ? String((item as { prep_time_minutes?: number | null }).prep_time_minutes)
+      : ""
+  );
+
   const [draftOptions, setDraftOptions] = useState<DraftOption[]>(
     (item?.options ?? [])
       .filter((o) => o.id !== existingSizeGroup?.id)
@@ -218,6 +226,7 @@ export function ItemFormModal({
         image_url: imageUrl,
         is_featured: isFeatured,
         show_new_badge: showNewBadge,
+        prep_time_minutes: prepMinutes.trim() ? parseInt(prepMinutes, 10) || null : null,
       };
 
       let itemId: string;
@@ -463,6 +472,22 @@ export function ItemFormModal({
                 />
               </View>
             )}
+
+            {/* Prep time — the order's estimated-ready ETA uses the longest prep
+                time across its items. */}
+            <Field label="Prep time (minutes, optional)">
+              <TextInput
+                value={prepMinutes}
+                onChangeText={setPrepMinutes}
+                keyboardType="numeric"
+                placeholder="e.g. 20"
+                placeholderTextColor={theme.colors.black[400]}
+                style={styles.input}
+              />
+              <Text style={styles.photoSub}>
+                How long this takes to prepare. Leave blank to use your default.
+              </Text>
+            </Field>
 
             {/* Photo */}
             <Field label="Photo (max 5MB)">

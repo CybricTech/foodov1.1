@@ -50,14 +50,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Parse body
-  let body: { orderId?: string; status?: string };
+  let body: { orderId?: string; status?: string; estimatedReadyMinutes?: number };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { orderId, status } = body;
+  const { orderId, status, estimatedReadyMinutes } = body;
 
   if (!orderId || typeof orderId !== "string") {
     return NextResponse.json(
@@ -101,10 +101,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // When the merchant confirms an order they may adjust the estimated-ready time
+  // (the modal pre-fills the computed default from item prep times). We store it
+  // as the order's ETA: ready-minutes + a delivery travel buffer for delivery
+  // orders, mirroring the at-checkout formula. Clamped to a sane 1–240 minutes.
+  // Applied on whichever transition first accepts the order: the web owner queue
+  // sends it on "confirmed", the mobile/frontline kanban on "preparing". Gate on
+  // the value being present, not the target status.
+  const DELIVERY_BUFFER_MINUTES = 30;
+  const updatePayload: { status: string; estimated_delivery_at?: string } = { status };
+  if (
+    typeof estimatedReadyMinutes === "number" &&
+    Number.isFinite(estimatedReadyMinutes)
+  ) {
+    const readyMinutes = Math.min(240, Math.max(1, Math.round(estimatedReadyMinutes)));
+    const buffer = order.fulfillment_type === "delivery" ? DELIVERY_BUFFER_MINUTES : 0;
+    updatePayload.estimated_delivery_at = new Date(
+      Date.now() + (readyMinutes + buffer) * 60 * 1000
+    ).toISOString();
+  }
+
   // Update the order — only allow updating orders that belong to this restaurant
   const { error: updateError } = await serviceClient
     .from("orders")
-    .update({ status })
+    .update(updatePayload)
     .eq("id", orderId)
     .eq("restaurant_id", restaurantId);
 

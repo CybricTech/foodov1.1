@@ -33,8 +33,22 @@ export type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
     quantity: number;
     line_total_kobo: number;
     selected_options: OptionSnapshot[] | null;
+    // Embedded from menu_items so the accept dialog can default the ETA to the
+    // longest item prep time. Null when the menu item was since deleted.
+    menu_items?: { prep_time_minutes: number | null } | null;
   }>;
 };
+
+/** Platform fallback when no item carries a prep time (matches the checkout webhook). */
+export const DEFAULT_PREP_MINUTES = 20;
+
+/** The order's default estimated-ready time: the longest prep time of its items. */
+export function defaultPrepMinutes(order: OrderRow): number {
+  const times = order.order_items
+    .map((i) => i.menu_items?.prep_time_minutes)
+    .filter((p): p is number => typeof p === "number" && p > 0);
+  return times.length > 0 ? Math.max(...times) : DEFAULT_PREP_MINUTES;
+}
 
 export type Column = "new" | "in_progress" | "in_transit" | "completed";
 
@@ -116,6 +130,6 @@ export const ORDERS_SELECT = `
   id, order_number, status, payment_status, fulfillment_type,
   customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
   vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
-  special_instructions, delivery_address, dispatch_type,
-  order_items (id, item_name, quantity, line_total_kobo, selected_options)
+  special_instructions, delivery_address, dispatch_type, estimated_delivery_at,
+  order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
 `;

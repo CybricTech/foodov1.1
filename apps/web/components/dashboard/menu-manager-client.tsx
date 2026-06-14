@@ -794,6 +794,14 @@ function ItemFormModal({
     item && item.price_kobo > 0 ? (item.price_kobo / 100).toString() : ""
   );
 
+  // Per-item prep time (minutes). Drives each order's estimated-ready ETA — the
+  // order takes the longest prep time across its items. Blank ⇒ platform default.
+  const [prepMinutes, setPrepMinutes] = useState(
+    (item as { prep_time_minutes?: number | null } | null)?.prep_time_minutes != null
+      ? String((item as { prep_time_minutes?: number | null }).prep_time_minutes)
+      : ""
+  );
+
   const [draftOptions, setDraftOptions] = useState<DraftOption[]>(
     (item?.options ?? [])
       .filter((o) => o.id !== existingSizeGroup?.id)
@@ -896,6 +904,7 @@ function ItemFormModal({
         image_url: imageUrl,
         is_featured: isFeatured,
         show_new_badge: showNewBadge,
+        prep_time_minutes: prepMinutes.trim() ? parseInt(prepMinutes, 10) || null : null,
       };
 
       let itemId: string;
@@ -1163,6 +1172,28 @@ function ItemFormModal({
               </div>
             </div>
           )}
+
+          {/* Prep time — sets how long this item takes to make. The order's ETA
+              uses the longest prep time across its items. */}
+          <div>
+            <label className="block text-sm font-medium text-black-600 mb-1.5">
+              Prep time{" "}
+              <span className="text-black-400 font-normal">(minutes, optional)</span>
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              inputMode="numeric"
+              value={prepMinutes}
+              onChange={(e) => setPrepMinutes(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-colors"
+              placeholder="e.g. 20"
+            />
+            <p className="text-[11px] text-black-400 mt-1">
+              How long this takes to prepare. Leave blank to use your default.
+            </p>
+          </div>
 
           {/* Image upload */}
           <div>

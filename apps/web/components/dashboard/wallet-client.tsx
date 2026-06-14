@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { formatKobo, computeOrderNet } from "@foodo/utils";
-import { Clock, X, ChevronRight } from "lucide-react";
+import { formatKobo, computeOrderNet, computePendingPayoutBreakdown } from "@foodo/utils";
+import { Clock, X, ChevronRight, Hourglass } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -129,6 +129,7 @@ export function WalletClient({
   const [activeTab, setActiveTab] = useState<ActiveTab>("activity");
   const [exporting, setExporting] = useState(false);
   const [selectedSettlement, setSelectedSettlement] = useState<SettlementRow | null>(null);
+  const [showPendingDetail, setShowPendingDetail] = useState(false);
 
   const { merchantChargePct, deliveryCommissionPct } = platformSettings;
 
@@ -156,6 +157,19 @@ export function WalletClient({
 
   const pendingBalance = pendingBalanceKobo;
   const totalOrders = processedOrderCount;
+
+  // Pending payout — every billable order not yet attached to a settlement. The
+  // headline figure stays the authoritative server-recomputed balance; this
+  // breakdown itemises the loaded un-settled orders so the merchant sees, before
+  // they're paid, what they've earned and exactly what Kitchyn takes.
+  const pendingOrders = useMemo(
+    () => orders.filter((o) => !o.settlement_id),
+    [orders]
+  );
+  const pendingBreakdown = useMemo(
+    () => computePendingPayoutBreakdown(pendingOrders, { merchantChargePct, deliveryCommissionPct }),
+    [pendingOrders, merchantChargePct, deliveryCommissionPct]
+  );
 
   // Group orders by settlement_id for the detail modal
   const ordersBySettlement = useMemo(() => {
@@ -352,9 +366,33 @@ export function WalletClient({
           </>
         )}
 
-        {/* Payouts tab — settlements table, net computed from orders */}
+        {/* Payouts tab — pending payout first, then settled history */}
         {activeTab === "payouts" && (
-          <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
+          <>
+            {pendingOrders.length > 0 && (
+              <button
+                onClick={() => setShowPendingDetail(true)}
+                className="w-full mb-3 flex items-center gap-3 px-4 py-3.5 text-left bg-white rounded-2xl border border-dixie-200 hover:border-dixie-300 transition-colors"
+              >
+                <div className="w-9 h-9 rounded-full bg-dixie-100 flex items-center justify-center flex-shrink-0">
+                  <Hourglass size={16} className="text-dixie-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-black-900">Pending payout</p>
+                  <p className="text-xs text-black-400 mt-0.5">
+                    {pendingBreakdown.orderCount} order{pendingBreakdown.orderCount === 1 ? "" : "s"} awaiting settlement
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0 space-y-1">
+                  <p className="text-sm font-bold text-black-900">{formatKobo(pendingBalance)}</p>
+                  <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-dixie-100 text-dixie-600">
+                    Pending
+                  </span>
+                </div>
+                <ChevronRight size={16} className="text-black-300 flex-shrink-0" />
+              </button>
+            )}
+            <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
             {settlements.length === 0 ? (
               <p className="text-black-400 text-sm text-center py-10">No payouts yet</p>
             ) : (
@@ -378,7 +416,8 @@ export function WalletClient({
                 ))}
               </div>
             )}
-          </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -390,6 +429,17 @@ export function WalletClient({
           merchantChargePct={merchantChargePct}
           deliveryCommissionPct={deliveryCommissionPct}
           onClose={() => setSelectedSettlement(null)}
+        />
+      )}
+
+      {showPendingDetail && (
+        <PendingPayoutModal
+          breakdown={pendingBreakdown}
+          netKobo={pendingBalance}
+          orders={pendingOrders}
+          merchantChargePct={merchantChargePct}
+          deliveryCommissionPct={deliveryCommissionPct}
+          onClose={() => setShowPendingDetail(false)}
         />
       )}
     </div>
@@ -706,6 +756,160 @@ function PayoutDetailModal({
                       <div className="text-right flex-shrink-0">
                         <p className="text-sm font-bold text-black-900">{formatKobo(oNet)}</p>
                         <p className="text-[10px] text-black-400">you earned</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Pending Payout Modal — what the merchant has earned but not yet     */
+/*  been paid, with Kitchyn's cut shown explicitly.                     */
+/* ------------------------------------------------------------------ */
+
+function PendingPayoutModal({
+  breakdown,
+  netKobo,
+  orders,
+  merchantChargePct,
+  deliveryCommissionPct,
+  onClose,
+}: {
+  breakdown: import("@foodo/utils").PendingPayoutBreakdown;
+  netKobo: number;
+  orders: OrderRow[];
+  merchantChargePct: number;
+  deliveryCommissionPct: number;
+  onClose: () => void;
+}) {
+  // The headline uses the authoritative server balance; the itemised lines come
+  // from the loaded un-settled orders. They match unless the order list was
+  // capped, so we only show the "= Expected payout" reconcile line when they do.
+  const reconciles = breakdown.netKobo === netKobo;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-t-2xl md:rounded-2xl border border-black-200 w-full md:max-w-lg md:mx-4 max-h-[85vh] flex flex-col shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-black-100 flex-shrink-0">
+          <div>
+            <h3 className="font-bold text-black-900">Pending Payout</h3>
+            <p className="text-xs text-black-400 mt-0.5">
+              {breakdown.orderCount} order{breakdown.orderCount === 1 ? "" : "s"} awaiting settlement
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black-100 transition-colors">
+            <X size={18} className="text-black-400" />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto px-5 py-4 space-y-5">
+          {/* Amount + status */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-black-400">Expected Payout</p>
+              <p className="text-2xl font-extrabold text-black-900">{formatKobo(netKobo)}</p>
+            </div>
+            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-dixie-100 text-dixie-600">
+              Pending
+            </span>
+          </div>
+
+          {/* Breakdown — what you earned, then what Kitchyn takes */}
+          <div className="bg-black-50 rounded-xl px-4 py-3 space-y-2.5 text-sm">
+            <BreakdownRow
+              label="Food sales"
+              hint="Your menu items, after any promos"
+              amountKobo={breakdown.foodKobo}
+            />
+            {breakdown.deliveryFeesKobo > 0 && (
+              <BreakdownRow
+                label="Delivery fees collected"
+                hint="Across all your delivery orders"
+                amountKobo={breakdown.deliveryFeesKobo}
+              />
+            )}
+
+            <div className="border-t border-black-200 pt-2.5 space-y-2.5">
+              <p className="text-[11px] font-semibold text-black-400 uppercase tracking-wide">
+                Kitchyn&rsquo;s cut
+              </p>
+              {breakdown.platformRiderFeesKobo > 0 && (
+                <BreakdownRow
+                  label={`Deliveries we handled · ${breakdown.platformRiderCount} ${breakdown.platformRiderCount === 1 ? "ride" : "rides"}`}
+                  hint="Orders our riders delivered for you"
+                  amountKobo={breakdown.platformRiderFeesKobo}
+                  negative
+                />
+              )}
+              {breakdown.deliveryCommissionKobo > 0 && (
+                <BreakdownRow
+                  label="Delivery commission"
+                  hint="Our share of deliveries your team handled"
+                  amountKobo={breakdown.deliveryCommissionKobo}
+                  negative
+                />
+              )}
+              <BreakdownRow
+                label="Merchant charge"
+                hint="Payment processing fee"
+                amountKobo={breakdown.merchantChargeKobo}
+                negative
+              />
+            </div>
+
+            {reconciles && (
+              <div className="border-t border-black-200 pt-2 flex justify-between font-bold text-black-900">
+                <span>= Expected Payout</span>
+                <span className="tabular-nums">{formatKobo(netKobo)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Orders list */}
+          <div>
+            <p className="text-xs font-semibold text-black-400 uppercase tracking-wide mb-2">
+              Orders awaiting payout ({orders.length})
+            </p>
+            {orders.length === 0 ? (
+              <p className="text-sm text-black-400">No order details available.</p>
+            ) : (
+              <div className="space-y-2">
+                {orders.map((o) => {
+                  const { net: oNet } = computeOrderNet(o, { merchantChargePct, deliveryCommissionPct });
+                  return (
+                    <div
+                      key={o.id}
+                      className="flex items-center justify-between bg-white border border-black-100 rounded-xl px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-black-900">{o.order_number}</p>
+                        <p className="text-xs text-black-400">
+                          {new Date(o.created_at).toLocaleDateString("en-NG", {
+                            day: "numeric", month: "short",
+                            hour: "2-digit", minute: "2-digit",
+                          })}
+                          {" · "}
+                          {dispatchLabel(o)}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-sm font-bold text-black-900">{formatKobo(oNet)}</p>
+                        <p className="text-[10px] text-black-400">you earn</p>
                       </div>
                     </div>
                   );

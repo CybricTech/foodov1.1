@@ -159,6 +159,76 @@ export function computeOrderNet(order: SettleableOrder, settings: FeeSettings): 
   return { gross, orderTotal, merchantCharge, deliveryCommission, net };
 }
 
+/**
+ * The merchant-facing breakdown of money awaiting settlement ("pending payout").
+ *
+ * Unlike a paid {@link PayoutBreakdown}-style view, this one DELIBERATELY surfaces
+ * the platform's cut so the merchant can see, before they're paid, exactly what
+ * Kitchyn takes and why. The service fee never appears — it's charged to the
+ * customer and is none of the merchant's concern.
+ *
+ * Presentation (every line reconciles to net):
+ *   earnings:   foodKobo (post-discount food + VAT)  +  deliveryFeesKobo (all fees collected)
+ *   platform:   − platformRiderFeesKobo  (the rides Kitchyn handled & paid for)
+ *               − deliveryCommissionKobo (our % on the merchant's own deliveries)
+ *               − merchantChargeKobo     (payment processing)
+ *   = netKobo   (the expected payout)
+ */
+export interface PendingPayoutBreakdown {
+  orderCount: number;
+  /** Post-discount food + VAT the merchant keeps (gross − delivery fee). */
+  foodKobo: number;
+  /** Every delivery fee the customer paid, across own- and platform-rider orders. */
+  deliveryFeesKobo: number;
+  /** Number of orders Kitchyn delivered with its own riders. */
+  platformRiderCount: number;
+  /** Delivery fees on those Kitchyn-handled rides — entirely the platform's. */
+  platformRiderFeesKobo: number;
+  /** Our commission on deliveries the merchant's own team handled. */
+  deliveryCommissionKobo: number;
+  /** Payment-processing fee deducted from the merchant. */
+  merchantChargeKobo: number;
+  /** = food + deliveryFees − platformRiderFees − deliveryCommission − merchantCharge. */
+  netKobo: number;
+}
+
+/**
+ * Decompose a set of un-settled orders into the merchant's pending-payout view.
+ * The lines always sum to net, with the platform's take shown explicitly. See
+ * {@link PendingPayoutBreakdown}.
+ */
+export function computePendingPayoutBreakdown(
+  orders: SettleableOrder[],
+  settings: FeeSettings
+): PendingPayoutBreakdown {
+  const b: PendingPayoutBreakdown = {
+    orderCount: orders.length,
+    foodKobo: 0,
+    deliveryFeesKobo: 0,
+    platformRiderCount: 0,
+    platformRiderFeesKobo: 0,
+    deliveryCommissionKobo: 0,
+    merchantChargeKobo: 0,
+    netKobo: 0,
+  };
+  for (const o of orders) {
+    const n = computeOrderNet(o, settings);
+    const fee = o.delivery_fee_kobo ?? 0;
+    // gross = post-discount food (+VAT) + delivery fee ⇒ food = gross − fee.
+    b.foodKobo += n.gross - fee;
+    b.deliveryFeesKobo += fee;
+    if (o.dispatch_type === PLATFORM_RIDER && fee > 0) {
+      b.platformRiderCount += 1;
+      b.platformRiderFeesKobo += n.deliveryCommission; // = fee for platform rider
+    } else {
+      b.deliveryCommissionKobo += n.deliveryCommission; // own/third-party %
+    }
+    b.merchantChargeKobo += n.merchantCharge;
+    b.netKobo += n.net;
+  }
+  return b;
+}
+
 export interface SettlementTotals {
   orderCount: number;
   grossTotal: number;

@@ -8,13 +8,15 @@
  * Status/dispatch actions mirror the web column logic EXACTLY, including the
  * platform-rider "Kitchyn rider handling" lock state.
  */
-import { Pressable, Text, View } from "react-native";
+import { useState } from "react";
+import { Modal, Pressable, Text, TextInput, View } from "react-native";
 
 import { formatKobo } from "@foodo/utils";
 
 import { theme } from "../../theme";
 import { callCustomer, openInMaps } from "../../lib/intents";
 import {
+  defaultPrepMinutes,
   formatTimeAgo,
   getItemCount,
   type Column,
@@ -27,7 +29,7 @@ interface OrderCardProps {
   column: Column;
   isNew: boolean;
   loading: boolean;
-  onUpdateStatus: (id: string, status: string) => void;
+  onUpdateStatus: (id: string, status: string, estimatedReadyMinutes?: number) => void;
   onDispatchReady: (order: OrderRow) => void;
 }
 
@@ -40,6 +42,9 @@ export function OrderCard({
   onDispatchReady,
 }: OrderCardProps) {
   const itemCount = getItemCount(order);
+  // Accept dialog lets staff adjust the estimated-ready time before the order
+  // moves into preparing (pre-filled with the longest item prep time).
+  const [showAccept, setShowAccept] = useState(false);
 
   return (
     <View
@@ -120,9 +125,190 @@ export function OrderCard({
           loading={loading}
           onUpdateStatus={onUpdateStatus}
           onDispatchReady={onDispatchReady}
+          onAccept={() => setShowAccept(true)}
         />
       </View>
+
+      <AcceptOrderModal
+        visible={showAccept}
+        order={order}
+        loading={loading}
+        onClose={() => setShowAccept(false)}
+        onConfirm={(minutes) => {
+          onUpdateStatus(order.id, "preparing", minutes);
+          setShowAccept(false);
+        }}
+      />
     </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Accept dialog — set the estimated-ready time before preparing.      */
+/* ------------------------------------------------------------------ */
+
+function AcceptOrderModal({
+  visible,
+  order,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  order: OrderRow;
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: (minutes: number) => void;
+}) {
+  const [minutes, setMinutes] = useState<number>(20);
+
+  // Seed with the order's default (longest item prep time) each time it opens.
+  function handleShow() {
+    setMinutes(defaultPrepMinutes(order));
+  }
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onShow={handleShow}
+      onRequestClose={onClose}
+    >
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+      >
+        <Pressable
+          onPress={() => {}}
+          style={{
+            backgroundColor: theme.colors.white,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            padding: 20,
+            gap: 16,
+          }}
+        >
+          <View>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: theme.colors.black[900] }}>
+              Accept order #{order.order_number}
+            </Text>
+            <Text style={{ fontSize: 13, color: theme.colors.black[400], marginTop: 2 }}>
+              How long until it&rsquo;s ready? The customer sees this estimate.
+            </Text>
+          </View>
+
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+            }}
+          >
+            <StepperButton
+              label="−"
+              disabled={loading}
+              onPress={() => setMinutes((m) => Math.max(1, m - 5))}
+            />
+            <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6, minWidth: 120, justifyContent: "center" }}>
+              <TextInput
+                value={String(minutes)}
+                onChangeText={(t) => {
+                  const v = parseInt(t, 10);
+                  setMinutes(Number.isFinite(v) ? Math.min(240, Math.max(1, v)) : 1);
+                }}
+                keyboardType="numeric"
+                style={{
+                  fontSize: 32,
+                  fontWeight: "800",
+                  color: theme.colors.black[900],
+                  minWidth: 56,
+                  textAlign: "center",
+                  padding: 0,
+                }}
+              />
+              <Text style={{ fontSize: 14, color: theme.colors.black[500] }}>min</Text>
+            </View>
+            <StepperButton
+              label="+"
+              disabled={loading}
+              onPress={() => setMinutes((m) => Math.min(240, m + 5))}
+            />
+          </View>
+
+          {order.fulfillment_type === "delivery" ? (
+            <Text style={{ fontSize: 11, color: theme.colors.black[400], textAlign: "center" }}>
+              Delivery travel time is added automatically.
+            </Text>
+          ) : null}
+
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Pressable
+              onPress={onClose}
+              style={{
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.colors.black[200],
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[500] }}>
+                Back
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => onConfirm(minutes)}
+              disabled={loading}
+              style={{
+                flex: 1,
+                paddingVertical: 14,
+                borderRadius: 12,
+                backgroundColor: theme.colors.brand,
+                opacity: loading ? 0.6 : 1,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.white }}>
+                {loading ? "Accepting…" : "Accept Order"}
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function StepperButton({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={{
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.black[200],
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <Text style={{ fontSize: 22, fontWeight: "700", color: theme.colors.black[500] }}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -136,12 +322,14 @@ function ActionButton({
   loading,
   onUpdateStatus,
   onDispatchReady,
+  onAccept,
 }: {
   order: OrderRow;
   column: Column;
   loading: boolean;
-  onUpdateStatus: (id: string, status: string) => void;
+  onUpdateStatus: (id: string, status: string, estimatedReadyMinutes?: number) => void;
   onDispatchReady: (order: OrderRow) => void;
+  onAccept: () => void;
 }) {
   if (column === "new") {
     return (
@@ -149,7 +337,7 @@ function ActionButton({
         label={loading ? "Updating…" : "Accept"}
         color={theme.colors.dixie[500]}
         disabled={loading}
-        onPress={() => onUpdateStatus(order.id, "preparing")}
+        onPress={onAccept}
       />
     );
   }

@@ -31,10 +31,13 @@ import {
   Wallet,
   Banknote,
   ArrowDownToLine,
+  Hourglass,
+  ChevronRight,
   X,
 } from "lucide-react-native";
 
-import { formatKobo, computeOrderNet } from "@foodo/utils";
+import { formatKobo, computeOrderNet, computePendingPayoutBreakdown } from "@foodo/utils";
+import type { PendingPayoutBreakdown } from "@foodo/utils";
 
 import { getSupabase } from "../../lib/supabase";
 import { theme } from "../../theme";
@@ -167,6 +170,7 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("activity");
   const [selected, setSelected] = useState<SettlementRow | null>(null);
+  const [showPending, setShowPending] = useState(false);
 
   const [transactions, setTransactions] = useState<TxnRow[]>([]);
   const [settlements, setSettlements] = useState<SettlementRow[]>([]);
@@ -269,6 +273,14 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
     const avgOrderNet = orders.length > 0 ? Math.round(totalEarned / orders.length) : 0;
     return { totalWithdrawn, avgOrderNet };
   }, [orders, settlements, fees]);
+
+  // Pending payout — billable orders not yet attached to a settlement. Headline
+  // uses the authoritative pending balance; breakdown itemises loaded orders.
+  const pendingOrders = useMemo(() => orders.filter((o) => !o.settlement_id), [orders]);
+  const pendingBreakdown = useMemo(
+    () => computePendingPayoutBreakdown(pendingOrders, fees),
+    [pendingOrders, fees]
+  );
 
   const ordersBySettlement = useMemo(() => {
     const map: Record<string, OrderRow[]> = {};
@@ -563,7 +575,54 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
             )}
           </View>
         ) : (
-          <View
+          <View style={{ gap: 12 }}>
+            {pendingOrders.length > 0 ? (
+              <Pressable
+                onPress={() => setShowPending(true)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                  backgroundColor: theme.colors.white,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: theme.colors.black[200],
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                }}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: theme.colors.dixie[100],
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Hourglass size={18} color={theme.colors.dixie[500]} strokeWidth={2.5} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[900] }}>
+                    Pending payout
+                  </Text>
+                  <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: 2 }}>
+                    {pendingBreakdown.orderCount} order
+                    {pendingBreakdown.orderCount === 1 ? "" : "s"} awaiting settlement
+                  </Text>
+                </View>
+                <View style={{ alignItems: "flex-end", gap: 4 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.black[900] }}>
+                    {formatKobo(pendingBalanceKobo)}
+                  </Text>
+                  <Badge map={SETTLEMENT_BADGE} status="pending" />
+                </View>
+                <ChevronRight size={16} color={theme.colors.black[400]} />
+              </Pressable>
+            ) : null}
+
+            <View
             style={{
               backgroundColor: theme.colors.white,
               borderRadius: 16,
@@ -688,9 +747,19 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
                 </View>
               ))
             )}
+            </View>
           </View>
         )}
       </View>
+
+      <PendingPayoutModal
+        visible={showPending}
+        breakdown={pendingBreakdown}
+        netKobo={pendingBalanceKobo}
+        orders={pendingOrders}
+        fees={fees}
+        onClose={() => setShowPending(false)}
+      />
 
       <PayoutDetailModal
         settlement={selected}
@@ -856,6 +925,262 @@ function PayoutDetailModal({
                           </Text>
                           <Text style={{ fontSize: 10, color: theme.colors.black[400] }}>
                             you earned
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/* ---- Pending payout modal (read-only) — Kitchyn's cut shown explicitly ---- */
+function PendingBreakdownRow({
+  label,
+  hint,
+  amountKobo,
+  negative,
+}: {
+  label: string;
+  hint?: string;
+  amountKobo: number;
+  negative?: boolean;
+}) {
+  const color = negative ? theme.colors.brand : theme.colors.black[900];
+  return (
+    <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
+      <View style={{ minWidth: 0, flex: 1 }}>
+        <Text style={{ fontSize: 14, color }}>
+          {negative ? "− " : ""}
+          {label}
+        </Text>
+        {hint ? (
+          <Text style={{ fontSize: 11, color: theme.colors.black[400], marginTop: 2 }}>{hint}</Text>
+        ) : null}
+      </View>
+      <Text style={{ fontSize: 14, fontWeight: "500", color, fontVariant: ["tabular-nums"] }}>
+        {negative ? `(${formatKobo(amountKobo)})` : formatKobo(amountKobo)}
+      </Text>
+    </View>
+  );
+}
+
+function PendingPayoutModal({
+  visible,
+  breakdown,
+  netKobo,
+  orders,
+  fees,
+  onClose,
+}: {
+  visible: boolean;
+  breakdown: PendingPayoutBreakdown;
+  netKobo: number;
+  orders: OrderRow[];
+  fees: { merchantChargePct: number; deliveryCommissionPct: number };
+  onClose: () => void;
+}) {
+  if (!visible) return null;
+  const reconciles = breakdown.netKobo === netKobo;
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+      >
+        <Pressable
+          onPress={() => {}}
+          style={{
+            backgroundColor: theme.colors.white,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            maxHeight: "85%",
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 20,
+              paddingVertical: 16,
+              borderBottomWidth: 1,
+              borderBottomColor: theme.colors.black[100],
+            }}
+          >
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: theme.colors.black[900] }}>
+                Pending Payout
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: 2 }}>
+                {breakdown.orderCount} order{breakdown.orderCount === 1 ? "" : "s"} awaiting settlement
+              </Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={10}>
+              <X size={22} color={theme.colors.black[400]} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View>
+                <Text style={{ fontSize: 12, color: theme.colors.black[400] }}>Expected Payout</Text>
+                <Text style={{ fontSize: 24, fontWeight: "800", color: theme.colors.black[900] }}>
+                  {formatKobo(netKobo)}
+                </Text>
+              </View>
+              <Badge map={SETTLEMENT_BADGE} status="pending" />
+            </View>
+
+            {/* Breakdown */}
+            <View style={{ backgroundColor: theme.colors.black[50], borderRadius: 12, padding: 16, gap: 10 }}>
+              <PendingBreakdownRow
+                label="Food sales"
+                hint="Your menu items, after any promos"
+                amountKobo={breakdown.foodKobo}
+              />
+              {breakdown.deliveryFeesKobo > 0 ? (
+                <PendingBreakdownRow
+                  label="Delivery fees collected"
+                  hint="Across all your delivery orders"
+                  amountKobo={breakdown.deliveryFeesKobo}
+                />
+              ) : null}
+
+              <View
+                style={{
+                  borderTopWidth: 1,
+                  borderTopColor: theme.colors.black[200],
+                  paddingTop: 10,
+                  gap: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "600",
+                    color: theme.colors.black[400],
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Kitchyn&rsquo;s cut
+                </Text>
+                {breakdown.platformRiderFeesKobo > 0 ? (
+                  <PendingBreakdownRow
+                    label={`Deliveries we handled · ${breakdown.platformRiderCount} ${breakdown.platformRiderCount === 1 ? "ride" : "rides"}`}
+                    hint="Orders our riders delivered for you"
+                    amountKobo={breakdown.platformRiderFeesKobo}
+                    negative
+                  />
+                ) : null}
+                {breakdown.deliveryCommissionKobo > 0 ? (
+                  <PendingBreakdownRow
+                    label="Delivery commission"
+                    hint="Our share of deliveries your team handled"
+                    amountKobo={breakdown.deliveryCommissionKobo}
+                    negative
+                  />
+                ) : null}
+                <PendingBreakdownRow
+                  label="Merchant charge"
+                  hint="Payment processing fee"
+                  amountKobo={breakdown.merchantChargeKobo}
+                  negative
+                />
+              </View>
+
+              {reconciles ? (
+                <View
+                  style={{
+                    borderTopWidth: 1,
+                    borderTopColor: theme.colors.black[200],
+                    paddingTop: 10,
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.black[900] }}>
+                    = Expected Payout
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: "700",
+                      color: theme.colors.black[900],
+                      fontVariant: ["tabular-nums"],
+                    }}
+                  >
+                    {formatKobo(netKobo)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Orders */}
+            <View>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "600",
+                  color: theme.colors.black[400],
+                  textTransform: "uppercase",
+                  marginBottom: 8,
+                }}
+              >
+                Orders awaiting payout ({orders.length})
+              </Text>
+              {orders.length === 0 ? (
+                <Text style={{ fontSize: 14, color: theme.colors.black[400] }}>
+                  No order details available.
+                </Text>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  {orders.map((o) => {
+                    const { net } = computeOrderNet(o, fees);
+                    return (
+                      <View
+                        key={o.id}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          borderWidth: 1,
+                          borderColor: theme.colors.black[100],
+                          borderRadius: 12,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                        }}
+                      >
+                        <View style={{ minWidth: 0, flex: 1 }}>
+                          <Text
+                            style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[900] }}
+                          >
+                            {o.order_number}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: theme.colors.black[400] }}>
+                            {new Date(o.created_at).toLocaleDateString("en-NG", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end" }}>
+                          <Text
+                            style={{ fontSize: 14, fontWeight: "700", color: theme.colors.black[900] }}
+                          >
+                            {formatKobo(net)}
+                          </Text>
+                          <Text style={{ fontSize: 10, color: theme.colors.black[400] }}>
+                            you earn
                           </Text>
                         </View>
                       </View>
