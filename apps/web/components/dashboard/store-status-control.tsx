@@ -118,9 +118,26 @@ export function StoreStatusControl({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 z-50 w-80 max-w-[calc(100vw-2rem)] bg-white border border-black-100 rounded-2xl shadow-xl overflow-hidden">
-          {/* Current state + primary action */}
-          <div className="p-4 border-b border-black-50">
+        <>
+          {/* Mobile-only dimmed backdrop (bottom-sheet pattern). */}
+          <div
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            onClick={() => setOpen(false)}
+            aria-hidden="true"
+          />
+          {/* Bottom sheet on phones, anchored dropdown on desktop. */}
+          <div
+            className={cn(
+              "z-50 bg-white border border-black-100 shadow-xl overflow-hidden",
+              "fixed inset-x-0 bottom-0 rounded-t-2xl",
+              "md:absolute md:inset-x-auto md:right-0 md:top-full md:bottom-auto md:mt-1.5 md:w-80 md:rounded-2xl"
+            )}
+          >
+            <div className="md:hidden flex justify-center pt-2.5 pb-1">
+              <span className="w-9 h-1 rounded-full bg-black-200" />
+            </div>
+            {/* Current state + primary action */}
+            <div className="p-4 border-b border-black-50">
             <div className="flex items-center gap-2.5">
               <span
                 className={cn(
@@ -212,8 +229,9 @@ export function StoreStatusControl({
             )}
 
             {error && <p className="text-xs text-cinnabar-600">{error}</p>}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
