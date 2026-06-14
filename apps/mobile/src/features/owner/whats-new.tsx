@@ -76,6 +76,13 @@ export function WhatsNew({ userId }: { userId: string }) {
         setMode("auto");
         setPage(0);
         setOpen(true);
+        // One-time: stamp "seen" as soon as it opens so it never re-appears on
+        // another tab or a reload. Content stays behind the "New" button.
+        void supabase
+          .from("user_profiles")
+          .update({ last_seen_changelog_at: new Date().toISOString() })
+          .eq("id", userId)
+          .then(() => setHasUnread(false));
       }
     })();
     return () => {

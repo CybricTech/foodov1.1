@@ -8,6 +8,7 @@ import { ConnectionProvider } from "@/lib/connection-context";
 import { ConnectionBanner } from "@/components/dashboard/connection-banner";
 import { RouterAutoRefresh } from "@/components/shared/router-auto-refresh";
 import { getPostHogClient } from "@/lib/posthog";
+import { WhatsNew } from "@/components/dashboard/whats-new";
 
 export async function generateMetadata(): Promise<Metadata> {
   const session = await getDashboardUser();
@@ -58,6 +59,26 @@ export default async function DashboardLayout({
   });
   void posthog.flush().catch(() => {});
 
+  // "What's New" — published changelog + this user's last-seen marker, fetched at
+  // the LAYOUT level so the first-time popup appears on whatever dashboard page
+  // the merchant happens to be on (not only the home screen). The home header
+  // still renders the reopen button (autoOpen off there to avoid a double popup).
+  const supabase = await createServerClient();
+  const [{ data: changelogEntries }, { data: profile }] = await Promise.all([
+    supabase
+      .from("changelog_entries")
+      .select("id, title, body, tag, image_url, version_label, published_at")
+      .not("published_at", "is", null)
+      .lte("published_at", new Date().toISOString())
+      .order("published_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("user_profiles")
+      .select("last_seen_changelog_at")
+      .eq("id", session.userId)
+      .maybeSingle(),
+  ]);
+
   return (
     <ConnectionProvider>
       <ConnectionBanner />
@@ -70,6 +91,12 @@ export default async function DashboardLayout({
         />
         <main className="md:ml-60 min-h-screen pb-20 md:pb-0">{children}</main>
       </div>
+      <WhatsNew
+        userId={session.userId}
+        entries={changelogEntries ?? []}
+        lastSeenAt={profile?.last_seen_changelog_at ?? null}
+        showButton={false}
+      />
     </ConnectionProvider>
   );
 }

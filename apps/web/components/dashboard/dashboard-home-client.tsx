@@ -297,10 +297,13 @@ export function DashboardHomeClient({
               {restaurant?.name ?? "Dashboard"}
             </h1>
           </div>
+          {/* Reopen button only — the auto-popup is mounted once at the
+              dashboard layout level so it shows on whatever page you land on. */}
           <WhatsNew
             userId={userId}
             entries={changelogEntries}
             lastSeenAt={changelogLastSeenAt}
+            autoOpen={false}
           />
         </div>
 

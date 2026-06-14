@@ -36,10 +36,16 @@ export function WhatsNew({
   userId,
   entries,
   lastSeenAt,
+  autoOpen = true,
+  showButton = true,
 }: {
   userId: string;
   entries: ChangelogEntry[];
   lastSeenAt: string | null;
+  /** Auto-open the popup once when there's something unseen. */
+  autoOpen?: boolean;
+  /** Render the persistent "What's New" trigger button. */
+  showButton?: boolean;
 }) {
   const unseen = useMemo(
     () =>
@@ -58,13 +64,20 @@ export function WhatsNew({
   const [page, setPage] = useState(0);
   const [hasUnread, setHasUnread] = useState(unseen.length > 0);
 
-  // Auto-open once on mount when there's something the user hasn't seen.
+  // Auto-open once when there's something unseen — after a short beat so it
+  // eases in gently rather than slamming up on load. We stamp "seen" the moment
+  // it opens, so it's strictly ONE-TIME: it never re-appears on another page (or
+  // a refresh) even if the merchant navigates away without dismissing it. The
+  // content stays available behind the "What's New" button.
   useEffect(() => {
-    if (unseen.length > 0) {
+    if (!autoOpen || unseen.length === 0) return;
+    const t = setTimeout(() => {
       setMode("auto");
       setPage(0);
       setOpen(true);
-    }
+      void markSeen();
+    }, 800);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -101,35 +114,41 @@ export function WhatsNew({
   return (
     <>
       {/* Trigger button */}
-      <button
-        onClick={openManual}
-        aria-label="What's new"
-        className="relative flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors duration-150 min-h-[36px] cursor-pointer"
-      >
-        <Sparkles size={14} strokeWidth={2.5} />
-        <span className="hidden sm:inline">What&rsquo;s New</span>
-        {hasUnread && (
-          <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cinnabar-500 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cinnabar-500" />
-          </span>
-        )}
-      </button>
+      {showButton && (
+        <button
+          onClick={openManual}
+          aria-label="What's new"
+          className="relative flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors duration-150 min-h-[36px] cursor-pointer"
+        >
+          <Sparkles size={14} strokeWidth={2.5} />
+          <span className="hidden sm:inline">What&rsquo;s New</span>
+          {hasUnread && (
+            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cinnabar-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cinnabar-500" />
+            </span>
+          )}
+        </button>
+      )}
 
       {open && current && (
         <div
           className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm"
           onClick={close}
+          style={{ animation: "wnBackdrop 0.45s ease both" }}
         >
           <div
-            className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-md md:mx-4 max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-[whatsNewIn_0.4s_cubic-bezier(0.22,1,0.36,1)]"
+            className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-md md:mx-4 max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
+            style={{ animation: "whatsNewIn 0.6s cubic-bezier(0.22,1,0.36,1) both" }}
           >
             <style>{`
+              @keyframes wnBackdrop { from { opacity: 0; } to { opacity: 1; } }
               @keyframes whatsNewIn {
-                from { opacity: 0; transform: translateY(24px) scale(0.98); }
+                from { opacity: 0; transform: translateY(16px) scale(0.985); }
                 to   { opacity: 1; transform: translateY(0) scale(1); }
               }
+              @keyframes wnRise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
               @keyframes blobA { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-12px,-10px) scale(1.08); } }
               @keyframes blobB { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(10px,-8px) scale(1.06); } }
             `}</style>
@@ -171,7 +190,11 @@ export function WhatsNew({
             </div>
 
             {/* Entry body */}
-            <div className="overflow-y-auto px-6 py-5 flex-1">
+            <div
+              key={current.id}
+              className="overflow-y-auto px-6 py-5 flex-1"
+              style={{ animation: "wnRise 0.4s ease both" }}
+            >
               <div className="flex items-center gap-2 mb-2.5">
                 <span
                   className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
