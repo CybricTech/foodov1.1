@@ -562,6 +562,14 @@ export default function CheckoutPage() {
         return;
       }
 
+      // Test merchant (is_test): the order was created server-side with no
+      // charge — go straight to its confirmation page.
+      if (initData.provider === "test" && initData.orderId) {
+        clearCart();
+        router.push(`/${restaurant.slug}/orders/${initData.orderId}`);
+        return;
+      }
+
       const popupEmail = email || `${normalizedPhone?.replace(/\D/g, "")}@foodo.ng`;
 
       posthog.capture("payment_initiated", {

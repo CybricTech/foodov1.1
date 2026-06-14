@@ -1331,6 +1331,7 @@ export type Database = {
           youtube_url: string | null
           closure_message: string | null
           closure_message_history: string[]
+          is_test: boolean
           sms_sender_id: string | null
           sms_sender_status: string | null
           sms_sender_requested_at: string | null
@@ -1373,6 +1374,7 @@ export type Database = {
           youtube_url?: string | null
           closure_message?: string | null
           closure_message_history?: string[]
+          is_test?: boolean
           sms_sender_id?: string | null
           sms_sender_status?: string | null
           sms_sender_requested_at?: string | null
@@ -1415,6 +1417,7 @@ export type Database = {
           youtube_url?: string | null
           closure_message?: string | null
           closure_message_history?: string[]
+          is_test?: boolean
           sms_sender_id?: string | null
           sms_sender_status?: string | null
           sms_sender_requested_at?: string | null

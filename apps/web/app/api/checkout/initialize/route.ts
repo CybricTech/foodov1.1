@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
 import { resolveDiscount } from "@/lib/discounts";
+import { createTestOrder } from "@/lib/checkout/create-test-order";
 import { getPostHogClient } from "@/lib/posthog";
 import {
   DELIVERY_BASE_FEE_KOBO,
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
   // Verify restaurant exists and accepts orders
   const { data: restaurant, error: restError } = await supabase
     .from("restaurants")
-    .select("id, name, accepts_orders, min_order_amount, delivery_fee")
+    .select("id, name, accepts_orders, min_order_amount, delivery_fee, is_test")
     .eq("id", data.restaurantId)
     .eq("is_active", true)
     .single();
@@ -522,6 +523,37 @@ export async function POST(request: NextRequest) {
       { error: "Failed to create payment record" },
       { status: 500 }
     );
+  }
+
+  // ── Test merchant (is_test): no real charge ───────────────────────────────
+  // For test/demo merchants (e.g. The Copper Pot) we skip the payment gateway
+  // entirely and create the PAID order directly — identical to a real order in
+  // every other way (queue, loyalty earn/redeem, settlements), so the merchant
+  // can be used to exercise the full flow (pickup + delivery) without money
+  // moving. Strictly gated to is_test; unreachable for a real merchant.
+  if (restaurant.is_test) {
+    try {
+      const { orderId, orderNumber } = await createTestOrder(supabase, {
+        paymentId: payment.id,
+        restaurantId: data.restaurantId,
+        meta: sharedMetadata as Record<string, unknown>,
+      });
+      return NextResponse.json({
+        provider: "test",
+        orderId,
+        orderNumber,
+        paymentId: payment.id,
+        totalKobo,
+        deliveryFeeKobo,
+        vatKobo,
+        serviceFeeKobo,
+        discountKobo,
+        discountCode,
+      });
+    } catch (e) {
+      console.error("[checkout] test order creation failed:", e);
+      return NextResponse.json({ error: "Test order creation failed" }, { status: 500 });
+    }
   }
 
   const posthog = getPostHogClient();
