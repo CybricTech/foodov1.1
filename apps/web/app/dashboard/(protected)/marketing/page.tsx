@@ -2,7 +2,7 @@ import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { MarketingClient } from "@/components/dashboard/marketing-client";
-import type { Discount } from "@foodo/database";
+import type { Discount, LoyaltyProgram } from "@foodo/database";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,7 @@ export default async function MarketingPage() {
     { count: allCount },
     { count: inactive30Count },
     { count: vipCount },
+    { data: loyaltyProgram },
   ] = await Promise.all([
     supabase
       .from("discounts")
@@ -47,6 +48,11 @@ export default async function MarketingPage() {
       .select("*", { count: "exact", head: true })
       .eq("restaurant_id", restaurantId)
       .gte("total_orders", 3),
+    supabase
+      .from("loyalty_programs")
+      .select("*")
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle(),
   ]);
 
   return (
@@ -62,6 +68,7 @@ export default async function MarketingPage() {
         inactive30: inactive30Count ?? 0,
         vip: vipCount ?? 0,
       }}
+      loyaltyProgram={(loyaltyProgram as LoyaltyProgram | null) ?? null}
     />
   );
 }

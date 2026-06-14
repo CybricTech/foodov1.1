@@ -179,6 +179,8 @@ export async function GET(request: NextRequest) {
     delivery_fee_kobo: meta.delivery_fee_kobo as number,
     vat_kobo: (meta.vat_kobo as number) || 0,
     service_fee_kobo: (meta.service_fee_kobo as number) || 0,
+    loyalty_redeemed: (meta.loyalty_redeemed as boolean) || false,
+    loyalty_stamps_spent: (meta.loyalty_stamps_spent as number) || null,
     total_kobo:
       (meta.subtotal_kobo as number) +
       (meta.delivery_fee_kobo as number) +

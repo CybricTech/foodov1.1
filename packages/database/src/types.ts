@@ -14,6 +14,97 @@ export type Database = {
   }
   public: {
     Tables: {
+      loyalty_programs: {
+        Row: {
+          created_at: string
+          earn_min_order_kobo: number
+          id: string
+          is_active: boolean
+          restaurant_id: string
+          reward_label: string | null
+          reward_max_discount_kobo: number | null
+          reward_type: string
+          reward_value: number | null
+          stamps_required: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          earn_min_order_kobo?: number
+          id?: string
+          is_active?: boolean
+          restaurant_id: string
+          reward_label?: string | null
+          reward_max_discount_kobo?: number | null
+          reward_type?: string
+          reward_value?: number | null
+          stamps_required?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          earn_min_order_kobo?: number
+          id?: string
+          is_active?: boolean
+          restaurant_id?: string
+          reward_label?: string | null
+          reward_max_discount_kobo?: number | null
+          reward_type?: string
+          reward_value?: number | null
+          stamps_required?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_programs_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: true
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_stamps: {
+        Row: {
+          created_at: string
+          customer_phone: string
+          delta: number
+          id: string
+          order_id: string | null
+          program_id: string
+          reason: string
+          restaurant_id: string
+        }
+        Insert: {
+          created_at?: string
+          customer_phone: string
+          delta: number
+          id?: string
+          order_id?: string | null
+          program_id: string
+          reason: string
+          restaurant_id: string
+        }
+        Update: {
+          created_at?: string
+          customer_phone?: string
+          delta?: number
+          id?: string
+          order_id?: string | null
+          program_id?: string
+          reason?: string
+          restaurant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_stamps_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       changelog_entries: {
         Row: {
           body: string
@@ -844,6 +935,8 @@ export type Database = {
           payment_id: string | null
           payment_ref: string | null
           payment_status: string
+          loyalty_redeemed: boolean
+          loyalty_stamps_spent: number | null
           restaurant_id: string
           rider_id: string | null
           service_fee_kobo: number
@@ -888,6 +981,8 @@ export type Database = {
           payment_id?: string | null
           payment_ref?: string | null
           payment_status?: string
+          loyalty_redeemed?: boolean
+          loyalty_stamps_spent?: number | null
           restaurant_id: string
           rider_id?: string | null
           service_fee_kobo?: number
@@ -932,6 +1027,8 @@ export type Database = {
           payment_id?: string | null
           payment_ref?: string | null
           payment_status?: string
+          loyalty_redeemed?: boolean
+          loyalty_stamps_spent?: number | null
           restaurant_id?: string
           rider_id?: string | null
           service_fee_kobo?: number
@@ -1233,6 +1330,7 @@ export type Database = {
           whatsapp_number: string | null
           youtube_url: string | null
           closure_message: string | null
+          closure_message_history: string[]
           sms_sender_id: string | null
           sms_sender_status: string | null
           sms_sender_requested_at: string | null
@@ -1274,6 +1372,7 @@ export type Database = {
           whatsapp_number?: string | null
           youtube_url?: string | null
           closure_message?: string | null
+          closure_message_history?: string[]
           sms_sender_id?: string | null
           sms_sender_status?: string | null
           sms_sender_requested_at?: string | null
@@ -1315,6 +1414,7 @@ export type Database = {
           whatsapp_number?: string | null
           youtube_url?: string | null
           closure_message?: string | null
+          closure_message_history?: string[]
           sms_sender_id?: string | null
           sms_sender_status?: string | null
           sms_sender_requested_at?: string | null

@@ -31,8 +31,10 @@ import {
   MapPin,
   Loader2,
   Search,
+  Stamp,
 } from "lucide-react";
-import type { Discount, Json } from "@foodo/database";
+import type { Discount, Json, LoyaltyProgram } from "@foodo/database";
+import { LoyaltyConfig } from "@/components/dashboard/loyalty-config";
 
 interface MarketingClientProps {
   restaurantId: string;
@@ -44,6 +46,7 @@ interface MarketingClientProps {
     inactive30: number;
     vip: number;
   };
+  loyaltyProgram: LoyaltyProgram | null;
 }
 
 const INPUT_CLS =
@@ -135,13 +138,14 @@ export function MarketingClient({
   senderStatus,
   senderName,
   customerCounts,
+  loyaltyProgram,
 }: MarketingClientProps) {
   const supabase = useMemo(() => createBrowserClient(), []);
   const [discounts, setDiscounts] = useState<Discount[]>(initialDiscounts);
   const [editing, setEditing] = useState<Discount | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"offers" | "sms">("offers");
+  const [activeTab, setActiveTab] = useState<"offers" | "loyalty" | "sms">("offers");
 
   // ── Realtime: keep the list in sync across staff/devices ──────────
   useEffect(() => {
@@ -281,6 +285,18 @@ export function MarketingClient({
             )}
           >
             Offers
+          </button>
+          <button
+            onClick={() => setActiveTab("loyalty")}
+            className={cn(
+              "py-2.5 px-1 mr-5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5",
+              activeTab === "loyalty"
+                ? "border-purple-600 text-purple-700"
+                : "border-transparent text-black-400 hover:text-black-700"
+            )}
+          >
+            <Stamp size={14} />
+            Loyalty
           </button>
           <button
             onClick={() => setActiveTab("sms")}
@@ -453,6 +469,11 @@ export function MarketingClient({
             </div>
           )}
         </>
+      )}
+
+      {/* Loyalty tab — stamp-card program config */}
+      {activeTab === "loyalty" && (
+        <LoyaltyConfig restaurantId={restaurantId} initialProgram={loyaltyProgram} />
       )}
 
       {/* SMS Campaigns tab — gated "coming soon": the composer is previewed but

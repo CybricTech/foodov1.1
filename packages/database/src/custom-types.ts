@@ -33,6 +33,15 @@ export type Discount =
 export type DiscountRedemption =
   Database["public"]["Tables"]["discount_redemptions"]["Row"];
 
+export type LoyaltyProgram =
+  Database["public"]["Tables"]["loyalty_programs"]["Row"];
+
+export type LoyaltyProgramInsert =
+  Database["public"]["Tables"]["loyalty_programs"]["Insert"];
+
+export type LoyaltyStamp =
+  Database["public"]["Tables"]["loyalty_stamps"]["Row"];
+
 // ── Insert aliases ────────────────────────────────────────────────────────────
 
 export type DiscountInsert =

@@ -9,6 +9,7 @@ import posthog from "posthog-js";
 import { useCartStore } from "@/lib/stores/cart";
 import { transformImage } from "@/lib/images";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
+import { LoyaltyProgressCard } from "@/components/storefront/loyalty-progress-card";
 import { normalizeToE164, formatKobo, isValidNigerianPhone } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 
@@ -1112,6 +1113,20 @@ export default function CheckoutPage() {
                   Service fee
                 </div>
                 <span className="text-sm font-semibold text-black-900">{formatKobo(serviceFeeKobo)}</span>
+              </div>
+            )}
+
+            {/* Loyalty progress */}
+            {restaurant?.id && (
+              <div className="px-4 pt-3">
+                <LoyaltyProgressCard
+                  restaurantId={restaurant.id}
+                  phone={isValidNigerianPhone(phone) ? normalizeToE164(phone) : phone}
+                  phoneValid={isValidNigerianPhone(phone)}
+                  subtotalKobo={subtotal}
+                  deliveryFeeKobo={fulfillmentType === "delivery" ? deliveryFeeKobo ?? 0 : 0}
+                  hasPromo={!!discount}
+                />
               </div>
             )}
 

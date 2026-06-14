@@ -49,6 +49,7 @@ import { getSupabase } from "../../lib/supabase";
 import { theme } from "../../theme";
 import { ScreenHeader } from "../../components/screen-header";
 import { DiscountForm } from "./discount-form";
+import { LoyaltyConfig } from "./loyalty-config";
 import { SmsComposer } from "./sms-composer";
 
 // Mirrors the web/server "coming soon" gate for SMS campaigns. The web tab is
@@ -112,7 +113,7 @@ export function MarketingScreen({
 }: MarketingScreenProps) {
   const supabase = getSupabase();
 
-  const [tab, setTab] = useState<"offers" | "sms">("offers");
+  const [tab, setTab] = useState<"offers" | "loyalty" | "sms">("offers");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
@@ -238,7 +239,8 @@ export function MarketingScreen({
       {/* Tabs */}
       <View style={styles.tabBar}>
         <TabBtn label="Offers" active={tab === "offers"} onPress={() => setTab("offers")} />
-        <TabBtn label="SMS Campaigns" active={tab === "sms"} onPress={() => setTab("sms")} />
+        <TabBtn label="Loyalty" active={tab === "loyalty"} onPress={() => setTab("loyalty")} />
+        <TabBtn label="SMS" active={tab === "sms"} onPress={() => setTab("sms")} />
       </View>
 
       {tab === "offers" ? (
@@ -357,6 +359,8 @@ export function MarketingScreen({
             })}
           </ScrollView>
         )
+      ) : tab === "loyalty" ? (
+        <LoyaltyConfig restaurantId={restaurantId} />
       ) : (
         <SmsComposer
           comingSoon={SMS_COMING_SOON}

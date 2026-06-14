@@ -8,6 +8,7 @@ import {
   DELIVERY_PER_KM_RATE_KOBO,
   DELIVERY_MAX_RADIUS_KM,
   DELIVERY_MAX_FEE_KOBO,
+  computeLoyaltyRewardKobo,
 } from "@foodo/utils";
 
 type DayHours = { enabled: boolean; open: string; close: string };
@@ -378,6 +379,38 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // ── Loyalty reward (auto-applied when the customer is eligible) ────────────
+  // Promo codes win: loyalty only applies when no discount was used. The reward
+  // is merchant-funded like a discount and flows through settlement the same
+  // way. Spending the stamps is recorded by the order trigger via the
+  // loyalty_redeemed/loyalty_stamps_spent flags stamped at order creation.
+  let loyaltyRedeemed = false;
+  let loyaltyStampsSpent = 0;
+  if (!appliedDiscount) {
+    const { data: program } = await supabase
+      .from("loyalty_programs")
+      .select("id, stamps_required, reward_type, reward_value, reward_max_discount_kobo")
+      .eq("restaurant_id", data.restaurantId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (program) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: balance } = await (supabase.rpc as any)("loyalty_balance", {
+        p_program_id: program.id,
+        p_phone: data.customerPhone,
+      });
+      if (typeof balance === "number" && balance >= program.stamps_required) {
+        const reward = computeLoyaltyRewardKobo(program, { subtotalKobo, deliveryFeeKobo });
+        if (reward.discountSubtotalKobo > 0 || reward.discountDeliveryKobo > 0) {
+          discountSubtotalKobo = reward.discountSubtotalKobo;
+          discountDeliveryKobo = reward.discountDeliveryKobo;
+          loyaltyRedeemed = true;
+          loyaltyStampsSpent = program.stamps_required;
+        }
+      }
+    }
+  }
+
   // Total customer benefit (subtotal portion + delivery waiver)
   const discountKobo = discountSubtotalKobo + discountDeliveryKobo;
   // Subtotal the customer effectively pays — VAT, service fee and merchant
@@ -451,6 +484,8 @@ export async function POST(request: NextRequest) {
     discount_code: discountCode,
     discount_kobo: discountKobo,
     discount_subtotal_kobo: discountSubtotalKobo,
+    loyalty_redeemed: loyaltyRedeemed,
+    loyalty_stamps_spent: loyaltyStampsSpent,
   } as import("@foodo/database").Json;
 
   const paymentInsert =

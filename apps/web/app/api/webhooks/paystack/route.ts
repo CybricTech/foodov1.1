@@ -127,6 +127,8 @@ export async function POST(request: NextRequest) {
     discount_id: (meta.discount_id as string) || null,
     discount_code: (meta.discount_code as string) || null,
     discount_kobo: (meta.discount_kobo as number) || 0,
+    loyalty_redeemed: (meta.loyalty_redeemed as boolean) || false,
+    loyalty_stamps_spent: (meta.loyalty_stamps_spent as number) || null,
     total_kobo:
       (meta.subtotal_kobo as number) +
       (meta.delivery_fee_kobo as number) +

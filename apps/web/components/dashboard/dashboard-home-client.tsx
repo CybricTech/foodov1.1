@@ -19,6 +19,7 @@ import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { WhatsNew, type ChangelogEntry } from "@/components/dashboard/whats-new";
+import { StoreStatusControl } from "@/components/dashboard/store-status-control";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +51,8 @@ interface Restaurant {
   name: string;
   slug: string;
   accepts_orders: boolean;
+  closure_message: string | null;
+  closure_message_history: string[];
 }
 
 interface DashboardHomeClientProps {
@@ -382,26 +385,15 @@ export function DashboardHomeClient({
             )}
           </div>
 
-          {/* Store status — display only */}
+          {/* Store status — interactive open/close manager */}
           {restaurant && (
-            <div
-              className={cn(
-                "flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl min-h-[36px]",
-                acceptsOrders
-                  ? "bg-viridian-50 text-viridian-700"
-                  : "bg-cinnabar-50 text-cinnabar-600"
-              )}
-            >
-              <span
-                className={cn(
-                  "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                  acceptsOrders
-                    ? "bg-viridian-500 animate-pulse"
-                    : "bg-cinnabar-500"
-                )}
-              />
-              {acceptsOrders ? "Open" : "Closed"}
-            </div>
+            <StoreStatusControl
+              restaurantId={restaurant.id}
+              initialClosureMessage={restaurant.closure_message}
+              initialHistory={restaurant.closure_message_history ?? []}
+              acceptsOrders={acceptsOrders}
+              onAcceptsOrdersChange={setAcceptsOrders}
+            />
           )}
         </div>
       </div>
