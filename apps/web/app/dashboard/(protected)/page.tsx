@@ -18,6 +18,22 @@ export default async function DashboardHomePage() {
     .eq("id", restaurantId)
     .single();
 
+  // "What's New" — published changelog entries + this user's last-seen marker.
+  const [{ data: changelogEntries }, { data: profile }] = await Promise.all([
+    supabase
+      .from("changelog_entries")
+      .select("id, title, body, tag, image_url, version_label, published_at")
+      .not("published_at", "is", null)
+      .lte("published_at", new Date().toISOString())
+      .order("published_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("user_profiles")
+      .select("last_seen_changelog_at")
+      .eq("id", session.userId)
+      .maybeSingle(),
+  ]);
+
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: orders } = await supabase
@@ -35,6 +51,9 @@ export default async function DashboardHomePage() {
     <DashboardHomeClient
       restaurant={restaurant}
       initialOrders={orders ?? []}
+      userId={session.userId}
+      changelogEntries={changelogEntries ?? []}
+      changelogLastSeenAt={profile?.last_seen_changelog_at ?? null}
     />
   );
 }

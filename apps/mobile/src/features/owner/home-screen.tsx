@@ -35,6 +35,7 @@ import { formatKobo } from "@foodo/utils";
 import { getSupabase } from "../../lib/supabase";
 import { useConnection } from "../../lib/connection";
 import { theme } from "../../theme";
+import { WhatsNew } from "./whats-new";
 
 /* ---- Types ---- */
 type TimeFilter =
@@ -226,9 +227,10 @@ function KpiCard({
 
 interface HomeScreenProps {
   restaurantId: string;
+  userId: string;
 }
 
-export function HomeScreen({ restaurantId }: HomeScreenProps) {
+export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
   const supabase = getSupabase();
   const { reportRealtimeStatus, onReconnect } = useConnection();
 
@@ -392,19 +394,24 @@ export function HomeScreen({ restaurantId }: HomeScreenProps) {
           paddingBottom: 14,
         }}
       >
-        <Text style={{ fontSize: 12, color: theme.colors.black[400], fontWeight: "500" }}>
-          {formatHeaderDate(new Date())}
-        </Text>
-        <Text
-          style={{
-            fontSize: 20,
-            fontWeight: "800",
-            color: theme.colors.black[900],
-            marginTop: 2,
-          }}
-        >
-          {restaurant?.name ?? "Dashboard"}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 12, color: theme.colors.black[400], fontWeight: "500" }}>
+              {formatHeaderDate(new Date())}
+            </Text>
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: "800",
+                color: theme.colors.black[900],
+                marginTop: 2,
+              }}
+            >
+              {restaurant?.name ?? "Dashboard"}
+            </Text>
+          </View>
+          <WhatsNew userId={userId} />
+        </View>
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 }}>
           {/* Time filter */}

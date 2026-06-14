@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      changelog_entries: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          image_url: string | null
+          published_at: string | null
+          tag: string
+          title: string
+          updated_at: string
+          version_label: string | null
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          published_at?: string | null
+          tag?: string
+          title: string
+          updated_at?: string
+          version_label?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          published_at?: string | null
+          tag?: string
+          title?: string
+          updated_at?: string
+          version_label?: string | null
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -1497,6 +1533,7 @@ export type Database = {
           full_name: string | null
           id: string
           is_active: boolean
+          last_seen_changelog_at: string | null
           phone: string | null
           restaurant_id: string | null
           role: string
@@ -1510,6 +1547,7 @@ export type Database = {
           full_name?: string | null
           id: string
           is_active?: boolean
+          last_seen_changelog_at?: string | null
           phone?: string | null
           restaurant_id?: string | null
           role: string
@@ -1523,6 +1561,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           is_active?: boolean
+          last_seen_changelog_at?: string | null
           phone?: string | null
           restaurant_id?: string | null
           role?: string

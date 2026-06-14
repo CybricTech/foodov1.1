@@ -18,6 +18,7 @@ import {
 import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
+import { WhatsNew, type ChangelogEntry } from "@/components/dashboard/whats-new";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,6 +55,9 @@ interface Restaurant {
 interface DashboardHomeClientProps {
   restaurant: Restaurant | null;
   initialOrders: Order[];
+  userId: string;
+  changelogEntries: ChangelogEntry[];
+  changelogLastSeenAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +194,9 @@ function KPICard({ label, value, icon, accentClass, iconBgClass }: KPICardProps)
 export function DashboardHomeClient({
   restaurant,
   initialOrders,
+  userId,
+  changelogEntries,
+  changelogLastSeenAt,
 }: DashboardHomeClientProps) {
   const supabase = createBrowserClient();
   const restaurantId = restaurant?.id ?? "";
@@ -283,10 +290,19 @@ export function DashboardHomeClient({
 
       {/* ── Page header ──────────────────────────────────────────────── */}
       <div className="bg-white border-b border-black-100 px-4 pt-5 pb-4">
-        <p className="text-xs text-black-400 font-medium">{formatDate(today)}</p>
-        <h1 className="text-xl font-extrabold text-black-900 mt-0.5 leading-tight">
-          {restaurant?.name ?? "Dashboard"}
-        </h1>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-xs text-black-400 font-medium">{formatDate(today)}</p>
+            <h1 className="text-xl font-extrabold text-black-900 mt-0.5 leading-tight">
+              {restaurant?.name ?? "Dashboard"}
+            </h1>
+          </div>
+          <WhatsNew
+            userId={userId}
+            entries={changelogEntries}
+            lastSeenAt={changelogLastSeenAt}
+          />
+        </div>
 
         {/* Controls row */}
         <div className="flex items-center gap-2 mt-3">

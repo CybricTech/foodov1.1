@@ -17,6 +17,7 @@ import {
   Globe,
   Activity,
   LayoutGrid,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +33,7 @@ export const NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/disputes",     label: "Disputes",      icon: Scale,           exact: false },
   { href: "/admin/late-orders",  label: "Late Orders",   icon: AlertTriangle,   exact: false },
   { href: "/admin/landing",      label: "Landing",       icon: Globe,           exact: false },
+  { href: "/admin/changelog",    label: "What's New",    icon: Sparkles,        exact: false },
   { href: "/admin/logs/sms",     label: "SMS Logs",      icon: MessageSquare,   exact: false },
   { href: "/admin/system-health",label: "System Health",  icon: Activity,       exact: false },
   { href: "/admin/settings",     label: "Settings",      icon: Settings,        exact: false },
@@ -49,6 +51,7 @@ export const MOBILE_MORE_ITEMS: AdminNavItem[] = NAV_ITEMS.filter((i) =>
     "/admin/disputes",
     "/admin/late-orders",
     "/admin/landing",
+    "/admin/changelog",
     "/admin/logs/sms",
     "/admin/system-health",
     "/admin/settings",

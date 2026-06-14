@@ -8,5 +8,5 @@ import { HomeScreen } from "../../../src/features/owner/home-screen";
 export default function OwnerHomeRoute() {
   const { profile } = useAuth();
   if (!profile) return null;
-  return <HomeScreen restaurantId={profile.restaurantId} />;
+  return <HomeScreen restaurantId={profile.restaurantId} userId={profile.userId} />;
 }
