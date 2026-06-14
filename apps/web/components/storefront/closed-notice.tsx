@@ -2,75 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { X, Clock } from "lucide-react";
+import {
+  isWithinOpeningHours,
+  nextOpenLabel,
+  type OpeningHours,
+} from "@foodo/utils";
 import { useRestaurant } from "./restaurant-context";
-
-type DayHours = { enabled: boolean; open: string; close: string };
-type OpeningHours = Record<string, DayHours>;
-
-const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-const DAY_LABELS: Record<string, string> = {
-  sun: "Sunday", mon: "Monday", tue: "Tuesday", wed: "Wednesday",
-  thu: "Thursday", fri: "Friday", sat: "Saturday",
-};
-
-function parseTime(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function formatTime(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const hour = h % 12 || 12;
-  return m === 0 ? `${hour}:00${period}` : `${hour}:${String(m).padStart(2, "0")}${period}`;
-}
-
-function isCurrentlyOpen(hours: OpeningHours): boolean {
-  const now = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" })
-  );
-  const dayKey = DAY_KEYS[now.getDay()];
-  const day = hours[dayKey];
-
-  if (!day || !day.enabled) return false;
-
-  const current = now.getHours() * 60 + now.getMinutes();
-  const open = parseTime(day.open);
-  const close = parseTime(day.close);
-
-  if (close <= open) {
-    return current >= open || current < close;
-  }
-  return current >= open && current < close;
-}
-
-function getNextOpenTime(hours: OpeningHours): string | null {
-  const now = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" })
-  );
-  const todayIdx = now.getDay();
-  const currentMins = now.getHours() * 60 + now.getMinutes();
-
-  for (let offset = 0; offset < 7; offset++) {
-    const idx = (todayIdx + offset) % 7;
-    const key = DAY_KEYS[idx];
-    const day = hours[key];
-    if (!day?.enabled) continue;
-
-    const openMins = parseTime(day.open);
-
-    if (offset === 0) {
-      if (openMins > currentMins) {
-        return `Opens today at ${formatTime(day.open)}`;
-      }
-    } else {
-      const label = offset === 1 ? "tomorrow" : DAY_LABELS[key];
-      return `Opens ${label} at ${formatTime(day.open)}`;
-    }
-  }
-
-  return null;
-}
 
 export function ClosedNotice() {
   const { restaurant } = useRestaurant();
@@ -90,14 +27,14 @@ export function ClosedNotice() {
       if (!restaurant.accepts_orders) {
         setHardClosed(true);
         setScheduleClosed(false);
-        setNextOpen(hours ? getNextOpenTime(hours) : null);
+        setNextOpen(nextOpenLabel(hours));
         return;
       }
       setHardClosed(false);
       if (hours && Object.keys(hours).length > 0) {
-        const open = isCurrentlyOpen(hours);
+        const open = isWithinOpeningHours(hours);
         setScheduleClosed(!open);
-        if (!open) setNextOpen(getNextOpenTime(hours));
+        if (!open) setNextOpen(nextOpenLabel(hours));
       }
     }
 

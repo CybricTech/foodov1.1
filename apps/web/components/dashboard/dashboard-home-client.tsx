@@ -20,6 +20,7 @@ import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { WhatsNew, type ChangelogEntry } from "@/components/dashboard/whats-new";
 import { StoreStatusControl } from "@/components/dashboard/store-status-control";
+import type { OpeningHours } from "@foodo/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,6 +62,7 @@ interface DashboardHomeClientProps {
   userId: string;
   changelogEntries: ChangelogEntry[];
   changelogLastSeenAt: string | null;
+  openingHours: OpeningHours | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +202,7 @@ export function DashboardHomeClient({
   userId,
   changelogEntries,
   changelogLastSeenAt,
+  openingHours,
 }: DashboardHomeClientProps) {
   const supabase = createBrowserClient();
   const restaurantId = restaurant?.id ?? "";
@@ -391,6 +394,7 @@ export function DashboardHomeClient({
               restaurantId={restaurant.id}
               initialClosureMessage={restaurant.closure_message}
               initialHistory={restaurant.closure_message_history ?? []}
+              openingHours={openingHours}
               acceptsOrders={acceptsOrders}
               onAcceptsOrdersChange={setAcceptsOrders}
             />

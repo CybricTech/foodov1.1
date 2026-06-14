@@ -5,3 +5,4 @@ export * from "./order-number";
 export * from "./discount-engine";
 export * from "./settlements";
 export * from "./loyalty";
+export * from "./opening-hours";

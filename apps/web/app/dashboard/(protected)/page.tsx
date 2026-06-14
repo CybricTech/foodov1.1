@@ -2,6 +2,7 @@ import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DashboardHomeClient } from "@/components/dashboard/dashboard-home-client";
+import type { OpeningHours } from "@foodo/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export default async function DashboardHomePage() {
 
   const { data: restaurant } = await supabase
     .from("restaurants")
-    .select("id, name, slug, accepts_orders, closure_message, closure_message_history")
+    .select("id, name, slug, accepts_orders, closure_message, closure_message_history, opening_hours")
     .eq("id", restaurantId)
     .single();
 
@@ -54,6 +55,7 @@ export default async function DashboardHomePage() {
       userId={session.userId}
       changelogEntries={changelogEntries ?? []}
       changelogLastSeenAt={profile?.last_seen_changelog_at ?? null}
+      openingHours={(restaurant?.opening_hours as unknown as OpeningHours | null) ?? null}
     />
   );
 }

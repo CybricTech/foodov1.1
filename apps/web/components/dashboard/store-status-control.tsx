@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Check, Power, Clock } from "lucide-react";
 import { cn } from "@foodo/ui";
+import { isWithinOpeningHours, nextOpenLabel, type OpeningHours } from "@foodo/utils";
 import { createBrowserClient } from "@/lib/supabase/client";
 
 const SUGGESTIONS = [
@@ -30,12 +31,15 @@ export function StoreStatusControl({
   restaurantId,
   initialClosureMessage,
   initialHistory,
+  openingHours,
   acceptsOrders,
   onAcceptsOrdersChange,
 }: {
   restaurantId: string;
   initialClosureMessage: string | null;
   initialHistory: string[];
+  /** Operating-hours schedule — a store outside these reads as closed. */
+  openingHours: OpeningHours | null;
   /** Controlled value so it stays in sync with the page's realtime updates. */
   acceptsOrders: boolean;
   onAcceptsOrdersChange: (next: boolean) => void;
@@ -48,6 +52,19 @@ export function StoreStatusControl({
   const [history, setHistory] = useState<string[]>(initialHistory ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Schedule state, re-checked each minute so the pill flips at open/close time
+  // without a refresh. Mirrors the storefront so the two never disagree.
+  const [withinHours, setWithinHours] = useState(() => isWithinOpeningHours(openingHours));
+  useEffect(() => {
+    setWithinHours(isWithinOpeningHours(openingHours));
+    const id = setInterval(() => setWithinHours(isWithinOpeningHours(openingHours)), 60_000);
+    return () => clearInterval(id);
+  }, [openingHours]);
+
+  // EFFECTIVE state — exactly what customers see on the storefront.
+  const effectiveOpen = acceptsOrders && withinHours;
+  const scheduleClosed = acceptsOrders && !withinHours;
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -98,18 +115,24 @@ export function StoreStatusControl({
         aria-label="Manage store status"
         className={cn(
           "flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl min-h-[36px] transition-colors cursor-pointer",
-          acceptsOrders
+          effectiveOpen
             ? "bg-viridian-50 text-viridian-700 hover:bg-viridian-100"
-            : "bg-cinnabar-50 text-cinnabar-600 hover:bg-cinnabar-100"
+            : scheduleClosed
+              ? "bg-dixie-50 text-dixie-600 hover:bg-dixie-100"
+              : "bg-cinnabar-50 text-cinnabar-600 hover:bg-cinnabar-100"
         )}
       >
         <span
           className={cn(
             "w-1.5 h-1.5 rounded-full flex-shrink-0",
-            acceptsOrders ? "bg-viridian-500 animate-pulse" : "bg-cinnabar-500"
+            effectiveOpen
+              ? "bg-viridian-500 animate-pulse"
+              : scheduleClosed
+                ? "bg-dixie-500"
+                : "bg-cinnabar-500"
           )}
         />
-        {acceptsOrders ? "Open" : "Closed"}
+        {effectiveOpen ? "Open" : "Closed"}
         <ChevronDown
           size={13}
           strokeWidth={2.5}
@@ -142,24 +165,41 @@ export function StoreStatusControl({
               <span
                 className={cn(
                   "w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0",
-                  acceptsOrders ? "bg-viridian-50" : "bg-cinnabar-50"
+                  effectiveOpen ? "bg-viridian-50" : scheduleClosed ? "bg-dixie-50" : "bg-cinnabar-50"
                 )}
               >
                 <Power
                   size={16}
                   strokeWidth={2.5}
-                  className={acceptsOrders ? "text-viridian-600" : "text-cinnabar-500"}
+                  className={
+                    effectiveOpen
+                      ? "text-viridian-600"
+                      : scheduleClosed
+                        ? "text-dixie-600"
+                        : "text-cinnabar-500"
+                  }
                 />
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-bold text-black-900">
-                  Store is {acceptsOrders ? "open" : "closed"}
+                  Store is {effectiveOpen ? "open" : "closed"}
                 </p>
                 <p className="text-xs text-black-400">
-                  {acceptsOrders ? "Accepting orders now" : "Customers can't order right now"}
+                  {effectiveOpen
+                    ? "Accepting orders now"
+                    : scheduleClosed
+                      ? nextOpenLabel(openingHours) ?? "Outside your opening hours"
+                      : "You've closed the store"}
                 </p>
               </div>
             </div>
+
+            {scheduleClosed && (
+              <p className="mt-2.5 text-[11px] leading-snug text-dixie-600 bg-dixie-50 rounded-lg px-2.5 py-2">
+                You&rsquo;re set to accept orders, but customers can&rsquo;t order outside your
+                opening hours. Change them in Settings → Operating hours.
+              </p>
+            )}
 
             {acceptsOrders ? (
               <button

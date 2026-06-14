@@ -30,7 +30,7 @@ import {
   UtensilsCrossed,
 } from "lucide-react-native";
 
-import { formatKobo } from "@foodo/utils";
+import { formatKobo, isWithinOpeningHours, type OpeningHours } from "@foodo/utils";
 
 import { getSupabase } from "../../lib/supabase";
 import { useConnection } from "../../lib/connection";
@@ -63,6 +63,7 @@ interface Restaurant {
   name: string;
   slug: string;
   accepts_orders: boolean;
+  opening_hours: OpeningHours | null;
 }
 
 /* ---- Helpers (ported 1:1 from web) ---- */
@@ -255,7 +256,7 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
     const [{ data: rest }, { data: ord }] = await Promise.all([
       supabase
         .from("restaurants")
-        .select("id, name, slug, accepts_orders")
+        .select("id, name, slug, accepts_orders, opening_hours")
         .eq("id", restaurantId)
         .single(),
       supabase
@@ -269,8 +270,8 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
     ]);
 
     if (rest) {
-      setRestaurant(rest as Restaurant);
-      setAcceptsOrders((rest as Restaurant).accepts_orders);
+      setRestaurant(rest as unknown as Restaurant);
+      setAcceptsOrders((rest as unknown as Restaurant).accepts_orders);
     }
     if (ord) setOrders(ord as unknown as HomeOrder[]);
   }, [restaurantId, supabase]);
@@ -365,6 +366,12 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
   const revenue = filteredOrders.reduce((s, o) => s + (o.total_kobo ?? 0), 0);
   const orderCount = filteredOrders.length;
   const avgOrderValue = orderCount > 0 ? Math.round(revenue / orderCount) : 0;
+
+  // EFFECTIVE store status — matches the storefront: accepting orders AND within
+  // opening hours. The minute tick above re-renders so this flips on schedule.
+  const withinHours = isWithinOpeningHours(restaurant?.opening_hours ?? null);
+  const effectiveOpen = acceptsOrders && withinHours;
+  const scheduleClosed = acceptsOrders && !withinHours;
   const recentOrders = filteredOrders.slice(0, 5);
 
   const onRefresh = useCallback(async () => {
@@ -442,9 +449,11 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 6,
-                backgroundColor: acceptsOrders
+                backgroundColor: effectiveOpen
                   ? theme.colors.viridian[100]
-                  : theme.colors.cinnabar[100],
+                  : scheduleClosed
+                    ? theme.colors.dixie[100]
+                    : theme.colors.cinnabar[100],
                 borderRadius: 12,
                 paddingHorizontal: 12,
                 paddingVertical: 9,
@@ -455,21 +464,25 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
                   width: 6,
                   height: 6,
                   borderRadius: 3,
-                  backgroundColor: acceptsOrders
+                  backgroundColor: effectiveOpen
                     ? theme.colors.viridian[500]
-                    : theme.colors.cinnabar[500],
+                    : scheduleClosed
+                      ? theme.colors.dixie[500]
+                      : theme.colors.cinnabar[500],
                 }}
               />
               <Text
                 style={{
                   fontSize: 13,
                   fontWeight: "700",
-                  color: acceptsOrders
+                  color: effectiveOpen
                     ? theme.colors.viridian[500]
-                    : theme.colors.cinnabar[500],
+                    : scheduleClosed
+                      ? theme.colors.dixie[500]
+                      : theme.colors.cinnabar[500],
                 }}
               >
-                {acceptsOrders ? "Open" : "Closed"}
+                {effectiveOpen ? "Open" : "Closed"}
               </Text>
             </View>
           )}
