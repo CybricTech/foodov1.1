@@ -11,14 +11,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *   • discount redemption + usage counter
  *   • CRM customer upsert + saved delivery address
  *   • payment.order_id link
+ *   • wallet ledger rows (order_credit + merchant_charge), so the test order
+ *     shows in Wallet → Activity exactly like a real one
  *
- * Loyalty earn/redeem happens automatically via the orders trigger (it fires on
- * the paid insert using customer_phone + loyalty_redeemed/loyalty_stamps_spent).
+ * Loyalty accrual (earn + redeem) is recorded via loyalty_accrue_for_order once
+ * order_items exist.
  *
- * Intentionally NOT done (test-merchant behaviour): wallet_transactions rows and
- * customer SMS/email. The merchant's pending balance + settlements are derived
- * from `orders` (recompute_restaurant_wallet + the canonical net formula), so
- * payout figures stay correct; we just don't spam notifications on every test.
+ * The ONLY thing a test order skips vs a real order is customer SMS/email — we
+ * don't want to spam notifications on every test. Pending balance + settlements
+ * are derived from `orders` (recompute_restaurant_wallet + canonical net), so
+ * payout figures are correct regardless.
  *
  * GATING: callers MUST confirm restaurant.is_test before invoking this. It is
  * never reachable for a real merchant.
@@ -184,6 +186,72 @@ export async function createTestOrder(
     .from("payments")
     .update({ order_id: order.id } as never)
     .eq("id", paymentId);
+
+  // Wallet ledger — mirror the webhook so the test order shows in Wallet →
+  // Activity exactly like a real order. The order_credit reflects the
+  // merchant-funded discount/loyalty (via discount_subtotal) and the merchant
+  // charge; delivery-fee split is deferred to dispatch, as for real orders.
+  const { data: settings } = await supabase
+    .from("platform_settings")
+    .select("service_charge_pct, service_charge_fixed_kobo, merchant_charge_pct, settlement_hold_hours")
+    .single();
+  const s = (settings ?? {}) as {
+    service_charge_pct?: number;
+    service_charge_fixed_kobo?: number;
+    merchant_charge_pct?: number;
+    settlement_hold_hours?: number;
+  };
+  const metaServiceFeeKobo = num("service_fee_kobo");
+  const customerPaidServiceFee = metaServiceFeeKobo > 0;
+  const netSubtotalKobo = num("subtotal_kobo") - num("discount_subtotal_kobo");
+  const vatKobo = num("vat_kobo");
+  const pct = Number(s.service_charge_pct ?? 0.03);
+  const fixedFee = Number(s.service_charge_fixed_kobo ?? 0);
+  const merchantChargePct = Number(s.merchant_charge_pct ?? 0.01);
+  const holdHours = Number(s.settlement_hold_hours ?? 24);
+  const serviceChargeKobo = customerPaidServiceFee
+    ? metaServiceFeeKobo
+    : Math.round(netSubtotalKobo * pct) + fixedFee;
+  const orderTotalKobo =
+    num("subtotal_kobo") +
+    num("delivery_fee_kobo") +
+    vatKobo +
+    (customerPaidServiceFee ? metaServiceFeeKobo : 0) -
+    num("discount_kobo");
+  const merchantChargeKobo = Math.round(orderTotalKobo * merchantChargePct);
+  const restaurantCreditKobo = customerPaidServiceFee
+    ? netSubtotalKobo + vatKobo - merchantChargeKobo
+    : netSubtotalKobo + vatKobo - serviceChargeKobo - merchantChargeKobo;
+  const availableAt = new Date(Date.now() + holdHours * 60 * 60 * 1000).toISOString();
+
+  await supabase
+    .from("restaurant_wallets")
+    .upsert({ restaurant_id: restaurantId } as never, { onConflict: "restaurant_id" });
+
+  const walletRows: Record<string, unknown>[] = [
+    {
+      restaurant_id: restaurantId,
+      order_id: order.id,
+      type: "order_credit",
+      direction: "credit",
+      amount_kobo: restaurantCreditKobo,
+      status: "pending",
+      available_at: availableAt,
+      description: `Order #${order.order_number} — net revenue (subtotal${vatKobo > 0 ? " + VAT" : ""})`,
+    },
+  ];
+  if (merchantChargeKobo > 0) {
+    walletRows.push({
+      restaurant_id: restaurantId,
+      order_id: order.id,
+      type: "merchant_charge",
+      direction: "debit",
+      amount_kobo: merchantChargeKobo,
+      status: "settled",
+      description: `Merchant charge — Order #${order.order_number}`,
+    });
+  }
+  await supabase.from("wallet_transactions").insert(walletRows as never);
 
   // Accrue loyalty (earn + redeem) now that order_items exist.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
