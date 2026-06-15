@@ -17,10 +17,13 @@ export type Database = {
       loyalty_programs: {
         Row: {
           created_at: string
+          earn_item_ids: string[]
           earn_min_order_kobo: number
+          earn_scope: string
           id: string
           is_active: boolean
           restaurant_id: string
+          reward_item_ids: string[]
           reward_label: string | null
           reward_max_discount_kobo: number | null
           reward_type: string
@@ -30,10 +33,13 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          earn_item_ids?: string[]
           earn_min_order_kobo?: number
+          earn_scope?: string
           id?: string
           is_active?: boolean
           restaurant_id: string
+          reward_item_ids?: string[]
           reward_label?: string | null
           reward_max_discount_kobo?: number | null
           reward_type?: string
@@ -43,10 +49,13 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          earn_item_ids?: string[]
           earn_min_order_kobo?: number
+          earn_scope?: string
           id?: string
           is_active?: boolean
           restaurant_id?: string
+          reward_item_ids?: string[]
           reward_label?: string | null
           reward_max_discount_kobo?: number | null
           reward_type?: string

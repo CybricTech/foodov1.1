@@ -281,6 +281,10 @@ export async function GET(request: NextRequest) {
       .eq("id", paymentRow.id),
   ]);
 
+  // Accrue loyalty (earn + redeem) now that order_items exist.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase.rpc as any)("loyalty_accrue_for_order", { p_order_id: order.id });
+
   // CRM
   const totalKobo =
     (meta.subtotal_kobo as number) +

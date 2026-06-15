@@ -2,6 +2,7 @@ import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { MarketingClient } from "@/components/dashboard/marketing-client";
+import type { LoyaltyMenuItem } from "@/components/dashboard/loyalty-config";
 import type { Discount, LoyaltyProgram } from "@foodo/database";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export default async function MarketingPage() {
     { count: inactive30Count },
     { count: vipCount },
     { data: loyaltyProgram },
+    { data: menuItems },
   ] = await Promise.all([
     supabase
       .from("discounts")
@@ -53,6 +55,11 @@ export default async function MarketingPage() {
       .select("*")
       .eq("restaurant_id", restaurantId)
       .maybeSingle(),
+    supabase
+      .from("menu_items")
+      .select("id, name, price_kobo, category_id, is_available")
+      .eq("restaurant_id", restaurantId)
+      .order("display_order", { ascending: true }),
   ]);
 
   return (
@@ -69,6 +76,7 @@ export default async function MarketingPage() {
         vip: vipCount ?? 0,
       }}
       loyaltyProgram={(loyaltyProgram as LoyaltyProgram | null) ?? null}
+      menuItems={(menuItems ?? []) as LoyaltyMenuItem[]}
     />
   );
 }

@@ -18,6 +18,15 @@ import type { LoyaltyProgram } from "@foodo/database";
 const INPUT_CLS =
   "w-full px-3.5 py-2.5 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 bg-white";
 
+/** Minimal menu item shape used by the loyalty item pickers. */
+export type LoyaltyMenuItem = {
+  id: string;
+  name: string;
+  price_kobo: number;
+  category_id: string | null;
+  is_available: boolean;
+};
+
 const REWARD_TYPES: { value: string; label: string }[] = [
   { value: "free_delivery", label: "Free delivery" },
   { value: "free_item", label: "A free item" },
@@ -29,9 +38,12 @@ type FormState = {
   is_active: boolean;
   stamps_required: string;
   earn_min_order_naira: string;
+  earn_scope: string; // "order" | "item"
+  earn_item_ids: string[];
   reward_type: string;
   reward_value: string; // percent, or naira for fixed
   reward_max_discount_naira: string;
+  reward_item_ids: string[];
   reward_label: string;
 };
 
@@ -40,6 +52,8 @@ function toForm(p: LoyaltyProgram | null): FormState {
     is_active: p?.is_active ?? false,
     stamps_required: String(p?.stamps_required ?? 10),
     earn_min_order_naira: p?.earn_min_order_kobo ? String(p.earn_min_order_kobo / 100) : "",
+    earn_scope: p?.earn_scope ?? "order",
+    earn_item_ids: p?.earn_item_ids ?? [],
     reward_type: p?.reward_type ?? "free_delivery",
     reward_value:
       p?.reward_type === "fixed" && p.reward_value != null
@@ -48,6 +62,7 @@ function toForm(p: LoyaltyProgram | null): FormState {
         ? String(p.reward_value)
         : "",
     reward_max_discount_naira: p?.reward_max_discount_kobo ? String(p.reward_max_discount_kobo / 100) : "",
+    reward_item_ids: p?.reward_item_ids ?? [],
     reward_label: p?.reward_label ?? "",
   };
 }
@@ -55,9 +70,11 @@ function toForm(p: LoyaltyProgram | null): FormState {
 export function LoyaltyConfig({
   restaurantId,
   initialProgram,
+  menuItems,
 }: {
   restaurantId: string;
   initialProgram: LoyaltyProgram | null;
+  menuItems: LoyaltyMenuItem[];
 }) {
   const supabase = useMemo(() => createBrowserClient(), []);
   const [program, setProgram] = useState<LoyaltyProgram | null>(initialProgram);
@@ -84,6 +101,13 @@ export function LoyaltyConfig({
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function toggleId(key: "earn_item_ids" | "reward_item_ids", id: string) {
+    setForm((f) => ({
+      ...f,
+      [key]: f[key].includes(id) ? f[key].filter((x) => x !== id) : [...f[key], id],
+    }));
   }
 
   async function save() {
@@ -127,6 +151,9 @@ export function LoyaltyConfig({
           ? Math.round(parseFloat(form.reward_max_discount_naira) * 100)
           : null,
       reward_label: form.reward_label.trim() || null,
+      earn_scope: form.earn_scope,
+      earn_item_ids: form.earn_scope === "item" ? form.earn_item_ids : [],
+      reward_item_ids: form.reward_type === "free_item" ? form.reward_item_ids : [],
     };
 
     setSaving(true);
@@ -246,6 +273,29 @@ export function LoyaltyConfig({
           </div>
         </div>
 
+        {/* Earn scope — any order, or per qualifying item (e.g. "buy 5 coffees") */}
+        <div>
+          <label className="block text-xs font-bold text-black-500 uppercase tracking-wide mb-1.5">
+            How a stamp is earned
+          </label>
+          <select
+            value={form.earn_scope}
+            onChange={(e) => set("earn_scope", e.target.value)}
+            className={INPUT_CLS}
+          >
+            <option value="order">One stamp per order</option>
+            <option value="item">One stamp per specific item (e.g. each coffee)</option>
+          </select>
+          {form.earn_scope === "item" && (
+            <ItemChecklist
+              items={menuItems}
+              selected={form.earn_item_ids}
+              onToggle={(id) => toggleId("earn_item_ids", id)}
+              emptyHint="Add menu items first to choose which ones earn a stamp."
+            />
+          )}
+        </div>
+
         <div>
           <label className="block text-xs font-bold text-black-500 uppercase tracking-wide mb-1.5">
             Reward
@@ -259,6 +309,14 @@ export function LoyaltyConfig({
               <option key={r.value} value={r.value}>{r.label}</option>
             ))}
           </select>
+          {form.reward_type === "free_item" && (
+            <ItemChecklist
+              items={menuItems}
+              selected={form.reward_item_ids}
+              onToggle={(id) => toggleId("reward_item_ids", id)}
+              emptyHint="Add menu items first to choose which one is free."
+            />
+          )}
         </div>
 
         {usesValue && (
@@ -323,9 +381,55 @@ export function LoyaltyConfig({
       </div>
 
       <p className="text-xs text-black-400 mt-3">
-        Customers earn stamps automatically on paid orders (keyed by phone). Redemption at
-        checkout and customer reminders come next.
+        Customers earn stamps automatically on paid orders (keyed by phone). The reward applies
+        itself at checkout once they qualify.
       </p>
+    </div>
+  );
+}
+
+/** A simple multi-select of menu items used by the earn/reward item pickers. */
+function ItemChecklist({
+  items,
+  selected,
+  onToggle,
+  emptyHint,
+}: {
+  items: LoyaltyMenuItem[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  emptyHint: string;
+}) {
+  if (items.length === 0) {
+    return <p className="text-xs text-black-400 mt-2">{emptyHint}</p>;
+  }
+  return (
+    <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-black-100 divide-y divide-black-50">
+      {items.map((item) => {
+        const on = selected.includes(item.id);
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onToggle(item.id)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-black-25 transition-colors"
+          >
+            <span
+              className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                on ? "bg-purple-600 border-purple-600" : "border-black-300"
+              }`}
+            >
+              {on && <Check size={11} className="text-white" />}
+            </span>
+            <span className="text-sm text-black-800 flex-1 truncate">{item.name}</span>
+            {item.price_kobo > 0 && (
+              <span className="text-xs text-black-400">
+                ₦{(item.price_kobo / 100).toLocaleString()}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

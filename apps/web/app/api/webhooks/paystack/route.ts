@@ -245,6 +245,10 @@ export async function POST(request: NextRequest) {
     .update({ estimated_delivery_at: estimatedDeliveryAt })
     .eq("id", order.id);
 
+  // Accrue loyalty (earn + redeem) now that order_items exist.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase.rpc as any)("loyalty_accrue_for_order", { p_order_id: order.id });
+
   // 6b. Record discount redemption (the order was already paid at the
   // discounted price, so we always honor it) and advance the usage counter
   // atomically so concurrent limits hold.

@@ -390,7 +390,7 @@ export async function POST(request: NextRequest) {
   if (!appliedDiscount) {
     const { data: program } = await supabase
       .from("loyalty_programs")
-      .select("id, stamps_required, reward_type, reward_value, reward_max_discount_kobo")
+      .select("id, stamps_required, reward_type, reward_value, reward_max_discount_kobo, reward_item_ids")
       .eq("restaurant_id", data.restaurantId)
       .eq("is_active", true)
       .maybeSingle();
@@ -401,7 +401,15 @@ export async function POST(request: NextRequest) {
         p_phone: data.customerPhone,
       });
       if (typeof balance === "number" && balance >= program.stamps_required) {
-        const reward = computeLoyaltyRewardKobo(program, { subtotalKobo, deliveryFeeKobo });
+        const loyaltyCartItems = verifiedItems.map((i) => ({
+          menuItemId: i.menuItemId,
+          unitPriceKobo: i.priceKobo,
+        }));
+        const reward = computeLoyaltyRewardKobo(program, {
+          subtotalKobo,
+          deliveryFeeKobo,
+          items: loyaltyCartItems,
+        });
         if (reward.discountSubtotalKobo > 0 || reward.discountDeliveryKobo > 0) {
           discountSubtotalKobo = reward.discountSubtotalKobo;
           discountDeliveryKobo = reward.discountDeliveryKobo;

@@ -10,14 +10,28 @@ import { formatKobo } from "./currency";
 
 export type LoyaltyRewardType = "percentage" | "fixed" | "free_delivery" | "free_item";
 
+export type LoyaltyEarnScope = "order" | "item";
+
 /** The configurable fields of a restaurant's stamp-card program. */
 export interface LoyaltyProgram {
   stamps_required: number;
   earn_min_order_kobo: number;
+  /** "order" = a stamp per paid order; "item" = a stamp per qualifying item unit. */
+  earn_scope: string; // LoyaltyEarnScope at runtime
+  /** Items that earn a stamp when earn_scope === "item". */
+  earn_item_ids: string[];
   reward_type: string; // LoyaltyRewardType at runtime
   reward_value: number | null;
   reward_max_discount_kobo: number | null;
+  /** Eligible menu items for a free_item reward. */
+  reward_item_ids: string[];
   reward_label: string | null;
+}
+
+/** A cart line, minimal fields needed to value a free-item reward. */
+export interface LoyaltyCartItem {
+  menuItemId: string;
+  unitPriceKobo: number;
 }
 
 /**
@@ -73,15 +87,30 @@ export interface LoyaltyRewardKobo {
 }
 
 /**
+ * The kobo value of an in-cart eligible free item — the cheapest cart line whose
+ * menu item is in the reward's eligible set. Returns 0 when none is in the cart
+ * (the customer is then prompted to add one). One unit is freed.
+ */
+export function freeItemRewardKobo(
+  rewardItemIds: string[],
+  items: LoyaltyCartItem[]
+): number {
+  if (!rewardItemIds?.length || !items?.length) return 0;
+  const eligible = items
+    .filter((i) => rewardItemIds.includes(i.menuItemId))
+    .map((i) => Math.max(0, i.unitPriceKobo));
+  return eligible.length > 0 ? Math.min(...eligible) : 0;
+}
+
+/**
  * The kobo value of a program's reward against a given order, mirroring the
- * discounts engine. Returns zeroes for `free_item` — a free item can't be
- * auto-valued at checkout (we don't know which item), so it isn't auto-redeemed
- * in v1; the stamps stay earned and the merchant fulfils it. A caller should
- * only spend stamps when the returned total is > 0.
+ * discounts engine. For `free_item` the value is one eligible item that's in the
+ * cart (the cheapest); if none is present it returns 0 and the caller should NOT
+ * spend stamps — the customer is prompted to add a qualifying item instead.
  */
 export function computeLoyaltyRewardKobo(
-  program: Pick<LoyaltyProgram, "reward_type" | "reward_value" | "reward_max_discount_kobo">,
-  order: { subtotalKobo: number; deliveryFeeKobo: number }
+  program: Pick<LoyaltyProgram, "reward_type" | "reward_value" | "reward_max_discount_kobo" | "reward_item_ids">,
+  order: { subtotalKobo: number; deliveryFeeKobo: number; items?: LoyaltyCartItem[] }
 ): LoyaltyRewardKobo {
   const zero = { discountSubtotalKobo: 0, discountDeliveryKobo: 0 };
   switch (program.reward_type) {
@@ -101,7 +130,11 @@ export function computeLoyaltyRewardKobo(
       }
       return { discountSubtotalKobo: Math.min(d, order.subtotalKobo), discountDeliveryKobo: 0 };
     }
+    case "free_item": {
+      const v = freeItemRewardKobo(program.reward_item_ids ?? [], order.items ?? []);
+      return { discountSubtotalKobo: Math.min(v, order.subtotalKobo), discountDeliveryKobo: 0 };
+    }
     default:
-      return zero; // free_item — not auto-applied
+      return zero;
   }
 }

@@ -1133,6 +1133,7 @@ export default function CheckoutPage() {
                   phoneValid={isValidNigerianPhone(phone)}
                   subtotalKobo={subtotal}
                   deliveryFeeKobo={fulfillmentType === "delivery" ? deliveryFeeKobo ?? 0 : 0}
+                  items={items.map((i) => ({ menuItemId: i.menuItemId, unitPriceKobo: i.price }))}
                   hasPromo={!!discount}
                 />
               </div>

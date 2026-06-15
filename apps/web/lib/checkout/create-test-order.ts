@@ -185,5 +185,9 @@ export async function createTestOrder(
     .update({ order_id: order.id } as never)
     .eq("id", paymentId);
 
+  // Accrue loyalty (earn + redeem) now that order_items exist.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase.rpc as any)("loyalty_accrue_for_order", { p_order_id: order.id });
+
   return { orderId: order.id, orderNumber: order.order_number };
 }

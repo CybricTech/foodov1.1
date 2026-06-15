@@ -34,7 +34,7 @@ import {
   Stamp,
 } from "lucide-react";
 import type { Discount, Json, LoyaltyProgram } from "@foodo/database";
-import { LoyaltyConfig } from "@/components/dashboard/loyalty-config";
+import { LoyaltyConfig, type LoyaltyMenuItem } from "@/components/dashboard/loyalty-config";
 
 interface MarketingClientProps {
   restaurantId: string;
@@ -47,6 +47,7 @@ interface MarketingClientProps {
     vip: number;
   };
   loyaltyProgram: LoyaltyProgram | null;
+  menuItems: LoyaltyMenuItem[];
 }
 
 const INPUT_CLS =
@@ -139,6 +140,7 @@ export function MarketingClient({
   senderName,
   customerCounts,
   loyaltyProgram,
+  menuItems,
 }: MarketingClientProps) {
   const supabase = useMemo(() => createBrowserClient(), []);
   const [discounts, setDiscounts] = useState<Discount[]>(initialDiscounts);
@@ -473,7 +475,7 @@ export function MarketingClient({
 
       {/* Loyalty tab — stamp-card program config */}
       {activeTab === "loyalty" && (
-        <LoyaltyConfig restaurantId={restaurantId} initialProgram={loyaltyProgram} />
+        <LoyaltyConfig restaurantId={restaurantId} initialProgram={loyaltyProgram} menuItems={menuItems} />
       )}
 
       {/* SMS Campaigns tab — gated "coming soon": the composer is previewed but
