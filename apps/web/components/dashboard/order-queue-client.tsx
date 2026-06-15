@@ -500,7 +500,12 @@ function OrderCard({
     in_transit:        "Mark Delivered",
   };
 
-  const next = platformRiderHandling ? null : nextStatus[order.status];
+  let next = platformRiderHandling ? null : nextStatus[order.status];
+  // Pickup orders are never "in transit" — collecting completes them, so
+  // "Customer Collected" goes straight from ready_for_pickup to delivered.
+  if (order.status === "ready_for_pickup" && order.fulfillment_type === "pickup") {
+    next = "delivered";
+  }
   const canCancel = ["pending", "confirmed"].includes(order.status);
 
   // Show delivery method picker instead of the normal action button for delivery
@@ -518,7 +523,7 @@ function OrderCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-black-900 text-sm">#{order.order_number}</span>
-            <StatusBadge status={order.status} />
+            <StatusBadge status={order.status} fulfillmentType={order.fulfillment_type} />
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <span className="text-xs text-black-500 font-medium">{order.customer_name}</span>
@@ -860,7 +865,7 @@ function OrderCard({
 
 // ── Status Badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, fulfillmentType }: { status: string; fulfillmentType?: string }) {
   const config: Record<string, { label: string; className: string }> = {
     pending:          { label: "Pending",   className: "bg-dixie-100 text-dixie-500" },
     confirmed:        { label: "Confirmed", className: "bg-purple-50 text-purple-500" },
@@ -868,7 +873,11 @@ function StatusBadge({ status }: { status: string }) {
     ready_for_pickup: { label: "Ready",     className: "bg-viridian-100 text-viridian-500" },
     assigned_to_rider:{ label: "Assigned",  className: "bg-viridian-100 text-viridian-500" },
     in_transit:       { label: "In Transit", className: "bg-purple-100 text-purple-700" },
-    delivered:        { label: "Delivered", className: "bg-black-100 text-black-400" },
+    // A collected pickup order ends as "delivered" internally — show "Collected".
+    delivered:        {
+      label: fulfillmentType === "pickup" ? "Collected" : "Delivered",
+      className: "bg-black-100 text-black-400",
+    },
     cancelled:        { label: "Cancelled", className: "bg-cinnabar-100 text-cinnabar-500" },
   };
   const c = config[status] ?? { label: status, className: "bg-black-100 text-black-500" };

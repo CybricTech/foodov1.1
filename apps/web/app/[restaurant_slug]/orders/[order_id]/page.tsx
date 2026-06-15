@@ -169,7 +169,7 @@ export default function OrderTrackingPage() {
               "text-lg font-black",
               isCancelled ? "text-cinnabar-600" : "text-black-900"
             )}>
-              {statusLabel(customerFacingStatus)}
+              {statusLabel(customerFacingStatus, order.fulfillment_type as "delivery" | "pickup")}
             </p>
             {order.status === "cancelled" && order.cancellation_reason && (
               <p className="text-sm text-black-400 mt-1 leading-relaxed">
@@ -232,7 +232,7 @@ export default function OrderTrackingPage() {
                         "text-sm font-bold transition-colors",
                         isActive ? "text-black-900" : isCompleted ? "text-black-700" : "text-black-300"
                       )}>
-                        {statusLabel(stepStatus)}
+                        {statusLabel(stepStatus, order.fulfillment_type as "delivery" | "pickup")}
                       </p>
                       {isActive && (
                         <p className="text-xs text-black-400 mt-0.5">In progress</p>
@@ -409,14 +409,16 @@ function OrderDetailsCard({ order, brandColor }: { order: OrderWithItems; brandC
   );
 }
 
-function statusLabel(status: string): string {
+function statusLabel(status: string, fulfillmentType?: "delivery" | "pickup"): string {
+  const isPickup = fulfillmentType === "pickup";
   const labels: Record<string, string> = {
     pending: "Order received",
     confirmed: "Order confirmed",
     preparing: "Preparing your order",
     ready_for_pickup: "Ready for pickup",
     in_transit: "On the way",
-    delivered: "Delivered!",
+    // A pickup order ends when the customer collects it — never "delivered".
+    delivered: isPickup ? "Picked up!" : "Delivered!",
     cancelled: "Order cancelled",
   };
   return labels[status] ?? status;
