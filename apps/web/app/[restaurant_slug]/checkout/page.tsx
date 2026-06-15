@@ -70,6 +70,7 @@ export default function CheckoutPage() {
   const [selectedLng, setSelectedLng] = useState<number | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
+  const [placesSearching, setPlacesSearching] = useState(false);
   const [deliveryFeeKobo, setDeliveryFeeKobo] = useState<number | null>(null);
   const [deliveryFeeLoading, setDeliveryFeeLoading] = useState(false);
   const [deliveryFeeError, setDeliveryFeeError] = useState("");
@@ -78,7 +79,6 @@ export default function CheckoutPage() {
 
   const predictionsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const predictionsAbortRef = useRef<AbortController | null>(null);
-  const deliveryFeeAbortRef = useRef<AbortController | null>(null);
   // Set in onSuccess so the empty-cart redirect below doesn't race the
   // navigation to /orders/pending. Without this guard a slow live Paystack
   // payment trips the 30s timeout (which flips loading → false), and when
@@ -248,33 +248,13 @@ export default function CheckoutPage() {
     return () => window.removeEventListener("pageshow", handlePageShow);
   }, []);
 
-  // Auto-calculate delivery fee when user stops typing an address.
-  // Uses an abort-controller pattern so that if the address changes while a
-  // request is already in-flight the stale response is discarded and a fresh
-  // calculation is kicked off for the latest address.
-  useEffect(() => {
-    if (fulfillmentType !== "delivery") return;
-    if (addressInput.trim().length < 10) return;
-
-    // Abort any previous in-flight request immediately.
-    if (deliveryFeeAbortRef.current) {
-      deliveryFeeAbortRef.current.abort();
-    }
-    const controller = new AbortController();
-    deliveryFeeAbortRef.current = controller;
-
-    const id = setTimeout(() => {
-      if (deliveryFeeKobo === null && !deliveryFeeError) {
-        calculateDeliveryFee(addressInput.trim(), controller.signal);
-      }
-    }, 1200);
-
-    return () => {
-      clearTimeout(id);
-      controller.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addressInput, fulfillmentType]);
+  // NOTE: there is deliberately NO free-text pricing path. The delivery fee is
+  // only ever computed from a *selected* registered place (an autocomplete
+  // suggestion or a saved address) or from device GPS — never from whatever the
+  // customer typed. Pricing raw text let Google resolve an ambiguous address to
+  // the wrong location and undercharge (e.g. GD-1415: "Mallam el rufai street"
+  // → Garki, 9.3km, instead of River Park Estate, Lugbe, ~22km). The address
+  // box is a search field, not a free-text field — like Bolt.
 
   const [savedAddresses, setSavedAddresses] = useState<
     Array<{ id: string; address: string; label: string | null; is_default: boolean; lat: number | null; lng: number | null }>
@@ -493,9 +473,11 @@ export default function CheckoutPage() {
     }
     if (fulfillmentType === "delivery") {
       if (!addressInput.trim()) {
-        errors.deliveryAddress = "Enter a delivery address";
-      } else if (deliveryFeeKobo === null) {
-        errors.deliveryAddress = "Delivery fee could not be calculated — please check your address";
+        errors.deliveryAddress = "Enter your delivery address";
+      } else if (selectedLat === null || deliveryFeeKobo === null) {
+        // A registered place must be selected (suggestion / saved / GPS) — typed
+        // text alone is never accepted, so it can't resolve to the wrong place.
+        errors.deliveryAddress = "Pick your address from the suggestions below";
       }
     }
     setFieldErrors(errors);
@@ -963,7 +945,7 @@ export default function CheckoutPage() {
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Start typing your address…"
+                    placeholder="Search your address, then pick from the list"
                     value={addressInput}
                     onChange={(e) => {
                       const val = e.target.value;
@@ -985,9 +967,11 @@ export default function CheckoutPage() {
                         predictionsAbortRef.current?.abort();
                         setPredictions([]);
                         setShowPredictions(false);
+                        setPlacesSearching(false);
                         return;
                       }
 
+                      setPlacesSearching(true);
                       predictionsDebounceRef.current = setTimeout(async () => {
                         // Cancel any in-flight lookup so out-of-order responses
                         // can't overwrite suggestions for newer input.
@@ -1002,6 +986,7 @@ export default function CheckoutPage() {
                           if (!res.ok) {
                             setPredictions([]);
                             setShowPredictions(false);
+                            setPlacesSearching(false);
                             return;
                           }
                           const data = await res.json();
@@ -1014,10 +999,12 @@ export default function CheckoutPage() {
                           }));
                           setPredictions(mapped);
                           setShowPredictions(mapped.length > 0);
+                          setPlacesSearching(false);
                         } catch (err) {
                           if (err instanceof DOMException && err.name === "AbortError") return;
                           setPredictions([]);
                           setShowPredictions(false);
+                          setPlacesSearching(false);
                         }
                       }, 300);
                     }}
@@ -1040,6 +1027,7 @@ export default function CheckoutPage() {
                             setSelectedPlaceAddress(p.description);
                             setPredictions([]);
                             setShowPredictions(false);
+                            setPlacesSearching(false);
                             void selectPrediction(p.description, p.place_id || null);
                           }}
                           className="w-full text-left px-4 py-3 text-sm text-black-900 hover:bg-black-50 border-b border-black-50 last:border-0 cursor-pointer transition-colors"
@@ -1053,6 +1041,25 @@ export default function CheckoutPage() {
                     </div>
                   )}
                 </div>
+                {placesSearching && (
+                  <p className="text-xs text-black-400 mt-1 flex items-center gap-1">
+                    <Loader2 size={12} className="animate-spin" /> Searching addresses…
+                  </p>
+                )}
+                {!placesSearching &&
+                  selectedLat === null &&
+                  addressInput.trim().length >= 3 &&
+                  predictions.length === 0 &&
+                  !deliveryFeeLoading && (
+                    <p className="text-xs text-black-400 mt-1">
+                      No registered places match — try the area, estate or a nearby landmark.
+                    </p>
+                  )}
+                {selectedLat !== null && deliveryFeeKobo !== null && (
+                  <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                    <Check size={12} /> Delivering to your selected location
+                  </p>
+                )}
                 {fieldErrors.deliveryAddress && (
                   <p className="text-xs text-cinnabar-500 mt-1">{fieldErrors.deliveryAddress}</p>
                 )}
