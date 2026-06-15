@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check, Navigation } from "lucide-react";
+import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check, Navigation, Gift } from "lucide-react";
 import { z } from "zod";
 import posthog from "posthog-js";
 import { useCartStore } from "@/lib/stores/cart";
@@ -103,6 +103,10 @@ export default function CheckoutPage() {
   } | null>(null);
   const [discountError, setDiscountError] = useState("");
   const [discountChecking, setDiscountChecking] = useState(false);
+  // What the loyalty reward takes off this order (reported by the loyalty card).
+  const [loyaltyReward, setLoyaltyReward] = useState<{ subtotalKobo: number; deliveryKobo: number }>(
+    { subtotalKobo: 0, deliveryKobo: 0 }
+  );
 
   const [phone, setPhone] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -730,11 +734,16 @@ export default function CheckoutPage() {
   }
 
   const effectiveDeliveryFee = fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0;
-  // Discount: subtotal portion lowers the VAT/service base; total benefit
+  // Promo discount: subtotal portion lowers the VAT/service base; total benefit
   // (incl. any free-delivery waiver) is subtracted from the grand total.
   const discountSubtotalKobo = discount && !discount.freeDelivery ? discount.discountKobo : 0;
   const discountTotalKobo = discount?.discountKobo ?? 0;
-  const discountedSubtotal = subtotal - discountSubtotalKobo;
+  // Loyalty reward — 0 when a promo is applied (promo wins, mirroring the
+  // server). Its subtotal portion also lowers the VAT/service base; a delivery
+  // waiver only reduces the grand total.
+  const loyaltySubtotalKobo = loyaltyReward.subtotalKobo;
+  const loyaltyTotalKobo = loyaltyReward.subtotalKobo + loyaltyReward.deliveryKobo;
+  const discountedSubtotal = subtotal - discountSubtotalKobo - loyaltySubtotalKobo;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const vatPct = (restaurant as any).vat_percentage ? Number((restaurant as any).vat_percentage) : 0;
   const vatKobo = vatPct > 0 ? Math.round(discountedSubtotal * vatPct / 100) : 0;
@@ -743,7 +752,7 @@ export default function CheckoutPage() {
       ? Math.round(discountedSubtotal * serviceChargePct) + serviceChargeFixedKobo
       : 0;
   const total =
-    subtotal + effectiveDeliveryFee + vatKobo + serviceFeeKobo - discountTotalKobo;
+    subtotal + effectiveDeliveryFee + vatKobo + serviceFeeKobo - discountTotalKobo - loyaltyTotalKobo;
   const itemCount = items.reduce((s, i) => s + i.quantity, 0);
 
   const storeClosed = !restaurant.accepts_orders;
@@ -1158,6 +1167,18 @@ export default function CheckoutPage() {
               </div>
             )}
 
+            {loyaltyTotalKobo > 0 && (
+              <div className="px-4 py-3 flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-viridian-600">
+                  <Gift size={14} />
+                  Loyalty reward
+                </span>
+                <span className="text-sm font-bold text-viridian-600">
+                  −{formatKobo(loyaltyTotalKobo)}
+                </span>
+              </div>
+            )}
+
             {/* Loyalty progress */}
             {restaurant?.id && (
               <div className="px-4 pt-3">
@@ -1171,6 +1192,7 @@ export default function CheckoutPage() {
                   deliveryFeeKobo={fulfillmentType === "delivery" ? deliveryFeeKobo ?? 0 : 0}
                   items={items.map((i) => ({ menuItemId: i.menuItemId, unitPriceKobo: i.price }))}
                   hasPromo={!!discount}
+                  onRewardChange={setLoyaltyReward}
                 />
               </div>
             )}

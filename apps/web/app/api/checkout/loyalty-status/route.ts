@@ -82,6 +82,10 @@ export async function POST(request: NextRequest) {
     rewardLabel: formatLoyaltyReward(program),
     // True when the reward has a checkout-applicable value right now.
     autoAppliable: rewardValueKobo > 0,
+    // Split so the checkout can mirror the server: subtotal discounts lower the
+    // VAT/service base; a delivery waiver only reduces the grand total.
+    rewardSubtotalKobo: reward.discountSubtotalKobo,
+    rewardDeliveryKobo: reward.discountDeliveryKobo,
     freeItemNames: freeItems.map((i) => i.name),
     freeItems,
   });

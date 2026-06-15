@@ -37,9 +37,14 @@ type Status = {
   redeemable: boolean;
   rewardLabel: string;
   autoAppliable: boolean;
+  rewardSubtotalKobo: number;
+  rewardDeliveryKobo: number;
   freeItemNames: string[];
   freeItems: FreeItem[];
 };
+
+/** What the reward takes off this order, split to mirror the server's maths. */
+export type AppliedLoyaltyReward = { subtotalKobo: number; deliveryKobo: number };
 
 export function LoyaltyProgressCard({
   restaurantId,
@@ -51,6 +56,7 @@ export function LoyaltyProgressCard({
   deliveryFeeKobo,
   items,
   hasPromo,
+  onRewardChange,
 }: {
   restaurantId: string;
   restaurantSlug: string;
@@ -63,6 +69,8 @@ export function LoyaltyProgressCard({
   items: CartItem[];
   /** A promo code is applied — loyalty defers to it. */
   hasPromo: boolean;
+  /** Reports the discount the reward applies to this order (0/0 when none). */
+  onRewardChange?: (reward: AppliedLoyaltyReward) => void;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const addItem = useCartStore((s) => s.addItem);
@@ -93,6 +101,19 @@ export function LoyaltyProgressCard({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId, phone, phoneValid, subtotalKobo, deliveryFeeKobo, itemsKey]);
+
+  // Report the discount the reward applies to this order so the checkout can
+  // show a "Loyalty reward −₦X" line and reflect it in the total. Loyalty only
+  // applies when redeemable, valued, and no promo is in use (promo wins).
+  useEffect(() => {
+    if (!onRewardChange) return;
+    const applies = !!status && status.active && status.redeemable && status.autoAppliable && !hasPromo;
+    onRewardChange(
+      applies
+        ? { subtotalKobo: status.rewardSubtotalKobo, deliveryKobo: status.rewardDeliveryKobo }
+        : { subtotalKobo: 0, deliveryKobo: 0 }
+    );
+  }, [status, hasPromo, onRewardChange]);
 
   if (!status || !status.active) return null;
 
