@@ -502,6 +502,25 @@ export default function CheckoutPage() {
     return Object.keys(errors).length === 0;
   }
 
+  // Move from the phone step into checkout. Identifies the PostHog person by the
+  // E.164 phone — the platform's canonical customer identity — so the browser
+  // session merges with the same person our SERVER events (checkout initiated /
+  // order created, both keyed on the phone) are attributed to. Without this the
+  // checkout funnel can't join client + server steps and reads 0%.
+  function enterCheckout() {
+    if (isValidNigerianPhone(phone)) {
+      const e164 = normalizeToE164(phone);
+      posthog.identify(e164, { phone: e164 });
+    }
+    setStep("checkout");
+    posthog.capture("checkout_started", {
+      restaurant_id: restaurant.id,
+      restaurant_name: restaurant.name,
+      item_count: items.reduce((s, i) => s + i.quantity, 0),
+      subtotal_kobo: subtotal,
+    });
+  }
+
   async function handlePay() {
     if (!validate()) return;
     setLoading(true);
@@ -803,9 +822,9 @@ export default function CheckoutPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && isValidNigerianPhone(phone)) {
                     e.preventDefault();
-                    lookupCustomer().then(() => setStep("checkout"));
+                    lookupCustomer().then(enterCheckout);
                   }
                 }}
                 placeholder="e.g. 0812 345 6789"
@@ -818,15 +837,7 @@ export default function CheckoutPage() {
               />
               <button
                 onClick={() => {
-                  lookupCustomer().then(() => {
-                    setStep("checkout");
-                    posthog.capture("checkout_started", {
-                      restaurant_id: restaurant.id,
-                      restaurant_name: restaurant.name,
-                      item_count: items.reduce((s, i) => s + i.quantity, 0),
-                      subtotal_kobo: subtotal,
-                    });
-                  });
+                  lookupCustomer().then(enterCheckout);
                 }}
                 disabled={phoneLoading || !isValidNigerianPhone(phone)}
                 className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition-colors cursor-pointer flex items-center justify-center gap-2"
