@@ -56,6 +56,17 @@ interface AnalyticsOrder {
   created_at: string;
   subtotal_kobo: number;
   delivery_fee_kobo: number;
+  service_fee_kobo: number;
+}
+
+/**
+ * Merchant-facing revenue for one order: everything the customer paid except
+ * the (Foodo-owned) customer service fee. Mirrors the canonical settlement
+ * `gross` (subtotal + VAT + delivery, post-discount) so the merchant dashboard
+ * and admin settlements agree. The service fee never reaches the merchant.
+ */
+function orderRevenue(o: AnalyticsOrder): number {
+  return (o.total_kobo ?? 0) - (o.service_fee_kobo ?? 0);
 }
 
 interface AnalyticsOrderItem {
@@ -237,7 +248,7 @@ function buildDailyData(
   orders.forEach((o) => {
     const key = o.created_at.split("T")[0];
     if (days[key]) {
-      days[key].revenue += o.total_kobo ?? 0;
+      days[key].revenue += orderRevenue(o);
       days[key].orders += 1;
     }
   });
@@ -277,7 +288,7 @@ function computeMetrics(
   customers: AnalyticsCustomer[]
 ): PeriodMetrics {
   const validOrders = orders.filter((o) => o.status !== "cancelled");
-  const revenue = validOrders.reduce((sum, o) => sum + (o.total_kobo ?? 0), 0);
+  const revenue = validOrders.reduce((sum, o) => sum + orderRevenue(o), 0);
   const orderCount = validOrders.length;
   const aov = orderCount > 0 ? Math.round(revenue / orderCount) : 0;
   const newCustomers = customers.length;
@@ -519,7 +530,7 @@ export function AnalyticsClient({ restaurantId }: { restaurantId: string }) {
         supabase
           .from("orders")
           .select(
-            "id, total_kobo, status, fulfillment_type, payment_status, created_at, subtotal_kobo, delivery_fee_kobo"
+            "id, total_kobo, status, fulfillment_type, payment_status, created_at, subtotal_kobo, delivery_fee_kobo, service_fee_kobo"
           )
           .eq("restaurant_id", restaurantId)
           .gte("created_at", from.toISOString())
@@ -535,7 +546,7 @@ export function AnalyticsClient({ restaurantId }: { restaurantId: string }) {
 
         supabase
           .from("orders")
-          .select("total_kobo, status, created_at")
+          .select("total_kobo, status, created_at, service_fee_kobo")
           .eq("restaurant_id", restaurantId)
           .gte("created_at", prevFrom.toISOString())
           .lt("created_at", prevTo.toISOString()),
