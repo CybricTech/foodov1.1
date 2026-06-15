@@ -179,19 +179,28 @@ export async function GET(request: NextRequest) {
     delivery_fee_kobo: meta.delivery_fee_kobo as number,
     vat_kobo: (meta.vat_kobo as number) || 0,
     service_fee_kobo: (meta.service_fee_kobo as number) || 0,
+    // Discount/loyalty are merchant-funded: they reduce total_kobo (what the
+    // customer paid), which is what settlement nets off — so the merchant bears
+    // the cost. Must mirror the webhooks; previously this path omitted the
+    // discount and would have over-settled the merchant.
+    discount_id: (meta.discount_id as string) || null,
+    discount_code: (meta.discount_code as string) || null,
+    discount_kobo: (meta.discount_kobo as number) || 0,
     loyalty_redeemed: (meta.loyalty_redeemed as boolean) || false,
     loyalty_stamps_spent: (meta.loyalty_stamps_spent as number) || null,
     total_kobo:
       (meta.subtotal_kobo as number) +
       (meta.delivery_fee_kobo as number) +
       ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0),
+      ((meta.service_fee_kobo as number) || 0) -
+      ((meta.discount_kobo as number) || 0),
     subtotal: meta.subtotal_kobo as number,
     total_amount:
       (meta.subtotal_kobo as number) +
       (meta.delivery_fee_kobo as number) +
       ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0),
+      ((meta.service_fee_kobo as number) || 0) -
+      ((meta.discount_kobo as number) || 0),
     delivery_distance_km: (meta.delivery_distance_km as number) || null,
     delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
     order_number: `FD-${Date.now()}`,

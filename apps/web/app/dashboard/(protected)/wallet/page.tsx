@@ -65,7 +65,7 @@ export default async function WalletPage() {
       .select(
         `id, order_number, subtotal_kobo, discount_kobo, delivery_fee_kobo, service_fee_kobo,
          vat_kobo, total_kobo, settlement_id, dispatch_type, fulfillment_type,
-         status, created_at, delivery_assignments (dispatch_type)`
+         status, created_at, loyalty_redeemed, delivery_assignments (dispatch_type)`
       )
       .eq("restaurant_id", session.restaurantId)
       .neq("status", "cancelled")
@@ -125,6 +125,7 @@ export default async function WalletPage() {
       fulfillment_type: o.fulfillment_type as string,
       status: o.status as string,
       created_at: o.created_at as string,
+      loyalty_redeemed: (o.loyalty_redeemed as boolean) ?? false,
     };
   });
 

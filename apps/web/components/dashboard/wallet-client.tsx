@@ -57,6 +57,8 @@ type OrderRow = {
   fulfillment_type: string;
   status: string;
   created_at: string;
+  /** True when this order's discount was a merchant-funded loyalty reward. */
+  loyalty_redeemed?: boolean;
 };
 
 type ActiveTab = "activity" | "payouts";
@@ -527,8 +529,10 @@ const IN_HOUSE_DISPATCH = new Set(["own_rider", "third_party"]);
 type PayoutBreakdown = {
   /** Pre-discount food + VAT — the menu value of what was sold. */
   foodKobo: number;
-  /** Promos the merchant funded. */
+  /** Promos the merchant funded (code/automatic discounts). */
   discountKobo: number;
+  /** Loyalty rewards the merchant funded (free items / stamp-card rewards). */
+  loyaltyKobo: number;
   /** What the merchant keeps on deliveries their own team handled (after our cut). */
   ownDeliveryKobo: number;
   /** Payment-processing fee. */
@@ -551,6 +555,7 @@ function computeMerchantBreakdown(
   const b: PayoutBreakdown = {
     foodKobo: 0,
     discountKobo: 0,
+    loyaltyKobo: 0,
     ownDeliveryKobo: 0,
     merchantChargeKobo: 0,
     netKobo: 0,
@@ -562,7 +567,11 @@ function computeMerchantBreakdown(
     // gross = food_post + delivery_fee ⇒ post-discount food (+VAT) = gross − fee.
     const foodPost = n.gross - fee;
     b.foodKobo += foodPost + discount; // show the menu value…
-    b.discountKobo += discount; // …then the promo as its own reduction.
+    // …then the reduction the merchant funded, split by source: a loyalty reward
+    // (loyalty_redeemed) vs a promo. Both are deducted from the payout the same
+    // way (via total_kobo); we just label them separately.
+    if (o.loyalty_redeemed) b.loyaltyKobo += discount;
+    else b.discountKobo += discount;
     // Anything that isn't a Kitchyn rider is delivery the merchant keeps, after
     // our commission. Platform-rider fees are ours and excluded entirely.
     if (o.dispatch_type !== "platform_rider" && fee > 0) {
@@ -693,6 +702,14 @@ function PayoutDetailModal({
                   label="Promo discount"
                   hint="Promotions you ran"
                   amountKobo={breakdown.discountKobo}
+                  negative
+                />
+              )}
+              {breakdown.loyaltyKobo > 0 && (
+                <BreakdownRow
+                  label="Loyalty rewards"
+                  hint="Free items / rewards you funded"
+                  amountKobo={breakdown.loyaltyKobo}
                   negative
                 />
               )}

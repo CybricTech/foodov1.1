@@ -58,6 +58,8 @@ type OrderRow = {
   vat_kobo: number;
   total_kobo: number;
   discount_kobo: number;
+  /** True when the discount on this order was a merchant-funded loyalty reward. */
+  loyalty_redeemed?: boolean;
   settlement_id: string | null;
   dispatch_type: string | null;
   fulfillment_type: string;
@@ -119,6 +121,7 @@ export function MerchantSettlementDetailClient({
     let totalMerchantCharge = 0;
     let totalCommissions = 0;
     let totalDiscounts = 0;
+    let totalLoyalty = 0;
     let unsettledCount = 0;
 
     const fees = { merchantChargePct, deliveryCommissionPct };
@@ -127,7 +130,9 @@ export function MerchantSettlementDetailClient({
       grossRevenue += n.gross;
       totalMerchantCharge += n.merchantCharge;
       totalCommissions += n.deliveryCommission;
-      totalDiscounts += o.discount_kobo ?? 0;
+      const d = o.discount_kobo ?? 0;
+      totalDiscounts += d; // all merchant-funded reductions (promo + loyalty)
+      if (o.loyalty_redeemed) totalLoyalty += d; // …of which loyalty rewards
       if (!o.settlement_id) unsettledCount++;
     }
 
@@ -137,7 +142,7 @@ export function MerchantSettlementDetailClient({
       .filter((s) => s.status === "paid")
       .reduce((sum, s) => sum + s.amount_kobo, 0);
 
-    return { grossRevenue, totalFoodoFees, totalPaid, totalDiscounts, unsettledCount };
+    return { grossRevenue, totalFoodoFees, totalPaid, totalDiscounts, totalLoyalty, unsettledCount };
   }, [orders, settlements, merchantChargePct, deliveryCommissionPct]);
 
   /* ── Daily grouped orders ───────────────────────────────────────────────── */
@@ -259,7 +264,16 @@ export function MerchantSettlementDetailClient({
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <Card label="Total Gross Revenue" value={formatKobo(totals.grossRevenue)} sublabel="Subtotal + VAT + Delivery" />
         <Card label="Total Foodo Fees" value={formatKobo(totals.totalFoodoFees)} sublabel="Service fees + commissions" />
-        <Card label="Total Discounts" value={formatKobo(totals.totalDiscounts)} sublabel="Merchant-funded reductions" highlight={totals.totalDiscounts > 0 ? "red" : undefined} />
+        <Card
+          label="Discounts & Rewards"
+          value={formatKobo(totals.totalDiscounts)}
+          sublabel={
+            totals.totalLoyalty > 0
+              ? `Merchant-funded · incl. ${formatKobo(totals.totalLoyalty)} loyalty`
+              : "Merchant-funded reductions"
+          }
+          highlight={totals.totalDiscounts > 0 ? "red" : undefined}
+        />
         <Card label="Total Paid Out" value={formatKobo(totals.totalPaid)} sublabel={`${settlements.filter((s) => s.status === "paid").length} payouts`} highlight="green" />
         <Card label="Unsettled Orders" value={String(totals.unsettledCount)} sublabel="Awaiting settlement" highlight={totals.unsettledCount > 0 ? "amber" : undefined} />
       </div>
