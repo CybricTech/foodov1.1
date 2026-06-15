@@ -1129,6 +1129,8 @@ export default function CheckoutPage() {
               <div className="px-4 pt-3">
                 <LoyaltyProgressCard
                   restaurantId={restaurant.id}
+                  restaurantSlug={restaurant.slug}
+                  brandColor={restaurant.primary_color ?? "#7B2CBF"}
                   phone={isValidNigerianPhone(phone) ? normalizeToE164(phone) : phone}
                   phoneValid={isValidNigerianPhone(phone)}
                   subtotalKobo={subtotal}

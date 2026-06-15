@@ -57,15 +57,19 @@ export async function POST(request: NextRequest) {
   const reward = computeLoyaltyRewardKobo(program, { subtotalKobo, deliveryFeeKobo, items });
   const rewardValueKobo = reward.discountSubtotalKobo + reward.discountDeliveryKobo;
 
-  // For a free-item reward, surface the eligible item names so the checkout can
-  // prompt the customer to add one when it isn't in the cart yet.
-  let freeItemNames: string[] = [];
+  // For a free-item reward, surface the eligible items (id + price) so the
+  // checkout can prompt — and let the customer one-tap add one — when none is
+  // in the cart yet. Only available items can be added.
+  let freeItems: { id: string; name: string; priceKobo: number }[] = [];
   if (program.reward_type === "free_item" && (program.reward_item_ids?.length ?? 0) > 0) {
     const { data: rows } = await supabase
       .from("menu_items")
-      .select("name")
+      .select("id, name, price_kobo, is_available")
       .in("id", program.reward_item_ids);
-    freeItemNames = (rows ?? []).map((r) => r.name as string);
+    freeItems = (rows ?? [])
+      .filter((r) => r.is_available !== false)
+      .map((r) => ({ id: r.id as string, name: r.name as string, priceKobo: (r.price_kobo as number) ?? 0 }))
+      .sort((a, b) => a.priceKobo - b.priceKobo);
   }
 
   return NextResponse.json({
@@ -78,6 +82,7 @@ export async function POST(request: NextRequest) {
     rewardLabel: formatLoyaltyReward(program),
     // True when the reward has a checkout-applicable value right now.
     autoAppliable: rewardValueKobo > 0,
-    freeItemNames,
+    freeItemNames: freeItems.map((i) => i.name),
+    freeItems,
   });
 }
