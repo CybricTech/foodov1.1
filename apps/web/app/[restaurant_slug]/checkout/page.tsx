@@ -1075,10 +1075,44 @@ export default function CheckoutPage() {
 
           {/* Order summary */}
           <div className="border-t border-black-100 divide-y divide-black-50">
+            {/* Itemised list of what's being ordered */}
+            {items.map((item) => {
+              const options = item.selectedOptions
+                .flatMap((o) => o.choices.map((c) => c.choiceName))
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <div
+                  key={`${item.menuItemId}-${item.optionsKey}`}
+                  className="px-4 py-3 flex items-start justify-between gap-3"
+                >
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <span className="text-sm font-bold text-primary flex-shrink-0">
+                      {item.quantity}×
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-black-900 leading-snug">{item.name}</p>
+                      {options && (
+                        <p className="text-xs text-black-400 mt-0.5 leading-snug">{options}</p>
+                      )}
+                      {item.specialRequest && (
+                        <p className="text-xs text-black-400 mt-0.5 italic leading-snug">
+                          “{item.specialRequest}”
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-sm font-semibold text-black-900 flex-shrink-0">
+                    {formatKobo(item.lineTotal)}
+                  </span>
+                </div>
+              );
+            })}
+
             <div className="px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-black-500">
                 <ShoppingBag size={14} className="text-black-400" />
-                <span>{itemCount} {itemCount === 1 ? "item" : "items"}</span>
+                <span>Subtotal · {itemCount} {itemCount === 1 ? "item" : "items"}</span>
               </div>
               <span className="text-sm font-semibold text-black-900">{formatKobo(subtotal)}</span>
             </div>
