@@ -70,6 +70,18 @@ interface SettlementsClientProps {
   platformSettings: { merchantChargePct: number; deliveryCommissionPct: number };
 }
 
+/* ── Tabs ──────────────────────────────────────────────────────────────────── */
+
+type TabKey = "payouts" | "merchants" | "history" | "pnl" | "orders";
+
+const TABS: { key: TabKey; label: string; hint: string }[] = [
+  { key: "payouts", label: "Daily Payouts", hint: "Record & track per-day merchant payouts" },
+  { key: "merchants", label: "Merchants", hint: "Per-merchant balances & bank status" },
+  { key: "history", label: "Payout History", hint: "Every transfer, chronological" },
+  { key: "pnl", label: "Foodo P&L", hint: "Daily revenue & Paystack reconciliation" },
+  { key: "orders", label: "Orders", hint: "Per-order fee breakdown" },
+];
+
 /* ── Helpers ───────────────────────────────────────────────────────────────── */
 
 function toWATDate(iso: string): string {
@@ -109,6 +121,7 @@ export function SettlementsClient({
   merchantSummaries,
   platformSettings,
 }: SettlementsClientProps) {
+  const [activeTab, setActiveTab] = useState<TabKey>("payouts");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [merchantSearch, setMerchantSearch] = useState("");
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
@@ -355,9 +368,9 @@ export function SettlementsClient({
   /* ── Render ─────────────────────────────────────────────────────────────── */
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-5">
 
-      {/* ── Section 1: Revenue Overview ───────────────────────────────────── */}
+      {/* ── Section 1: Revenue Overview ── persistent KPI header, always visible above the tabs */}
       <section className="space-y-3">
         <SectionHeader
           title="Revenue Overview"
@@ -398,7 +411,28 @@ export function SettlementsClient({
         </div>
       </section>
 
+      {/* ── Tab navigation ── keeps the 5 data areas one click apart instead of a long scroll */}
+      <div className="sticky top-0 z-10 -mx-1 px-1 py-2 bg-black-25/80 backdrop-blur supports-[backdrop-filter]:bg-black-25/60 border-b border-black-100">
+        <div className="flex gap-2 overflow-x-auto">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              title={t.hint}
+              className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                activeTab === t.key
+                  ? "bg-purple-500 text-white border-purple-500"
+                  : "bg-white text-black-600 border-black-200 hover:bg-black-50"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ── Section 2: Daily Foodo P&L ────────────────────────────────────── */}
+      {activeTab === "pnl" && (
       <section className="space-y-3">
         <SectionHeader
           title="Daily Foodo P&L"
@@ -493,7 +527,10 @@ export function SettlementsClient({
           </div>
         </div>
       </section>
+      )}
+
       {/* ── Section 3: Daily Payout Summary ───────────────────────────────── */}
+      {activeTab === "payouts" && (
       <section className="space-y-3">
         <SectionHeader
           title="Daily Payout Summary"
@@ -548,8 +585,10 @@ export function SettlementsClient({
         </div>
       </div>
       </section>
+      )}
 
       {/* ── Section 4: Merchant Directory ─────────────────────────────────── */}
+      {activeTab === "merchants" && (
       <section className="space-y-3">
         <SectionHeader
           title="Merchant Directory"
@@ -658,8 +697,10 @@ export function SettlementsClient({
         </div>
       </div>
       </section>
+      )}
 
       {/* ── Section 5: Settlement History ─────────────────────────────────── */}
+      {activeTab === "history" && (
       <section className="space-y-3">
         <SectionHeader
           title="Settlement History"
@@ -741,8 +782,10 @@ export function SettlementsClient({
         )}
       </div>
       </section>
+      )}
 
       {/* ── Section 6: Per-Order Fee Breakdown ────────────────────────────── */}
+      {activeTab === "orders" && (
       <section className="space-y-3">
         <SectionHeader
           title="Per-Order Fee Breakdown"
@@ -934,6 +977,7 @@ export function SettlementsClient({
         </div>
       </div>
       </section>
+      )}
     </div>
   );
 }
