@@ -117,7 +117,17 @@
       "Bash(sed -n '296,312p' supabase/migrations/001_initial_schema.sql)",
       "Bash(awk '/CREATE TABLE IF NOT EXISTS delivery_assignments/,/\\\\\\);/' supabase/migrations/001_initial_schema.sql)",
       "mcp__sentry__search_issues",
-      "mcp__sentry__get_sentry_resource"
+      "mcp__sentry__get_sentry_resource",
+      "Bash(npm view *)",
+      "Bash(npm pack *)",
+      "Bash(npx expo *)",
+      "Bash(sips -g pixelWidth -g pixelHeight apps/web/public/logo.png)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(grep -n \"^      [a-z_]*: {$\" packages/database/src/types.ts)",
+      "Bash(npx eslint *)",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__posthog__exec"
     ]
   }
 }
