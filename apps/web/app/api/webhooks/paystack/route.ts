@@ -593,32 +593,68 @@ async function handleTransferEvent(
   event: { event: string; data: Record<string, unknown> }
 ) {
   const transferCode = event.data?.transfer_code as string | undefined;
-  if (!transferCode) return;
+  // The settlement carries our deterministic `paystack_transfer_ref` from the
+  // moment it's inserted — BEFORE the transfer is even initiated — so matching
+  // on it closes the race where this webhook arrives before the engine has
+  // written back the transfer_code. We match on either key.
+  const reference = event.data?.reference as string | undefined;
+  if (!transferCode && !reference) return;
+
+  const orParts: string[] = [];
+  if (reference) orParts.push(`paystack_transfer_ref.eq.${reference}`);
+  if (transferCode) orParts.push(`paystack_transfer_code.eq.${transferCode}`);
+  const orFilter = orParts.join(",");
 
   if (event.event === "transfer.success") {
+    // Idempotent: only the not-yet-paid row is touched. Also backfill the
+    // transfer_code in case we matched purely on the reference.
     await supabase
       .from("settlements")
-      .update({ status: "paid", paid_at: new Date().toISOString() })
-      .eq("paystack_transfer_code", transferCode);
+      .update({
+        status: "paid",
+        paid_at: new Date().toISOString(),
+        ...(transferCode ? { paystack_transfer_code: transferCode } : {}),
+      })
+      .or(orFilter)
+      .neq("status", "paid");
+    // The settlements AFTER UPDATE trigger recomputes the wallet from source
+    // (migration 059), so total_withdrawn now includes this paid settlement.
     return;
   }
 
   if (event.event === "transfer.failed" || event.event === "transfer.reversed") {
     const { data: settlement } = await supabase
       .from("settlements")
+      .select("id, restaurant_id")
+      .or(orFilter)
+      .neq("status", "failed")
+      .maybeSingle();
+
+    if (!settlement) return;
+
+    // 1. Release the orders so the next payout run retries them. (The orders
+    //    were locked to this settlement at initiation; leaving them locked
+    //    would strand a merchant's revenue forever.)
+    await supabase
+      .from("orders")
+      .update({ settlement_id: null })
+      .eq("settlement_id", settlement.id);
+
+    // 2. Mark the settlement failed. The AFTER UPDATE trigger recomputes the
+    //    wallet from source — with the orders now unlocked, their net returns
+    //    to the merchant's pending balance automatically.
+    await supabase
+      .from("settlements")
       .update({
         status: "failed",
         failure_reason: (event.data?.reason as string) ?? "Transfer failed",
       })
-      .eq("paystack_transfer_code", transferCode)
-      .select("restaurant_id, amount_kobo")
-      .single();
+      .eq("id", settlement.id);
 
-    if (settlement) {
-      await supabase.rpc("restore_failed_settlement", {
-        p_restaurant_id: settlement.restaurant_id,
-        p_amount_kobo: settlement.amount_kobo,
-      });
-    }
+    // 3. Belt-and-braces explicit recompute (idempotent — derives from source).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.rpc as any)("recompute_restaurant_wallet", {
+      p_restaurant_id: settlement.restaurant_id,
+    });
   }
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
-import { validateMonnifyBankAccount } from "@/lib/monnify";
+import { resolveAccount, createTransferRecipient } from "@/lib/paystack";
 
 async function requireSuperAdmin() {
   const supabase = await createServerClient();
@@ -50,25 +50,36 @@ export async function POST(
     );
   }
 
-  // Step 1: Verify account via Monnify name-enquiry
+  // Step 1: Verify the account (Paystack name-enquiry) AND create the transfer
+  // recipient. The recipient_code is the payout target the settlement engine
+  // pays — so it always reflects the account saved here. Recipient creation
+  // also validates the account; an invalid number throws and nothing is saved.
   let accountName: string;
+  let recipientCode: string;
   try {
-    const validated = await validateMonnifyBankAccount({
+    const resolved = await resolveAccount({
       accountNumber: account_number,
       bankCode: bank_code,
     });
-    accountName = validated.accountName;
+    accountName = resolved.accountName;
+    const recipient = await createTransferRecipient({
+      name: accountName,
+      accountNumber: account_number,
+      bankCode: bank_code,
+    });
+    recipientCode = recipient.recipientCode;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Account verification failed";
     return NextResponse.json({ error: msg }, { status: 422 });
   }
 
-  // Step 2: Save to restaurants. monnify_bank_verified_at is the new
-  // "ready for settlement" marker (no recipient_code concept in Monnify).
+  // Step 2: Save to restaurants. paystack_recipient_code is the "ready for
+  // payout" marker; monnify_bank_verified_at is kept set for the existing badge.
   const updatePayload = {
     bank_code,
     bank_account_number: account_number,
     bank_account_name: accountName,
+    paystack_recipient_code: recipientCode,
     monnify_bank_verified_at: new Date().toISOString(),
   } as unknown as Record<string, unknown>;
 
@@ -77,7 +88,7 @@ export async function POST(
     .update(updatePayload)
     .eq("id", restaurantId)
     .select(
-      "id, name, bank_code, bank_account_number, bank_account_name, monnify_bank_verified_at" as never
+      "id, name, bank_code, bank_account_number, bank_account_name, paystack_recipient_code, monnify_bank_verified_at" as never
     )
     .single();
 

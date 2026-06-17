@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getPostHogClient } from "@/lib/posthog";
-import { computeSettlementTotals, resolveDispatchType } from "@foodo/utils";
+import {
+  summarizeSettlement,
+  SETTLEMENT_ORDER_COLUMNS,
+  type RawSettlementOrder,
+} from "@/lib/settlements/build-settlement";
 
 async function requireSuperAdmin() {
   const supabase = await createServerClient();
@@ -91,10 +95,7 @@ export async function POST(request: NextRequest) {
 
   const { data: unsettledOrdersRaw, error: ordersErr } = await auth.serviceClient
     .from("orders")
-    .select(
-      `id, subtotal_kobo, vat_kobo, delivery_fee_kobo, service_fee_kobo, total_kobo,
-       dispatch_type, fulfillment_type, delivery_assignments (dispatch_type)`
-    )
+    .select(SETTLEMENT_ORDER_COLUMNS)
     .eq("restaurant_id", restaurant_id)
     .is("settlement_id", null)
     .neq("status", "cancelled")
@@ -116,30 +117,20 @@ export async function POST(request: NextRequest) {
   const logisticsDefault =
     (restaurantLogistics as { logistics_default: string | null } | null)?.logistics_default ?? null;
 
-  // Resolve dispatch_type per order, then compute the payout with the SINGLE
-  // canonical formula shared by every settlement surface. This guarantees the
-  // recorded amount (which drives the bank transfer) equals what the admin
-  // preview and merchant wallet display down to the kobo.
-  const unsettledOrders = (unsettledOrdersRaw as Record<string, unknown>[]).map((o) => ({
-    id: o.id as string,
-    subtotal_kobo: (o.subtotal_kobo as number) ?? 0,
-    vat_kobo: (o.vat_kobo as number) ?? 0,
-    delivery_fee_kobo: (o.delivery_fee_kobo as number) ?? 0,
-    service_fee_kobo: (o.service_fee_kobo as number) ?? 0,
-    total_kobo: (o.total_kobo as number | null) ?? null,
-    fulfillment_type: (o.fulfillment_type as string | null) ?? null,
-    dispatch_type: resolveDispatchType(
-      o.dispatch_type as string | null,
-      o.delivery_assignments as Array<{ dispatch_type: string | null }> | null,
-      logisticsDefault
-    ),
-  }));
-
   const feeSettings = {
     merchantChargePct: Number(settings.merchant_charge_pct ?? 0.01),
     deliveryCommissionPct: Number(settings.delivery_commission_pct ?? 0.1),
   };
-  const computed = computeSettlementTotals(unsettledOrders, feeSettings);
+
+  // Resolve dispatch_type per order + compute the payout with the SINGLE
+  // canonical formula shared by every settlement surface (manual + automated).
+  // This guarantees the recorded amount (which drives the bank transfer) equals
+  // what the admin preview, the merchant wallet, and the cron all show.
+  const { orders: unsettledOrders, computed } = summarizeSettlement(
+    unsettledOrdersRaw as unknown as RawSettlementOrder[],
+    logisticsDefault,
+    feeSettings
+  );
 
   const orderCount = computed.orderCount;
   const grossTotal = computed.grossTotal;

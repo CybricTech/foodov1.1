@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getRequestUser } from "@/lib/supabase/get-request-user";
-import { validateMonnifyBankAccount } from "@/lib/monnify";
+import { resolveAccount, createTransferRecipient } from "@/lib/paystack";
 import { getPostHogClient } from "@/lib/posthog";
 
 export async function GET(request: NextRequest) {
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await serviceClient
     .from("restaurants")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .select("bank_code, bank_account_number, bank_account_name, monnify_bank_verified_at" as any)
+    .select("bank_code, bank_account_number, bank_account_name, paystack_recipient_code, monnify_bank_verified_at" as any)
     .eq("id", restaurantId)
     .single();
 
@@ -83,27 +83,40 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // Step 1: Verify account via Monnify name-enquiry
+  // Step 1: Verify the account (Paystack name-enquiry) AND create the transfer
+  // recipient in one shot. The recipient_code becomes the payout target — so
+  // settlement always pays whatever account is saved here. Creating the
+  // recipient also validates the account: an invalid number throws here and
+  // nothing is saved, giving the merchant instant feedback.
   let accountName: string;
+  let recipientCode: string;
   try {
-    const validated = await validateMonnifyBankAccount({
+    const resolved = await resolveAccount({
       accountNumber: account_number,
       bankCode: bank_code,
     });
-    accountName = validated.accountName;
+    accountName = resolved.accountName;
+    const recipient = await createTransferRecipient({
+      name: accountName,
+      accountNumber: account_number,
+      bankCode: bank_code,
+    });
+    recipientCode = recipient.recipientCode;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Account verification failed";
     getPostHogClient().captureException(err, user.id, { context: "bank_account_verification", bank_code });
     return NextResponse.json({ error: msg }, { status: 422 });
   }
 
-  // Step 2: Save to restaurants. Monnify disbursements take account details
-  // directly per request, so there's no "recipient" to create up front. We
-  // mark `monnify_bank_verified_at` as the "ready for settlement" indicator.
+  // Step 2: Save to restaurants. paystack_recipient_code is the "ready for
+  // payout" marker; it always reflects the CURRENT saved account because we
+  // recreate it on every change. monnify_bank_verified_at is kept set for the
+  // existing "verified" UI badge.
   const updatePayload = {
     bank_code,
     bank_account_number: account_number,
     bank_account_name: accountName,
+    paystack_recipient_code: recipientCode,
     monnify_bank_verified_at: new Date().toISOString(),
   } as unknown as Record<string, unknown>;
 
@@ -112,7 +125,7 @@ export async function POST(request: NextRequest) {
     .update(updatePayload)
     .eq("id", restaurant_id)
     .select(
-      "id, bank_code, bank_account_number, bank_account_name, monnify_bank_verified_at" as never
+      "id, bank_code, bank_account_number, bank_account_name, paystack_recipient_code, monnify_bank_verified_at" as never
     )
     .single();
 
