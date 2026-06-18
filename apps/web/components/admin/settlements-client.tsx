@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { formatKobo, computeOrderNet, gatewayFee } from "@foodo/utils";
 import Link from "next/link";
 import { Download, ChevronDown, ChevronRight } from "lucide-react";
+import { PayoutControls, MerchantPayoutToggle } from "./payout-controls";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -54,6 +55,7 @@ type MerchantSummary = {
   restaurant_name: string;
   restaurant_slug: string;
   has_bank_account: boolean;
+  auto_payout_enabled: boolean;
   pending_balance_kobo: number;
   available_balance_kobo: number;
   total_earned_kobo: number;
@@ -68,6 +70,7 @@ interface SettlementsClientProps {
   settlements: SettlementRow[];
   merchantSummaries: MerchantSummary[];
   platformSettings: { merchantChargePct: number; deliveryCommissionPct: number };
+  autoPayout: { enabled: boolean; shadow: boolean };
 }
 
 /* ── Tabs ──────────────────────────────────────────────────────────────────── */
@@ -120,6 +123,7 @@ export function SettlementsClient({
   settlements,
   merchantSummaries,
   platformSettings,
+  autoPayout,
 }: SettlementsClientProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("payouts");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -532,6 +536,7 @@ export function SettlementsClient({
       {/* ── Section 3: Daily Payout Summary ───────────────────────────────── */}
       {activeTab === "payouts" && (
       <section className="space-y-3">
+        <PayoutControls initialEnabled={autoPayout.enabled} initialShadow={autoPayout.shadow} />
         <SectionHeader
           title="Daily Payout Summary"
           subtitle="Per-day breakdown of merchant payouts · click any row to expand by merchant"
@@ -630,6 +635,9 @@ export function SettlementsClient({
                 </th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Bank</th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Auto-pay
+                </th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">
                   Payouts
                 </th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500" />
@@ -671,6 +679,13 @@ export function SettlementsClient({
                           title={m.has_bank_account ? "Bank account linked" : "No bank account"}
                         />
                       </td>
+                      <td className="px-4 py-3 text-center">
+                        <MerchantPayoutToggle
+                          restaurantId={m.restaurant_id}
+                          initialEnabled={m.auto_payout_enabled}
+                          hasBankAccount={m.has_bank_account}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-center text-black-500 tabular-nums">
                         {m.settlement_count}
                       </td>
@@ -687,7 +702,7 @@ export function SettlementsClient({
                 })}
               {merchantSummaries.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-10 text-black-400 text-sm">
+                  <td colSpan={8} className="text-center py-10 text-black-400 text-sm">
                     No merchants found
                   </td>
                 </tr>

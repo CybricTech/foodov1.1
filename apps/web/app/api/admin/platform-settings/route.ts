@@ -58,6 +58,8 @@ export async function PATCH(request: NextRequest) {
     delivery_commission_pct?: number;
     admin_whatsapp_number?: string | null;
     admin_alert_email?: string | null;
+    auto_payout_enabled?: boolean;
+    auto_payout_shadow?: boolean;
   };
 
   // Only allow known fields
@@ -73,6 +75,8 @@ export async function PATCH(request: NextRequest) {
   if (updates.delivery_commission_pct !== undefined) allowed.delivery_commission_pct = updates.delivery_commission_pct;
   if (updates.admin_whatsapp_number !== undefined) allowed.admin_whatsapp_number = updates.admin_whatsapp_number;
   if (updates.admin_alert_email !== undefined) allowed.admin_alert_email = updates.admin_alert_email;
+  if (updates.auto_payout_enabled !== undefined) allowed.auto_payout_enabled = updates.auto_payout_enabled;
+  if (updates.auto_payout_shadow !== undefined) allowed.auto_payout_shadow = updates.auto_payout_shadow;
 
   if (Object.keys(allowed).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
