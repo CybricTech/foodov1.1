@@ -21,8 +21,11 @@ import {
   Radio,
   UserCheck,
   X,
+  Printer,
 } from "lucide-react";
 import type { Database } from "@foodo/database";
+import { printEngine } from "@/lib/printing/use-printer";
+import { toReceiptOrder } from "@/lib/printing/map-order";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -855,6 +858,16 @@ function FrontlineOrderCard({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                void printEngine.printNow(toReceiptOrder(order));
+              }}
+              title="Reprint receipt"
+              className="p-1.5 rounded-lg text-black-400 hover:text-black-700 hover:bg-black-50 transition-colors"
+            >
+              <Printer size={15} />
+            </button>
             <div className="text-right">
               <p className="text-sm font-bold text-black-900">
                 {formatKobo(order.total_kobo)}

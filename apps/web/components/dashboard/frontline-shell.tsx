@@ -5,10 +5,14 @@ import { cn } from "@foodo/ui";
 import { FrontlineNav } from "./frontline-nav";
 import { ConnectionProvider } from "@/lib/connection-context";
 import { ConnectionBanner } from "./connection-banner";
+import { FrontlinePrinterRunner } from "./frontline-printer-runner";
+import { PrinterIndicator } from "./printer-indicator";
 
 interface FrontlineShellProps {
   children: React.ReactNode;
   restaurantId: string;
+  restaurantName: string;
+  logoUrl: string | null;
   userName: string;
   role: string;
 }
@@ -16,6 +20,8 @@ interface FrontlineShellProps {
 export function FrontlineShell({
   children,
   restaurantId,
+  restaurantName,
+  logoUrl,
   userName,
   role,
 }: FrontlineShellProps) {
@@ -23,6 +29,12 @@ export function FrontlineShell({
 
   return (
     <ConnectionProvider>
+      {/* Always-on receipt printing for the frontline, on every page. */}
+      <FrontlinePrinterRunner
+        restaurantId={restaurantId}
+        restaurantName={restaurantName}
+        logoUrl={logoUrl}
+      />
       <div className="min-h-screen bg-black-50">
         <ConnectionBanner />
         <FrontlineNav
@@ -38,6 +50,10 @@ export function FrontlineShell({
             collapsed ? "md:ml-16" : "md:ml-56"
           )}
         >
+          {/* Printer connection signifier — visible on every frontline page. */}
+          <div className="flex justify-end px-4 pt-3">
+            <PrinterIndicator />
+          </div>
           {children}
         </main>
       </div>

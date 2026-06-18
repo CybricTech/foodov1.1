@@ -30,9 +30,15 @@ export default async function FrontlineLayout({
     redirect("/dashboard/login");
   }
 
+  // Restaurant name + logo drive the printed receipt header (white-label).
+  const supabase = await createServerClient();
+  const restaurant = await getRestaurantById(supabase, session.restaurantId);
+
   return (
     <FrontlineShell
       restaurantId={session.restaurantId}
+      restaurantName={restaurant?.name ?? "Receipt"}
+      logoUrl={restaurant?.logo_url ?? null}
       userName={session.fullName || session.email}
       role={session.role}
     >
