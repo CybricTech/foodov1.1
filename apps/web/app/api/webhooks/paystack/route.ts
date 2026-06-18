@@ -236,8 +236,9 @@ export async function POST(request: NextRequest) {
     .map((item) => menuPrepMap.get(item.menuItemId))
     .filter((p): p is number => p != null);
   const maxPrepMinutes = prepTimes.length > 0 ? Math.max(...prepTimes) : 20;
-  const bufferMinutes = meta.fulfillment_type === "delivery" ? 30 : 0;
-  const etaMs = (maxPrepMinutes + bufferMinutes) * 60 * 1000;
+  // Ready time only — no delivery travel buffer (3rd-party riders, see
+  // checkout/status route for the full rationale).
+  const etaMs = maxPrepMinutes * 60 * 1000;
   const estimatedDeliveryAt = new Date(Date.now() + etaMs).toISOString();
 
   await supabase

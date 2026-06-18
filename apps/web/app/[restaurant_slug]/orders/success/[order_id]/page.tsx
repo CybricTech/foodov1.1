@@ -165,7 +165,7 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
             </div>
             <div className="rounded-xl px-3 py-2.5" style={{ backgroundColor: `${brandColor}08` }}>
               <p className="text-xs mb-0.5" style={{ color: `${brandColor}aa` }}>
-                {isDelivery ? "Est. delivery" : "Ready for pickup"}
+                Ready by
               </p>
               <p className="font-bold text-black-900">{eta ?? "—"}</p>
             </div>

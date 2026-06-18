@@ -188,7 +188,6 @@ export default function OrderTrackingPage() {
         <OrderEtaCountdown
           estimatedDeliveryAt={(order as unknown as { estimated_delivery_at?: string | null }).estimated_delivery_at ?? null}
           status={order.status}
-          fulfillmentType={order.fulfillment_type as "delivery" | "pickup"}
         />
 
         {/* ── Progress Stepper ─────────────────────────────────────── */}

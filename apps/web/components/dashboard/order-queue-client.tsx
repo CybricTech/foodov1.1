@@ -796,11 +796,6 @@ function OrderCard({
                   +
                 </button>
               </div>
-              {order.fulfillment_type === "delivery" && (
-                <p className="text-[11px] text-black-400 text-center">
-                  Delivery travel time is added automatically.
-                </p>
-              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => {

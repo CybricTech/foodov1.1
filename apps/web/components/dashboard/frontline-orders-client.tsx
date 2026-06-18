@@ -58,8 +58,22 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
     quantity: number;
     line_total_kobo: number;
     selected_options: OptionSnapshot[] | null;
+    // Longest prep time across the order's items seeds the ETA prompt. Null when
+    // the menu item was since deleted.
+    menu_items?: { prep_time_minutes: number | null } | null;
   }>;
 };
+
+/** Platform fallback when no item carries a prep time (matches the checkout webhooks). */
+const DEFAULT_PREP_MINUTES = 20;
+
+/** The order's default estimated-ready time: the longest prep time of its items. */
+function defaultPrepMinutes(order: OrderRow): number {
+  const prepTimes = order.order_items
+    .map((i) => i.menu_items?.prep_time_minutes)
+    .filter((p): p is number => p != null);
+  return prepTimes.length > 0 ? Math.max(...prepTimes) : DEFAULT_PREP_MINUTES;
+}
 
 type Column = "new" | "in_progress" | "in_transit" | "completed";
 
@@ -197,7 +211,7 @@ export function FrontlineOrdersClient({
         customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
         vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
         special_instructions, delivery_address, dispatch_type,
-        order_items (id, item_name, quantity, line_total_kobo, selected_options)
+        order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
       `
       )
       .eq("restaurant_id", restaurantId)
@@ -240,7 +254,7 @@ export function FrontlineOrdersClient({
             const { data } = await supabase
               .from("orders")
               .select(
-                `*, order_items (id, item_name, quantity, line_total_kobo, selected_options)`
+                `*, order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))`
               )
               .eq("id", (payload.new as OrderRow).id)
               .single();
@@ -317,7 +331,7 @@ export function FrontlineOrdersClient({
   }, []);
 
   const updateStatus = useCallback(
-    async (orderId: string, newStatus: string) => {
+    async (orderId: string, newStatus: string, estimatedReadyMinutes?: number) => {
       setActionLoading(orderId);
       setActionError(null);
 
@@ -334,7 +348,11 @@ export function FrontlineOrdersClient({
         const res = await fetch("/api/dashboard/orders/update-status", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId, status: newStatus }),
+          body: JSON.stringify({
+            orderId,
+            status: newStatus,
+            ...(estimatedReadyMinutes != null ? { estimatedReadyMinutes } : {}),
+          }),
         });
 
         if (!res.ok) {
@@ -821,12 +839,17 @@ function FrontlineOrderCard({
   order: OrderRow;
   column: Column;
   isNew: boolean;
-  onUpdateStatus: (id: string, status: string) => void;
+  onUpdateStatus: (id: string, status: string, estimatedReadyMinutes?: number) => void;
   onDispatchReady?: (order: OrderRow) => void;
   loading: boolean;
   alwaysExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Accepting a new order opens an inline prep-time prompt (pre-filled with the
+  // longest item prep time) so the merchant sets the customer-facing ready ETA,
+  // matching the owner order queue.
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmMinutes, setConfirmMinutes] = useState(() => defaultPrepMinutes(order));
   const itemCount = getItemCount(order);
 
   return (
@@ -879,11 +902,77 @@ function FrontlineOrderCard({
           </div>
         </div>
 
-        {/* Action row */}
+        {/* Inline accept-with-ETA prompt — replaces the action row for a new
+            order while the merchant sets how long until it's ready. */}
+        {column === "new" && showConfirm ? (
+          <div className="mt-3 space-y-2.5">
+            <p className="text-[11px] text-black-400 text-center">
+              How long until it&rsquo;s ready? The customer sees this.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmMinutes((m) => Math.max(1, m - 5))}
+                disabled={loading}
+                className="w-9 h-9 rounded-lg border border-black-200 text-black-600 text-lg font-semibold hover:bg-black-50 transition-colors cursor-pointer disabled:opacity-50"
+                aria-label="Decrease 5 minutes"
+              >
+                −
+              </button>
+              <div className="flex items-baseline gap-1.5 justify-center">
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={confirmMinutes}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setConfirmMinutes(Number.isFinite(v) ? Math.min(240, Math.max(1, v)) : 1);
+                  }}
+                  className="w-14 text-center text-xl font-extrabold text-black-900 border-b-2 border-black-200 focus:outline-none focus:border-dixie-500 tabular-nums"
+                />
+                <span className="text-xs text-black-500">min</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmMinutes((m) => Math.min(240, m + 5))}
+                disabled={loading}
+                className="w-9 h-9 rounded-lg border border-black-200 text-black-600 text-lg font-semibold hover:bg-black-50 transition-colors cursor-pointer disabled:opacity-50"
+                aria-label="Increase 5 minutes"
+              >
+                +
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  onUpdateStatus(order.id, "preparing", confirmMinutes);
+                  setShowConfirm(false);
+                }}
+                disabled={loading}
+                className="flex-1 bg-dixie-500 hover:bg-dixie-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
+              >
+                {loading ? "Accepting…" : "Accept Order"}
+              </button>
+              <button
+                onClick={() => setShowConfirm(false)}
+                disabled={loading}
+                className="px-3 text-black-500 border border-black-200 text-xs font-medium rounded-lg hover:bg-black-50 transition-colors duration-150 cursor-pointer disabled:opacity-50"
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        ) : (
+
+        /* Action row */
         <div className="flex items-center gap-2 mt-3">
           {column === "new" && (
             <button
-              onClick={() => onUpdateStatus(order.id, "preparing")}
+              onClick={() => {
+                setConfirmMinutes(defaultPrepMinutes(order));
+                setShowConfirm(true);
+              }}
               disabled={loading}
               className="flex-1 bg-dixie-500 hover:bg-dixie-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
             >
@@ -974,6 +1063,7 @@ function FrontlineOrderCard({
             </button>
           )}
         </div>
+        )}
       </div>
 
       {/* Expanded details */}

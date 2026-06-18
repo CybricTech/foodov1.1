@@ -273,9 +273,11 @@ export async function GET(request: NextRequest) {
     .map((i) => menuPrepMap.get(i.menuItemId))
     .filter((p): p is number => p != null);
   const maxPrepMinutes = prepTimes.length > 0 ? Math.max(...prepTimes) : 20;
-  const bufferMinutes = meta.fulfillment_type === "delivery" ? 30 : 0;
+  // estimated_delivery_at is the "ready" time only — we no longer add a
+  // delivery travel buffer because deliveries are handled by 3rd-party riders
+  // whose timing we can't control. The customer is shown a ready estimate.
   const estimatedDeliveryAt = new Date(
-    Date.now() + (maxPrepMinutes + bufferMinutes) * 60 * 1000
+    Date.now() + maxPrepMinutes * 60 * 1000
   ).toISOString();
 
   // ETA update + link payment → order (parallel, non-blocking for client response)
