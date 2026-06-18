@@ -60,6 +60,9 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
 
   const placedAt = new Date(order.created_at);
   const placedTime = placedAt.toLocaleTimeString("en-NG", {
+    // This page is a Server Component, so without an explicit timeZone it would
+    // format in the server's zone (UTC on Vercel) and read an hour behind WAT.
+    timeZone: "Africa/Lagos",
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -67,6 +70,7 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
 
   const eta = order.estimated_delivery_at
     ? new Date(order.estimated_delivery_at).toLocaleTimeString("en-NG", {
+        timeZone: "Africa/Lagos",
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
