@@ -3,7 +3,15 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 // Public base URL of the Next.js web app. Must be set as a function secret:
 //   supabase secrets set APP_BASE_URL=https://<your-web-app-domain>
 const APP_BASE_URL = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// The engine route authenticates the caller with a literal string compare
+// against the web app's SUPABASE_SERVICE_ROLE_KEY (Vercel env). Supabase injects
+// THIS function's own service-role key, which can differ byte-for-byte from
+// Vercel's, so the forwarded bearer must be the value the route expects. Set it
+// explicitly to match the web app:
+//   supabase secrets set CRON_ENGINE_KEY=<web app's SUPABASE_SERVICE_ROLE_KEY>
+// Falls back to the injected key when they're already the same.
+const SERVICE_KEY =
+  Deno.env.get("CRON_ENGINE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 /**
  * Thin trigger for the automated payout engine.
