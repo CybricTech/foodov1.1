@@ -76,6 +76,54 @@ the entire flow works with fake money there.
 
 ---
 
+## Go-live checklist (staging → main)
+
+The payout engine, the Paystack lib, and the recipient-creating banking route
+live on the **`staging`** branch only — **`main` (production) does not have them
+yet**. Staging and production share **one database** and the **same Paystack
+account** (`e605` — "Foodo Technologies Limited"), so merging is mainly about
+getting the *code* to production. Work top to bottom; nothing moves money until
+the final ramp.
+
+**A. Prerequisites (before merge)**
+- [ ] **Paystack settlement = Manual / Titan.** On Paystack v2 there's no
+      "automatic off" toggle — the equivalent is the **Paystack Titan ("PT")
+      account** (intermediary balance). Confirm with Paystack support: *"Will
+      collected funds stay available in my Paystack balance so I can disburse via
+      the Transfers API, instead of auto-settling to my bank?"* Verify objectively:
+      `GET /balance` shows **available** (not just pending) funds. Funds still
+      clear ~T+1 before they're available — which lines up with the 24h hold.
+- [ ] **Disable OTP for transfers** (Paystack → Settings → Preferences/Transfers),
+      else automated transfers freeze in `otp` state.
+- [ ] **Live webhook set** → `https://kitchyn.app/api/webhooks/paystack` (handles
+      `transfer.success/failed/reversed`).
+- [ ] **Close the live real-transfer loop** on staging once the Titan balance is
+      available (one small real payout landing in a merchant bank).
+
+**B. Merge + deploy (brings code to production)**
+- [ ] Merge `staging` → `main`, deploy. This ships the cron route, the Paystack
+      lib, and the new bank-save route (creates a live recipient on every save).
+- [ ] Migration 082 **schema** (flags + dup-payout unique index) is already applied
+      to the shared DB. Apply the **pg_cron schedule** portion via the Supabase CLI
+      (`supabase db push` / apply 082) so the daily job actually exists.
+- [ ] Deploy the **`settle-payouts` edge function** + `supabase secrets set
+      APP_BASE_URL=https://kitchyn.app`.
+- [ ] **Recipient backfill (one-time):** every merchant that set their bank under
+      the *old* (Monnify) route has no/stale `paystack_recipient_code`. Create live
+      recipients for all merchants that have bank details but no valid recipient.
+      (The engine's on-the-fly fallback also covers this, but backfill is cleaner.)
+
+**C. Verify (still inert)**
+- [ ] Flags at fail-safe defaults: `platform_settings.auto_payout_enabled = false`,
+      `auto_payout_shadow = true`, **0 merchants** opted in. Merge + cron is a no-op
+      until you change these.
+- [ ] Manually `POST /api/cron/settle-payouts` once → returns `{ disabled: true }`
+      (master switch off) — confirms wiring without moving money.
+
+**D. Ramp (the only steps that move money)** — see "Rollout" below.
+
+---
+
 ## Rollout — the safe ramp
 
 1. **Test mode, end-to-end**: in Paystack Test, save a merchant's bank account
