@@ -428,9 +428,16 @@ export default function CheckoutPage() {
     if (!isValidNigerianPhone(phone)) return;
     setPhoneLoading(true);
     const normalized = normalizeToE164(phone);
+    // Hard ceiling on the phone gate. The lookup is purely an autofill
+    // convenience — when the API stalls (cold start + cross-region + a
+    // contended DB), the user must still be able to proceed. 3s is well above
+    // the p50 (~630ms) and well below "the page is broken".
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
     try {
       const res = await fetch(
-        `/api/customers/lookup?phone=${encodeURIComponent(normalized)}&restaurantId=${restaurant.id}`
+        `/api/customers/lookup?phone=${encodeURIComponent(normalized)}&restaurantId=${restaurant.id}`,
+        { signal: controller.signal }
       );
       if (res.ok) {
         const data = await res.json();
@@ -445,8 +452,10 @@ export default function CheckoutPage() {
         }
       }
     } catch {
-      // silent
+      // Silent for both AbortError (timeout) and network errors — the user
+      // proceeds without autofill rather than being stuck on the gate.
     } finally {
+      clearTimeout(timeout);
       setPhoneLoading(false);
     }
   }
