@@ -69,7 +69,7 @@ const DEFAULT_PREP_MINUTES = 20;
 
 /** The order's default estimated-ready time: the longest prep time of its items. */
 function defaultPrepMinutes(order: OrderRow): number {
-  const prepTimes = order.order_items
+  const prepTimes = (order.order_items ?? [])
     .map((i) => i.menu_items?.prep_time_minutes)
     .filter((p): p is number => p != null);
   return prepTimes.length > 0 ? Math.max(...prepTimes) : DEFAULT_PREP_MINUTES;
@@ -101,7 +101,7 @@ function formatTimeAgo(dateStr: string | null): string {
 }
 
 function getItemCount(order: OrderRow): number {
-  return order.order_items.reduce((sum, item) => sum + item.quantity, 0);
+  return (order.order_items ?? []).reduce((sum, item) => sum + item.quantity, 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -847,9 +847,12 @@ function FrontlineOrderCard({
   const [expanded, setExpanded] = useState(false);
   // Accepting a new order opens an inline prep-time prompt (pre-filled with the
   // longest item prep time) so the merchant sets the customer-facing ready ETA,
-  // matching the owner order queue.
+  // matching the owner order queue. The real default is computed on click — we
+  // intentionally do NOT seed it via a useState lazy initializer, because that
+  // runs during SSR hydration and a throw there is a fatal, boundary-bypassing
+  // hydration error ("Unknown root exit status").
   const [showConfirm, setShowConfirm] = useState(false);
-  const [confirmMinutes, setConfirmMinutes] = useState(() => defaultPrepMinutes(order));
+  const [confirmMinutes, setConfirmMinutes] = useState(DEFAULT_PREP_MINUTES);
   const itemCount = getItemCount(order);
 
   return (
@@ -874,7 +877,7 @@ function FrontlineOrderCard({
                 {order.customer_name}
               </span>
               <span className="text-black-200 text-xs">&middot;</span>
-              <span className="text-[11px] text-black-400">
+              <span className="text-[11px] text-black-400" suppressHydrationWarning>
                 {formatTimeAgo(order.created_at)}
               </span>
             </div>
