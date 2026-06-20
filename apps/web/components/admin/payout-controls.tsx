@@ -7,7 +7,8 @@
 
 import { useState } from "react";
 import { cn } from "@foodo/ui";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { formatKobo } from "@foodo/utils";
+import { Loader2, AlertTriangle, Wallet } from "lucide-react";
 
 async function patchPlatform(body: Record<string, boolean>) {
   const res = await fetch("/api/admin/platform-settings", {
@@ -66,9 +67,15 @@ function Switch({
 export function PayoutControls({
   initialEnabled,
   initialShadow,
+  balanceKobo,
+  enrolledOwedKobo,
 }: {
   initialEnabled: boolean;
   initialShadow: boolean;
+  /** Live Paystack balance (kobo) transfers draw from; null if unreadable. */
+  balanceKobo: number | null;
+  /** Sum of pending balances across enrolled merchants — what a live run owes. */
+  enrolledOwedKobo: number;
 }) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [shadow, setShadow] = useState(initialShadow);
@@ -77,6 +84,12 @@ export function PayoutControls({
 
   const live = enabled && !shadow;
   const state = !enabled ? "OFF" : shadow ? "SHADOW" : "LIVE";
+
+  // Float guard: transfers are funded from the Paystack balance, but the account
+  // auto-settles to the bank daily, so the balance must be kept topped up. Warn
+  // when the readable balance can't cover what enrolled merchants are owed.
+  const balanceKnown = balanceKobo != null;
+  const shortfall = balanceKnown && enrolledOwedKobo > 0 && balanceKobo < enrolledOwedKobo;
 
   async function apply(patch: Record<string, boolean>, optimistic: () => void, revert: () => void) {
     setBusy(true);
@@ -163,6 +176,38 @@ export function PayoutControls({
           <Switch on={live} onClick={toggleMode} disabled={busy || !enabled} tone="cinnabar" />
         </div>
       </div>
+
+      {/* Float gauge — transfers draw from this balance; the account auto-settles
+          to the bank daily, so it must be kept topped up. */}
+      <div className="mt-4 flex items-center justify-between rounded-lg border border-black-100 bg-black-50 px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <Wallet className="h-4 w-4 text-black-400" />
+          <div>
+            <p className="text-xs font-medium text-black-900">Paystack balance (payout float)</p>
+            <p className="text-[11px] text-black-400">
+              Owed to enrolled merchants: {formatKobo(enrolledOwedKobo)}
+            </p>
+          </div>
+        </div>
+        <span
+          className={cn(
+            "text-sm font-bold tabular-nums",
+            !balanceKnown ? "text-black-400" : shortfall ? "text-cinnabar-500" : "text-viridian-500"
+          )}
+        >
+          {balanceKnown ? formatKobo(balanceKobo) : "—"}
+        </span>
+      </div>
+
+      {shortfall && (
+        <div className="mt-2 flex items-start gap-2 rounded-lg bg-cinnabar-100 px-3 py-2 text-xs text-cinnabar-500">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Balance is below what enrolled merchants are owed ({formatKobo(enrolledOwedKobo)}). Top
+            up your Paystack balance or the next run will skip the merchants it can&apos;t fund.
+          </span>
+        </div>
+      )}
 
       {live && (
         <div className="mt-3 flex items-start gap-2 rounded-lg bg-cinnabar-50 px-3 py-2 text-xs text-cinnabar-600">
