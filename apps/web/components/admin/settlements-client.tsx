@@ -71,6 +71,8 @@ interface SettlementsClientProps {
   merchantSummaries: MerchantSummary[];
   platformSettings: { merchantChargePct: number; deliveryCommissionPct: number };
   autoPayout: { enabled: boolean; shadow: boolean };
+  /** Live Paystack balance (kobo) that transfers draw from; null if unreadable. */
+  paystackBalanceKobo: number | null;
 }
 
 /* ── Tabs ──────────────────────────────────────────────────────────────────── */
@@ -124,6 +126,7 @@ export function SettlementsClient({
   merchantSummaries,
   platformSettings,
   autoPayout,
+  paystackBalanceKobo,
 }: SettlementsClientProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("payouts");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -536,7 +539,14 @@ export function SettlementsClient({
       {/* ── Section 3: Daily Payout Summary ───────────────────────────────── */}
       {activeTab === "payouts" && (
       <section className="space-y-3">
-        <PayoutControls initialEnabled={autoPayout.enabled} initialShadow={autoPayout.shadow} />
+        <PayoutControls
+          initialEnabled={autoPayout.enabled}
+          initialShadow={autoPayout.shadow}
+          balanceKobo={paystackBalanceKobo}
+          enrolledOwedKobo={merchantSummaries
+            .filter((m) => m.auto_payout_enabled)
+            .reduce((sum, m) => sum + (m.pending_balance_kobo || 0), 0)}
+        />
         <SectionHeader
           title="Daily Payout Summary"
           subtitle="Per-day breakdown of merchant payouts · click any row to expand by merchant"

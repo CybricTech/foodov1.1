@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { SettlementsClient } from "@/components/admin/settlements-client";
+import { getNgnBalanceKobo } from "@/lib/paystack";
 
 export const dynamic = "force-dynamic";
 
@@ -166,6 +167,17 @@ export default async function AdminSettlementsPage() {
     };
   });
 
+  // Live Paystack balance — the float that automated transfers draw from. Since
+  // the account auto-settles to the bank daily, this is what the operator must
+  // keep funded for live payouts to succeed. Best-effort: a Paystack outage must
+  // never break the settlements page, so fall back to null (UI shows "—").
+  let paystackBalanceKobo: number | null = null;
+  try {
+    paystackBalanceKobo = await getNgnBalanceKobo();
+  } catch {
+    paystackBalanceKobo = null;
+  }
+
   // Build per-restaurant settlement summaries
   const restaurantSettlementMap: Record<string, { totalPaid: number; totalPending: number; settlementCount: number }> = {};
   for (const s of settlementsByRestaurant ?? []) {
@@ -223,6 +235,7 @@ export default async function AdminSettlementsPage() {
           enabled: (platformSettings as { auto_payout_enabled?: boolean } | null)?.auto_payout_enabled ?? false,
           shadow: (platformSettings as { auto_payout_shadow?: boolean } | null)?.auto_payout_shadow ?? true,
         }}
+        paystackBalanceKobo={paystackBalanceKobo}
       />
     </div>
   );
