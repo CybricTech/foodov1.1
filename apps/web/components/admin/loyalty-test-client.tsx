@@ -5,8 +5,8 @@
  * program and reset it, so the earn→redeem loop can be re-run while testing
  * (e.g. on The Copper Pot). Talks to /api/admin/loyalty/test (super-admin only).
  */
-import { useState } from "react";
-import { Stamp, Search, RotateCcw } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Stamp, Search, RotateCcw, Users } from "lucide-react";
 
 type Restaurant = { id: string; name: string; isTest: boolean; active: boolean };
 type LedgerRow = {
@@ -25,11 +25,29 @@ type Result = {
   redeemable: boolean;
   ledger: LedgerRow[];
 };
+type Participant = {
+  phone: string;
+  balance: number;
+  totalEarned: number;
+  stampCount: number;
+  lastActivity: string;
+  redeemable: boolean;
+  remaining: number;
+};
+type Roster = {
+  programActive: boolean;
+  rewardLabel: string;
+  required: number;
+  participantCount: number;
+  participants: Participant[];
+};
 
 export function LoyaltyTestClient({ restaurants }: { restaurants: Restaurant[] }) {
   const [restaurantId, setRestaurantId] = useState(restaurants[0]?.id ?? "");
   const [phone, setPhone] = useState("");
   const [result, setResult] = useState<Result | null>(null);
+  const [roster, setRoster] = useState<Roster | null>(null);
+  const [rosterFilter, setRosterFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -60,6 +78,68 @@ export function LoyaltyTestClient({ restaurants }: { restaurants: Restaurant[] }
       setLoading(false);
     }
   }
+
+  async function loadParticipants() {
+    if (!restaurantId) {
+      setError("Pick a restaurant.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/loyalty/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "participants", restaurantId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error ?? "Request failed");
+        setRoster(null);
+      } else {
+        setRoster(data as Roster);
+        setRosterFilter("");
+      }
+    } catch {
+      setError("Request failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Drill from a roster row into that phone's full ledger.
+  function inspectPhone(p: string) {
+    setPhone(p);
+    setRoster(null);
+    setRosterFilter("");
+    // Run the lookup with the chosen phone directly (state update is async).
+    setLoading(true);
+    setError("");
+    fetch("/api/admin/loyalty/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "lookup", restaurantId, phone: p }),
+    })
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) {
+          setError(data?.error ?? "Request failed");
+          setResult(null);
+        } else {
+          setResult(data as Result);
+        }
+      })
+      .catch(() => setError("Request failed"))
+      .finally(() => setLoading(false));
+  }
+
+  const filteredParticipants = useMemo(() => {
+    if (!roster) return [];
+    const q = rosterFilter.trim();
+    if (!q) return roster.participants;
+    return roster.participants.filter((p) => p.phone.includes(q));
+  }, [roster, rosterFilter]);
 
   return (
     <div className="p-6 max-w-3xl">
@@ -120,10 +200,89 @@ export function LoyaltyTestClient({ restaurants }: { restaurants: Restaurant[] }
           >
             <RotateCcw size={15} /> Reset stamps
           </button>
+          <button
+            onClick={loadParticipants}
+            disabled={loading}
+            className="flex items-center gap-1.5 border border-purple-200 text-purple-600 hover:bg-purple-50 disabled:opacity-60 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors cursor-pointer sm:ml-auto"
+          >
+            <Users size={15} /> View all participants
+          </button>
         </div>
 
         {error && <p className="text-sm text-cinnabar-600">{error}</p>}
       </div>
+
+      {roster && (
+        <div className="mt-5 bg-white border border-black-100 rounded-2xl p-5">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+            <div>
+              <p className="text-xs text-black-400 uppercase tracking-wide font-semibold">
+                Participants
+              </p>
+              <p className="text-2xl font-extrabold text-black-900">
+                {roster.participantCount}
+                <span className="text-sm text-black-400 font-bold"> in program</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold text-black-900">{roster.rewardLabel}</p>
+              <p className="text-xs mt-0.5 text-black-500">
+                {roster.required} stamps to unlock
+                {!roster.programActive && (
+                  <span className="text-cinnabar-500"> · program inactive</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {roster.participantCount > 0 && (
+            <input
+              value={rosterFilter}
+              onChange={(e) => setRosterFilter(e.target.value)}
+              placeholder="Filter by phone…"
+              className="w-full px-4 py-2 mb-3 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100"
+            />
+          )}
+
+          {roster.participantCount === 0 ? (
+            <p className="text-sm text-black-400">No one has earned a stamp yet.</p>
+          ) : filteredParticipants.length === 0 ? (
+            <p className="text-sm text-black-400">No phone matches &ldquo;{rosterFilter}&rdquo;.</p>
+          ) : (
+            <div className="divide-y divide-black-50">
+              {filteredParticipants.map((p) => (
+                <button
+                  key={p.phone}
+                  onClick={() => inspectPhone(p.phone)}
+                  className="w-full flex items-center justify-between gap-3 py-2.5 text-left hover:bg-black-50 -mx-2 px-2 rounded-lg transition-colors cursor-pointer"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-black-900 truncate">{p.phone}</p>
+                    <p className="text-xs text-black-400">
+                      {p.totalEarned} earned · last{" "}
+                      {new Date(p.lastActivity).toLocaleDateString("en-NG", {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {p.redeemable && (
+                      <span className="text-[11px] font-semibold text-viridian-500 bg-viridian-100 px-2 py-0.5 rounded-full">
+                        reward ready
+                      </span>
+                    )}
+                    <span className="font-bold tabular-nums text-black-900">
+                      {p.balance}
+                      <span className="text-black-400 font-bold"> / {roster.required}</span>
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {result && (
         <div className="mt-5 bg-white border border-black-100 rounded-2xl p-5">
