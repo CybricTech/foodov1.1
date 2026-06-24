@@ -38,7 +38,7 @@ export default async function AdminLayout({
   return (
     <ConnectionProvider>
       <ConnectionBanner />
-      <RouterAutoRefresh />
+      <RouterAutoRefresh intervalMs={20_000} />
       <div className="min-h-screen bg-black-50">
         <AdminNav userName={profile.full_name ?? user.email ?? ""} />
         <main className="md:ml-60 min-h-screen pb-20 md:pb-0 text-black-900">{children}</main>
