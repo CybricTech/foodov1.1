@@ -100,6 +100,7 @@ export function AdminNav({ userName }: { userName: string }) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
                   isActive
@@ -135,6 +136,7 @@ export function AdminNav({ userName }: { userName: string }) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               className={cn(
                 "flex-1 flex flex-col items-center justify-center py-3 gap-0.5 cursor-pointer transition-colors duration-150 relative",
                 isActive ? "text-purple-600" : "text-black-400"
@@ -152,6 +154,7 @@ export function AdminNav({ userName }: { userName: string }) {
         {/* More tab */}
         <Link
           href="/admin/more"
+          prefetch={false}
           className={cn(
             "flex-1 flex flex-col items-center justify-center py-3 gap-0.5 cursor-pointer transition-colors duration-150 relative",
             isMoreActive(pathname) ? "text-purple-600" : "text-black-400"
