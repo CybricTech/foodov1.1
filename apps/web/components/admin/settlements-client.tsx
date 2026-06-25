@@ -102,9 +102,11 @@ function paystackTotal(o: OrderRow): number {
   );
 }
 
-// Payment-gateway fee model is the canonical Paystack 1.4% (cap ₦2,000) from
-// @foodo/utils — verified against docs/Hurdle_payouts_1780508359481.csv. See
-// the gatewayFee docs in packages/utils/src/settlements.ts for the derivation.
+// Payment-gateway fee model is the canonical Paystack 1.5% + ₦100/txn
+// (₦100 waived under ₦2,500, capped at ₦2,000) from @foodo/utils. gatewayFee()
+// is applied per order below (line ~262) and summed, so the per-transaction
+// ₦100 scales with order count. See the gatewayFee docs in
+// packages/utils/src/settlements.ts for the reconciliation evidence.
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-dixie-100 text-dixie-600",
