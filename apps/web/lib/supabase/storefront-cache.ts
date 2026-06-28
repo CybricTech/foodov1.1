@@ -130,7 +130,8 @@ export const getCachedMenuAvailability = cache((restaurantId: string) =>
       const { data } = await createServiceClient()
         .from("menu_items")
         .select("category_id, is_available")
-        .eq("restaurant_id", restaurantId);
+        .eq("restaurant_id", restaurantId)
+        .eq("is_addon_only", false);
       return (data ?? []) as { category_id: string | null; is_available: boolean }[];
     },
     ["menu-availability", restaurantId],
