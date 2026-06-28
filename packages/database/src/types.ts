@@ -513,6 +513,7 @@ export type Database = {
           display_order: number
           id: string
           is_active: boolean
+          is_addon_group: boolean
           name: string
           restaurant_id: string
         }
@@ -522,6 +523,7 @@ export type Database = {
           display_order?: number
           id?: string
           is_active?: boolean
+          is_addon_group?: boolean
           name: string
           restaurant_id: string
         }
@@ -531,6 +533,7 @@ export type Database = {
           display_order?: number
           id?: string
           is_active?: boolean
+          is_addon_group?: boolean
           name?: string
           restaurant_id?: string
         }
@@ -548,6 +551,7 @@ export type Database = {
         Row: {
           id: string
           is_available: boolean
+          linked_item_id: string | null
           name: string
           option_id: string
           price_modifier: number
@@ -557,6 +561,7 @@ export type Database = {
         Insert: {
           id?: string
           is_available?: boolean
+          linked_item_id?: string | null
           name: string
           option_id: string
           price_modifier?: number
@@ -566,6 +571,7 @@ export type Database = {
         Update: {
           id?: string
           is_available?: boolean
+          linked_item_id?: string | null
           name?: string
           option_id?: string
           price_modifier?: number
@@ -643,6 +649,7 @@ export type Database = {
           featured_order: number
           id: string
           image_url: string | null
+          is_addon_only: boolean
           is_available: boolean
           is_featured: boolean
           name: string
@@ -661,6 +668,7 @@ export type Database = {
           featured_order?: number
           id?: string
           image_url?: string | null
+          is_addon_only?: boolean
           is_available?: boolean
           is_featured?: boolean
           name: string
@@ -679,6 +687,7 @@ export type Database = {
           featured_order?: number
           id?: string
           image_url?: string | null
+          is_addon_only?: boolean
           is_available?: boolean
           is_featured?: boolean
           name?: string
