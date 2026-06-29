@@ -9,6 +9,7 @@ import {
   DELIVERY_PER_KM_RATE_KOBO,
   DELIVERY_MAX_RADIUS_KM,
   DELIVERY_MAX_FEE_KOBO,
+  roundDeliveryFeeKobo,
   computeLoyaltyRewardKobo,
 } from "@foodo/utils";
 
@@ -340,6 +341,11 @@ export async function POST(request: NextRequest) {
       // restaurant's flat rate if the client sent nothing at all.
       deliveryFeeKobo = data.deliveryFeeKobo ?? restaurant.delivery_fee ?? 0;
     }
+
+    // Round the charged delivery fee to the nearest ₦100 — keeps our books free
+    // of odd kobo/tens figures. Mirrors /api/delivery/fee so the amount charged
+    // always matches the quote the customer saw, across every pricing path.
+    deliveryFeeKobo = roundDeliveryFeeKobo(deliveryFeeKobo);
   }
 
   // ── Discount (merchant-funded) ─────────────────────────────────────────────
