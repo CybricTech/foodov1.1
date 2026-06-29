@@ -5,6 +5,7 @@ import {
   DELIVERY_PER_KM_RATE_KOBO,
   DELIVERY_MAX_RADIUS_KM,
   DELIVERY_MAX_FEE_KOBO,
+  roundDeliveryFeeKobo,
 } from "@foodo/utils";
 
 export async function GET(request: NextRequest) {
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
 
   if (!restaurant?.latitude || !restaurant?.longitude) {
     return NextResponse.json({
-      feeKobo: baseFeeKobo,
+      feeKobo: roundDeliveryFeeKobo(baseFeeKobo),
       distanceKm: null,
       durationMinutes: null,
       fallback: true,
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
   // than making a request with key=undefined which would always fail.
   if (!apiKey) {
     return NextResponse.json({
-      feeKobo: baseFeeKobo,
+      feeKobo: roundDeliveryFeeKobo(baseFeeKobo),
       distanceKm: null,
       durationMinutes: null,
       fallback: true,
@@ -167,8 +168,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Round the customer-facing fee to the nearest ₦100 so our books stay clean
+  // (e.g. ₦3,701 → ₦3,700). The checkout charge applies the same rounding so
+  // the amount charged always matches the quote shown here.
   const calculatedFee = baseFeeKobo + Math.round(distanceKm * perKmRateKobo);
-  const feeKobo = Math.min(calculatedFee, maxFeeKobo);
+  const feeKobo = roundDeliveryFeeKobo(Math.min(calculatedFee, maxFeeKobo));
 
   // Destination coordinates the fee was priced against — exact when provided,
   // else the geocoded point. The checkout uses these for geo-fenced offers.
