@@ -83,7 +83,7 @@ const TABS: { key: TabKey; label: string; hint: string }[] = [
   { key: "payouts", label: "Daily Payouts", hint: "Record & track per-day merchant payouts" },
   { key: "merchants", label: "Merchants", hint: "Per-merchant balances & bank status" },
   { key: "history", label: "Payout History", hint: "Every transfer, chronological" },
-  { key: "pnl", label: "Foodo P&L", hint: "Daily revenue & Paystack reconciliation" },
+  { key: "pnl", label: "Kitchyn P&L", hint: "Daily revenue & Paystack reconciliation" },
   { key: "orders", label: "Orders", hint: "Per-order fee breakdown" },
 ];
 
@@ -405,7 +405,7 @@ export function SettlementsClient({
             sublabel="1% + ₦200 per order (customer)"
           />
           <SummaryCard
-            label="Total Foodo Revenue"
+            label="Total Kitchyn Revenue"
             value={formatKobo(revenue.totalFoodoRevenue)}
             sublabel="Merch charge + commission + svc fees"
             highlight="green"
@@ -442,7 +442,7 @@ export function SettlementsClient({
       {activeTab === "pnl" && (
       <section className="space-y-3">
         <SectionHeader
-          title="Daily Foodo P&L"
+          title="Daily Kitchyn P&L"
           subtitle="What we made each day, what Paystack deposits next, and our delivery margin"
         />
         <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
@@ -463,7 +463,7 @@ export function SettlementsClient({
                   >
                     Delivery Margin
                   </th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Foodo Net</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Kitchyn Net</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black-50">
@@ -530,7 +530,7 @@ export function SettlementsClient({
             </table>
           </div>
           <div className="px-4 py-2.5 border-t border-black-100 bg-black-50 text-[11px] text-black-400">
-            Only includes orders from merchants integrated with Foodo&rsquo;s Paystack (test merchants excluded). Paystack fee: 1.5% + ₦100/order (₦100 waived under ₦2,500, capped at ₦2,000). Delivery margin uses rider costs from delivered platform-rider orders only.
+            Only includes orders from merchants integrated with Kitchyn&rsquo;s Paystack (test merchants excluded). Paystack fee: 1.5% + ₦100/order (₦100 waived under ₦2,500, capped at ₦2,000). Delivery margin uses rider costs from delivered platform-rider orders only.
           </div>
         </div>
       </section>
@@ -887,7 +887,7 @@ export function SettlementsClient({
                   Del. Commission
                 </th>
                 <th className="text-right px-3 py-2.5 font-semibold text-viridian-600 whitespace-nowrap">
-                  Foodo Revenue
+                  Kitchyn Revenue
                 </th>
                 <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
                   Merchant Net
