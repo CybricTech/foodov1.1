@@ -34,8 +34,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const { action, restaurantId, phone } = body;
-  if (!restaurantId || !phone) {
-    return NextResponse.json({ error: "restaurantId and phone are required" }, { status: 400 });
+  // The "participants" roster needs only a restaurant; lookup/reset need a phone.
+  if (!restaurantId) {
+    return NextResponse.json({ error: "restaurantId is required" }, { status: 400 });
   }
 
   const { data: program } = await service
@@ -45,6 +46,46 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (!program) return NextResponse.json({ error: "No loyalty program for this restaurant" }, { status: 404 });
+
+  // Roster mode: every phone with stamp activity in this program, no phone input.
+  if (action === "participants") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: rows, error } = await (service.rpc as any)("loyalty_program_participants", {
+      p_program_id: program.id,
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    type ParticipantRow = {
+      customer_phone: string;
+      balance: number;
+      total_earned: number;
+      stamp_count: number;
+      last_activity: string;
+    };
+    const participants = ((rows ?? []) as ParticipantRow[]).map((r) => {
+      const progress = loyaltyProgress(r.balance, program.stamps_required);
+      return {
+        phone: r.customer_phone,
+        balance: progress.balance,
+        totalEarned: r.total_earned,
+        stampCount: Number(r.stamp_count),
+        lastActivity: r.last_activity,
+        redeemable: progress.redeemable,
+        remaining: progress.remaining,
+      };
+    });
+    return NextResponse.json({
+      programActive: program.is_active,
+      rewardLabel: formatLoyaltyReward(program),
+      required: program.stamps_required,
+      participantCount: participants.length,
+      participants,
+    });
+  }
+
+  // lookup/reset both need a phone (the roster branch returned above).
+  if (!phone) {
+    return NextResponse.json({ error: "phone is required" }, { status: 400 });
+  }
 
   if (action === "reset") {
     const { error } = await service

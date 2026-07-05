@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Plus,
   X,
@@ -16,6 +16,8 @@ import {
   Download,
   AlertCircle,
   CheckCircle2,
+  Link2,
+  Search,
 } from "lucide-react";
 
 import { createBrowserClient } from "@/lib/supabase/client";
@@ -29,12 +31,16 @@ interface MenuManagerClientProps {
   restaurantId: string;
   initialCategories: MenuCategory[];
   initialItems: MenuItemWithOptions[];
+  /** Whether the restaurant has pre-orders enabled — gates the Made to Order
+   *  toggle in the item form, since it reuses that pipeline entirely. */
+  schedulingEnabled: boolean;
 }
 
 export function MenuManagerClient({
   restaurantId,
   initialCategories,
   initialItems,
+  schedulingEnabled,
 }: MenuManagerClientProps) {
   const supabase = createBrowserClient();
   const [categories, setCategories] = useState(initialCategories);
@@ -169,6 +175,13 @@ export function MenuManagerClient({
   }
 
   const categoryItems = items.filter((i) => i.category_id === activeCategory);
+
+  // Add-on items + their reserved category, fed to the item modal so option
+  // choices can link to (or create) reusable add-ons.
+  const addonCategory = categories.find((c) => c.is_addon_group) ?? null;
+  const addonItems = items
+    .filter((i) => i.is_addon_only)
+    .map((i) => ({ id: i.id, name: i.name }));
 
   return (
     <div className="md:p-6 pb-24">
@@ -410,6 +423,9 @@ export function MenuManagerClient({
           categories={categories}
           item={editingItem}
           defaultCategoryId={activeCategory}
+          addons={addonItems}
+          addonCategory={addonCategory}
+          schedulingEnabled={schedulingEnabled}
           onClose={() => {
             setShowAddItem(false);
             setEditingItem(null);
@@ -425,6 +441,12 @@ export function MenuManagerClient({
             setShowAddItem(false);
             setEditingItem(null);
           }}
+          onAddonCreated={(it) =>
+            setItems((prev) => (prev.some((p) => p.id === it.id) ? prev : [...prev, it]))
+          }
+          onCategoryCreated={(cat) =>
+            setCategories((prev) => (prev.some((c) => c.id === cat.id) ? prev : [...prev, cat]))
+          }
         />
       )}
 
@@ -568,9 +590,16 @@ function ItemsPanel({
                       Off
                     </span>
                   )}
+                  {item.is_addon_only && (
+                    <span className="flex-shrink-0 text-[10px] font-semibold text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded-full">
+                      Add-on
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-black-500 mt-0.5 font-medium">
-                  {item.price_kobo === 0
+                  {item.is_addon_only
+                    ? "Add-on only"
+                    : item.price_kobo === 0
                     ? "Multiple sizes"
                     : formatKobo(item.price_kobo)}
                 </p>
@@ -727,6 +756,8 @@ function AddCategoryModal({
 interface DraftChoice {
   name: string;
   priceModifierNgn: string;
+  /** When set, this choice mirrors a real add-on menu item (name + availability). */
+  linkedItemId: string | null;
 }
 
 interface DraftOption {
@@ -747,8 +778,20 @@ interface ItemFormModalProps {
   categories: MenuCategory[];
   item: MenuItemWithOptions | null;
   defaultCategoryId: string | null;
+  /** Existing add-on items, offered as linkable choices in option groups. */
+  addons: { id: string; name: string }[];
+  /** The reserved "Add-ons" category, if it exists yet. */
+  addonCategory: MenuCategory | null;
+  /** Whether the restaurant has pre-orders enabled (Settings → Pre-orders).
+   *  Made to Order reuses the whole scheduled-order pipeline, so it's
+   *  meaningless — and disabled in this form — without that switched on. */
+  schedulingEnabled: boolean;
   onClose: () => void;
   onSave: (item: MenuItemWithOptions) => void;
+  /** A new add-on item was created inline — bubble it up to the manager. */
+  onAddonCreated: (item: MenuItemWithOptions) => void;
+  /** The "Add-ons" category was created on demand — bubble it up. */
+  onCategoryCreated: (category: MenuCategory) => void;
 }
 
 function ItemFormModal({
@@ -756,11 +799,73 @@ function ItemFormModal({
   categories,
   item,
   defaultCategoryId,
+  addons,
+  addonCategory,
+  schedulingEnabled,
   onClose,
   onSave,
+  onAddonCreated,
+  onCategoryCreated,
 }: ItemFormModalProps) {
   const supabase = createBrowserClient();
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Hidden add-on: not sold on its own, only offered as a choice in other items.
+  const [addonOnly, setAddonOnly] = useState(item?.is_addon_only ?? false);
+  // Local mirror of the restaurant's add-on items so inline-created ones appear
+  // in the choice dropdown immediately, before the parent re-renders.
+  const [localAddons, setLocalAddons] = useState(addons);
+  const [addonCatId, setAddonCatId] = useState<string | null>(addonCategory?.id ?? null);
+
+  /** Find-or-create the reserved "Add-ons" category for this restaurant. */
+  async function ensureAddonCategory(): Promise<string> {
+    if (addonCatId) return addonCatId;
+    const { data: cat, error: catErr } = await supabase
+      .from("menu_categories")
+      .insert({
+        restaurant_id: restaurantId,
+        name: "Add-ons",
+        display_order: 999,
+        is_addon_group: true,
+      })
+      .select("*")
+      .single();
+    if (catErr) throw catErr;
+    setAddonCatId(cat.id);
+    onCategoryCreated(cat as MenuCategory);
+    return cat.id;
+  }
+
+  /** Create a hidden add-on item inline and return it for linking. */
+  async function createAddon(rawName: string): Promise<{ id: string; name: string } | null> {
+    const addonName = rawName.trim();
+    if (!addonName) return null;
+    try {
+      const catId = await ensureAddonCategory();
+      const { data: created, error: itemErr } = await supabase
+        .from("menu_items")
+        .insert({
+          restaurant_id: restaurantId,
+          name: addonName,
+          price: 0,
+          price_kobo: 0,
+          category_id: catId,
+          is_addon_only: true,
+          is_available: true,
+          display_order: 0,
+        })
+        .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
+        .single();
+      if (itemErr) throw itemErr;
+      const addon = { id: created.id, name: created.name };
+      setLocalAddons((prev) => [...prev, addon]);
+      onAddonCreated(created as unknown as MenuItemWithOptions);
+      return addon;
+    } catch (e: unknown) {
+      setError((e as Error).message ?? "Could not create add-on");
+      return null;
+    }
+  }
 
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
@@ -802,6 +907,16 @@ function ItemFormModal({
       : ""
   );
 
+  // Made to Order (088): forces any cart containing this item into the
+  // scheduled-order flow with at least this many hours' notice — for items
+  // like custom cakes that need real advance lead time, distinct from the
+  // restaurant-wide pre-order booking window.
+  const itemRaw = item as { is_made_to_order?: boolean; made_to_order_lead_hours?: number | null } | null;
+  const [isMadeToOrder, setIsMadeToOrder] = useState(itemRaw?.is_made_to_order ?? false);
+  const [madeToOrderLeadHours, setMadeToOrderLeadHours] = useState(
+    itemRaw?.made_to_order_lead_hours != null ? String(itemRaw.made_to_order_lead_hours) : "24"
+  );
+
   const [draftOptions, setDraftOptions] = useState<DraftOption[]>(
     (item?.options ?? [])
       .filter((o) => o.id !== existingSizeGroup?.id)
@@ -812,6 +927,7 @@ function ItemFormModal({
         choices: o.choices.map((c) => ({
           name: c.name,
           priceModifierNgn: c.price_modifier_kobo ? (c.price_modifier_kobo / 100).toString() : "",
+          linkedItemId: c.linked_item_id ?? null,
         })),
       }))
   );
@@ -819,7 +935,7 @@ function ItemFormModal({
   function addOption() {
     setDraftOptions((prev) => [
       ...prev,
-      { name: "", isRequired: false, maxSelections: null, choices: [{ name: "", priceModifierNgn: "" }] },
+      { name: "", isRequired: false, maxSelections: null, choices: [{ name: "", priceModifierNgn: "", linkedItemId: null }] },
     ]);
   }
 
@@ -834,7 +950,7 @@ function ItemFormModal({
   function addChoice(oi: number) {
     setDraftOptions((prev) =>
       prev.map((o, i) =>
-        i === oi ? { ...o, choices: [...o.choices, { name: "", priceModifierNgn: "" }] } : o
+        i === oi ? { ...o, choices: [...o.choices, { name: "", priceModifierNgn: "", linkedItemId: null }] } : o
       )
     );
   }
@@ -871,11 +987,21 @@ function ItemFormModal({
 
   async function handleSave() {
     if (!name.trim()) { setError("Name is required"); return; }
-    if (hasSizes) {
-      const validSizes = draftSizes.filter((s) => s.name.trim() && s.priceNgn);
-      if (validSizes.length < 2) { setError("Add at least 2 sizes"); return; }
-    } else {
-      if (!priceNgn || isNaN(parseFloat(priceNgn))) { setError("Valid price required"); return; }
+    // Add-ons carry no price/sizes of their own — their cost is set per choice.
+    if (!addonOnly) {
+      if (hasSizes) {
+        const validSizes = draftSizes.filter((s) => s.name.trim() && s.priceNgn);
+        if (validSizes.length < 2) { setError("Add at least 2 sizes"); return; }
+      } else {
+        if (!priceNgn || isNaN(parseFloat(priceNgn))) { setError("Valid price required"); return; }
+      }
+    }
+    if (!addonOnly && isMadeToOrder) {
+      const hours = parseInt(madeToOrderLeadHours, 10);
+      if (!madeToOrderLeadHours.trim() || !Number.isFinite(hours) || hours <= 0) {
+        setError("Enter how many hours' notice this item needs");
+        return;
+      }
     }
     setSaving(true);
     setError("");
@@ -894,17 +1020,24 @@ function ItemFormModal({
         imageUrl = publicUrl;
       }
 
-      const priceKobo = hasSizes ? 0 : Math.round(parseFloat(priceNgn) * 100);
+      const priceKobo = addonOnly ? 0 : hasSizes ? 0 : Math.round(parseFloat(priceNgn) * 100);
+      // Add-on items live in the reserved "Add-ons" category and never appear on
+      // the storefront, so featured/NEW are forced off.
+      const resolvedCategoryId = addonOnly ? await ensureAddonCategory() : categoryId || null;
       const payload = {
         restaurant_id: restaurantId,
         name: name.trim(),
         description: description.trim() || null,
         price_kobo: priceKobo,
-        category_id: categoryId || null,
+        category_id: resolvedCategoryId,
         image_url: imageUrl,
-        is_featured: isFeatured,
-        show_new_badge: showNewBadge,
+        is_featured: addonOnly ? false : isFeatured,
+        show_new_badge: addonOnly ? false : showNewBadge,
+        is_addon_only: addonOnly,
         prep_time_minutes: prepMinutes.trim() ? parseInt(prepMinutes, 10) || null : null,
+        is_made_to_order: addonOnly ? false : isMadeToOrder,
+        made_to_order_lead_hours:
+          !addonOnly && isMadeToOrder ? parseInt(madeToOrderLeadHours, 10) : null,
       };
 
       let itemId: string;
@@ -929,7 +1062,7 @@ function ItemFormModal({
         itemId = data.id;
       }
 
-      if (hasSizes) {
+      if (!addonOnly && hasSizes) {
         const validSizes = draftSizes.filter((s) => s.name.trim() && s.priceNgn);
         const { data: sizeOptRow, error: sizeOptError } = await supabase
           .from("menu_item_options")
@@ -958,7 +1091,7 @@ function ItemFormModal({
         if (sizeChoiceError) throw sizeChoiceError;
       }
 
-      for (const opt of draftOptions) {
+      for (const opt of addonOnly ? [] : draftOptions) {
         if (!opt.name.trim()) continue;
         const { data: optRow, error: optError } = await supabase
           .from("menu_item_options")
@@ -975,7 +1108,7 @@ function ItemFormModal({
           .single();
         if (optError) throw optError;
 
-        const validChoices = opt.choices.filter((c) => c.name.trim());
+        const validChoices = opt.choices.filter((c) => c.name.trim() || c.linkedItemId);
         if (validChoices.length > 0) {
           const { error: choiceError } = await supabase.from("menu_item_option_choices").insert(
             validChoices.map((c) => ({
@@ -984,6 +1117,9 @@ function ItemFormModal({
               name: c.name.trim(),
               price_modifier_kobo: Math.round(parseFloat(c.priceModifierNgn || "0") * 100),
               is_available: true,
+              // Linked choices mirror their add-on item; the DB trigger overrides
+              // name + is_available from that item at write time.
+              linked_item_id: c.linkedItemId ?? null,
             }))
           );
           if (choiceError) throw choiceError;
@@ -1053,6 +1189,31 @@ function ItemFormModal({
             />
           </div>
 
+          {/* Hidden add-on toggle */}
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div className={cn(
+              "relative w-10 h-5 rounded-full transition-colors duration-200",
+              addonOnly ? "bg-purple-500" : "bg-black-200"
+            )}>
+              <input
+                type="checkbox"
+                checked={addonOnly}
+                onChange={(e) => setAddonOnly(e.target.checked)}
+                className="sr-only"
+              />
+              <span className={cn(
+                "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200",
+                addonOnly ? "translate-x-[18px]" : "translate-x-0"
+              )} />
+            </div>
+            <div>
+              <span className="text-sm font-medium text-black-900">Hidden add-on</span>
+              <p className="text-xs text-black-400">Not sold on its own — only offered as a choice in other items</p>
+            </div>
+          </label>
+
+          {!addonOnly && (
+            <>
           {/* Sizes toggle */}
           <label className="flex items-center gap-3 cursor-pointer group">
             <div className={cn(
@@ -1195,6 +1356,68 @@ function ItemFormModal({
             </p>
           </div>
 
+          {/* Made to Order — forces this item into the scheduled-order flow
+              with a minimum lead time (custom cakes, whole roasts, etc.).
+              Needs pre-orders enabled first since it reuses that pipeline. */}
+          <div>
+            <label
+              className={cn(
+                "flex items-center gap-3",
+                schedulingEnabled ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+              )}
+            >
+              <div className={cn(
+                "relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                isMadeToOrder ? "bg-purple-500" : "bg-black-200"
+              )}>
+                <input
+                  type="checkbox"
+                  checked={isMadeToOrder}
+                  disabled={!schedulingEnabled}
+                  onChange={(e) => setIsMadeToOrder(e.target.checked)}
+                  className="sr-only"
+                />
+                <span className={cn(
+                  "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200",
+                  isMadeToOrder ? "translate-x-[18px]" : "translate-x-0"
+                )} />
+              </div>
+              <div>
+                <span className="text-sm font-medium text-black-900">Made to Order</span>
+                <p className="text-xs text-black-400">
+                  Customer must book ahead — can&rsquo;t order this &ldquo;now&rdquo;
+                </p>
+              </div>
+            </label>
+            {!schedulingEnabled && (
+              <p className="text-[11px] text-gold-600 mt-1.5">
+                Enable pre-orders in Settings → Pre-orders first to use this.
+              </p>
+            )}
+            {schedulingEnabled && isMadeToOrder && (
+              <div className="mt-2.5 pl-[52px]">
+                <label className="block text-xs font-medium text-black-600 mb-1.5">
+                  Notice required
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={madeToOrderLeadHours}
+                    onChange={(e) => setMadeToOrderLeadHours(e.target.value)}
+                    className="w-24 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-colors"
+                    placeholder="24"
+                  />
+                  <span className="text-sm text-black-500">hours ahead, minimum</span>
+                </div>
+              </div>
+            )}
+          </div>
+            </>
+          )}
+
           {/* Image upload */}
           <div>
             <label className="block text-sm font-medium text-black-600 mb-1.5">
@@ -1228,6 +1451,8 @@ function ItemFormModal({
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
           </div>
 
+          {!addonOnly && (
+            <>
           {/* Featured */}
           <label className="flex items-center gap-3 cursor-pointer">
             <div className={cn(
@@ -1352,11 +1577,21 @@ function ItemFormModal({
                 <div className="space-y-2">
                   {opt.choices.map((choice, ci) => (
                     <div key={ci} className="flex items-center gap-2">
-                      <input
-                        value={choice.name}
-                        onChange={(e) => updateChoice(oi, ci, { name: e.target.value })}
-                        placeholder="Choice name (e.g. Chicken)"
-                        className="flex-1 px-3 py-1.5 rounded-lg border border-black-200 text-sm focus:outline-none focus:border-purple-500 bg-white transition-colors"
+                      <ChoiceCombobox
+                        value={choice}
+                        addons={localAddons.filter((a) => a.id !== item?.id)}
+                        onPick={(addon) =>
+                          updateChoice(oi, ci, { linkedItemId: addon.id, name: addon.name })
+                        }
+                        onCreate={async (n) => {
+                          const created = await createAddon(n);
+                          if (created) {
+                            updateChoice(oi, ci, { linkedItemId: created.id, name: created.name });
+                          }
+                          return created;
+                        }}
+                        onTypeFreeText={(n) => updateChoice(oi, ci, { name: n, linkedItemId: null })}
+                        onClear={() => updateChoice(oi, ci, { linkedItemId: null, name: "" })}
                       />
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <span className="text-xs text-black-400 font-medium">+₦</span>
@@ -1391,6 +1626,8 @@ function ItemFormModal({
               </div>
             ))}
           </div>
+            </>
+          )}
 
           {error && (
             <div className="bg-cinnabar-50 border border-cinnabar-200 text-cinnabar-600 text-sm px-4 py-3 rounded-xl">
@@ -1410,6 +1647,110 @@ function ItemFormModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── ChoiceCombobox ──────────────────────────────────────────────────────────
+// A choice field that links to a reusable add-on item. Type to search existing
+// add-ons, pick one (the choice then mirrors its name + availability), or create
+// a new add-on inline. Typing a name without picking keeps it as plain free text.
+
+function ChoiceCombobox({
+  value,
+  addons,
+  onPick,
+  onCreate,
+  onTypeFreeText,
+  onClear,
+}: {
+  value: DraftChoice;
+  addons: { id: string; name: string }[];
+  onPick: (addon: { id: string; name: string }) => void;
+  onCreate: (name: string) => Promise<{ id: string; name: string } | null>;
+  onTypeFreeText: (name: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  // Linked → show a detachable chip instead of the search field.
+  if (value.linkedItemId) {
+    return (
+      <div className="flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-200 bg-purple-50 min-w-0">
+        <Link2 size={13} className="text-purple-500 flex-shrink-0" />
+        <span className="flex-1 text-sm font-medium text-purple-700 truncate">{value.name}</span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-purple-400 hover:text-purple-600 transition-colors cursor-pointer flex-shrink-0"
+          aria-label="Unlink add-on"
+        >
+          <X size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  const q = value.name.trim().toLowerCase();
+  const matches = addons.filter((a) => a.name.toLowerCase().includes(q)).slice(0, 6);
+  const exact = addons.some((a) => a.name.toLowerCase() === q);
+  const canCreate = q.length > 0 && !exact;
+
+  return (
+    <div ref={ref} className="relative flex-1 min-w-0">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-black-200 bg-white focus-within:border-purple-500 transition-colors">
+        <Search size={13} className="text-black-300 flex-shrink-0" />
+        <input
+          value={value.name}
+          onChange={(e) => { onTypeFreeText(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search or add an add-on…"
+          className="flex-1 text-sm focus:outline-none bg-transparent min-w-0"
+        />
+      </div>
+      {open && (matches.length > 0 || canCreate) && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-black-200 rounded-lg shadow-lg overflow-hidden">
+          {matches.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => { onPick(a); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-black-700 hover:bg-purple-50 transition-colors cursor-pointer"
+            >
+              <Link2 size={12} className="text-black-300 flex-shrink-0" />
+              <span className="truncate">{a.name}</span>
+            </button>
+          ))}
+          {canCreate && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                const created = await onCreate(value.name);
+                setBusy(false);
+                if (created) setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium text-purple-600 hover:bg-purple-50 transition-colors cursor-pointer border-t border-black-50 disabled:opacity-60"
+            >
+              <Plus size={12} className="flex-shrink-0" />
+              <span className="truncate">
+                {busy ? "Creating…" : `Create “${value.name.trim()}” as add-on`}
+              </span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

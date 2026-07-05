@@ -31,6 +31,16 @@ Sentry.init({
     // Next.js RSC stream interrupted mid-flight (tab closed, network drop).
     // Expected on admin pages that auto-refresh on reconnect/visibility.
     "Connection closed.",
+    // A fetch() that was aborted or lost its connection — Mobile Safari says
+    // "Load failed", Chrome/Firefox "Failed to fetch" / "NetworkError when
+    // attempting to fetch resource". Caught and handled (the app shows an error
+    // toast and keeps working); overwhelmingly fires when a phone backgrounds
+    // the tab, locks, or drops off a flaky mobile network. Same benign network
+    // class as "Connection closed." above. A genuinely broken endpoint would
+    // surface as a server-side 5xx, not a trickle of client fetch aborts.
+    "Load failed",
+    "Failed to fetch",
+    "NetworkError when attempting to fetch resource",
   ],
   denyUrls: [
     // Scripts injected by native in-app browser WebViews, not served by us.

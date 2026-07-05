@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { formatKobo, computeOrderNet, gatewayFee } from "@foodo/utils";
 import Link from "next/link";
 import { Download, ChevronDown, ChevronRight } from "lucide-react";
+import { PayoutControls, MerchantPayoutToggle } from "./payout-controls";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -54,6 +55,7 @@ type MerchantSummary = {
   restaurant_name: string;
   restaurant_slug: string;
   has_bank_account: boolean;
+  auto_payout_enabled: boolean;
   pending_balance_kobo: number;
   available_balance_kobo: number;
   total_earned_kobo: number;
@@ -68,6 +70,9 @@ interface SettlementsClientProps {
   settlements: SettlementRow[];
   merchantSummaries: MerchantSummary[];
   platformSettings: { merchantChargePct: number; deliveryCommissionPct: number };
+  autoPayout: { enabled: boolean; shadow: boolean };
+  /** Live Paystack balance (kobo) that transfers draw from; null if unreadable. */
+  paystackBalanceKobo: number | null;
 }
 
 /* ── Tabs ──────────────────────────────────────────────────────────────────── */
@@ -78,7 +83,7 @@ const TABS: { key: TabKey; label: string; hint: string }[] = [
   { key: "payouts", label: "Daily Payouts", hint: "Record & track per-day merchant payouts" },
   { key: "merchants", label: "Merchants", hint: "Per-merchant balances & bank status" },
   { key: "history", label: "Payout History", hint: "Every transfer, chronological" },
-  { key: "pnl", label: "Foodo P&L", hint: "Daily revenue & Paystack reconciliation" },
+  { key: "pnl", label: "Kitchyn P&L", hint: "Daily revenue & Paystack reconciliation" },
   { key: "orders", label: "Orders", hint: "Per-order fee breakdown" },
 ];
 
@@ -97,9 +102,11 @@ function paystackTotal(o: OrderRow): number {
   );
 }
 
-// Payment-gateway fee model is the canonical Paystack 1.4% (cap ₦2,000) from
-// @foodo/utils — verified against docs/Hurdle_payouts_1780508359481.csv. See
-// the gatewayFee docs in packages/utils/src/settlements.ts for the derivation.
+// Payment-gateway fee model is the canonical Paystack 1.5% + ₦100/txn
+// (₦100 waived under ₦2,500, capped at ₦2,000) from @foodo/utils. gatewayFee()
+// is applied per order below (line ~262) and summed, so the per-transaction
+// ₦100 scales with order count. See the gatewayFee docs in
+// packages/utils/src/settlements.ts for the reconciliation evidence.
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-dixie-100 text-dixie-600",
@@ -120,6 +127,8 @@ export function SettlementsClient({
   settlements,
   merchantSummaries,
   platformSettings,
+  autoPayout,
+  paystackBalanceKobo,
 }: SettlementsClientProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("payouts");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -398,7 +407,7 @@ export function SettlementsClient({
             sublabel="1% + ₦200 per order (customer)"
           />
           <SummaryCard
-            label="Total Foodo Revenue"
+            label="Total Kitchyn Revenue"
             value={formatKobo(revenue.totalFoodoRevenue)}
             sublabel="Merch charge + commission + svc fees"
             highlight="green"
@@ -435,7 +444,7 @@ export function SettlementsClient({
       {activeTab === "pnl" && (
       <section className="space-y-3">
         <SectionHeader
-          title="Daily Foodo P&L"
+          title="Daily Kitchyn P&L"
           subtitle="What we made each day, what Paystack deposits next, and our delivery margin"
         />
         <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
@@ -456,7 +465,7 @@ export function SettlementsClient({
                   >
                     Delivery Margin
                   </th>
-                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Foodo Net</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-black-500">Kitchyn Net</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black-50">
@@ -523,7 +532,7 @@ export function SettlementsClient({
             </table>
           </div>
           <div className="px-4 py-2.5 border-t border-black-100 bg-black-50 text-[11px] text-black-400">
-            Only includes orders from merchants integrated with Foodo&rsquo;s Paystack (test merchants excluded). Paystack fee: 1.5% + ₦100/order (₦100 waived under ₦2,500, capped at ₦2,000). Delivery margin uses rider costs from delivered platform-rider orders only.
+            Only includes orders from merchants integrated with Kitchyn&rsquo;s Paystack (test merchants excluded). Paystack fee: 1.5% + ₦100/order (₦100 waived under ₦2,500, capped at ₦2,000). Delivery margin uses rider costs from delivered platform-rider orders only.
           </div>
         </div>
       </section>
@@ -532,6 +541,14 @@ export function SettlementsClient({
       {/* ── Section 3: Daily Payout Summary ───────────────────────────────── */}
       {activeTab === "payouts" && (
       <section className="space-y-3">
+        <PayoutControls
+          initialEnabled={autoPayout.enabled}
+          initialShadow={autoPayout.shadow}
+          balanceKobo={paystackBalanceKobo}
+          enrolledOwedKobo={merchantSummaries
+            .filter((m) => m.auto_payout_enabled)
+            .reduce((sum, m) => sum + (m.pending_balance_kobo || 0), 0)}
+        />
         <SectionHeader
           title="Daily Payout Summary"
           subtitle="Per-day breakdown of merchant payouts · click any row to expand by merchant"
@@ -630,6 +647,9 @@ export function SettlementsClient({
                 </th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Bank</th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">
+                  Auto-pay
+                </th>
+                <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">
                   Payouts
                 </th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500" />
@@ -671,6 +691,13 @@ export function SettlementsClient({
                           title={m.has_bank_account ? "Bank account linked" : "No bank account"}
                         />
                       </td>
+                      <td className="px-4 py-3 text-center">
+                        <MerchantPayoutToggle
+                          restaurantId={m.restaurant_id}
+                          initialEnabled={m.auto_payout_enabled}
+                          hasBankAccount={m.has_bank_account}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-center text-black-500 tabular-nums">
                         {m.settlement_count}
                       </td>
@@ -687,7 +714,7 @@ export function SettlementsClient({
                 })}
               {merchantSummaries.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-10 text-black-400 text-sm">
+                  <td colSpan={8} className="text-center py-10 text-black-400 text-sm">
                     No merchants found
                   </td>
                 </tr>
@@ -862,7 +889,7 @@ export function SettlementsClient({
                   Del. Commission
                 </th>
                 <th className="text-right px-3 py-2.5 font-semibold text-viridian-600 whitespace-nowrap">
-                  Foodo Revenue
+                  Kitchyn Revenue
                 </th>
                 <th className="text-right px-3 py-2.5 font-semibold text-black-500 whitespace-nowrap">
                   Merchant Net

@@ -1,19 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Clock } from "lucide-react";
+import { X, Clock, CalendarClock } from "lucide-react";
 import {
   isWithinOpeningHours,
   nextOpenLabel,
+  normalizeSchedulingSettings,
   type OpeningHours,
 } from "@foodo/utils";
 import { useRestaurant } from "./restaurant-context";
 
 export function ClosedNotice() {
   const { restaurant } = useRestaurant();
-  const extended = restaurant as unknown as { opening_hours?: OpeningHours | null; closure_message?: string | null };
+  const extended = restaurant as unknown as {
+    opening_hours?: OpeningHours | null;
+    closure_message?: string | null;
+    scheduling_settings?: unknown;
+  };
   const hours = extended.opening_hours;
   const closureMessage = extended.closure_message;
+  // Pre-ordering is only offered for SCHEDULE-based closures: a manual
+  // "Accept orders" OFF is an unexpected closure we can't promise slots for,
+  // and checkout enforces the same rule server-side. Checkout auto-selects
+  // "Schedule for later" while the store is schedule-closed, so this CTA only
+  // needs to dismiss the notice — no cross-page state to plumb.
+  const canOrderAhead =
+    normalizeSchedulingSettings(extended.scheduling_settings).enabled &&
+    restaurant.accepts_orders;
 
   // hardClosed = merchant manually toggled "Accept orders" off
   // scheduleClosed = within operating hours but not the right time
@@ -82,6 +95,8 @@ export function ClosedNotice() {
           <p className="text-sm text-black-500 text-center mb-1 leading-relaxed">
             {hardClosed && closureMessage
               ? closureMessage
+              : canDismiss && canOrderAhead
+              ? `${restaurant.name} isn’t taking live orders — but you can book ahead for when it opens.`
               : `${restaurant.name} isn’t taking orders at the moment.`}
           </p>
 
@@ -94,15 +109,33 @@ export function ClosedNotice() {
             <div className="mb-6" />
           )}
 
-          {/* Browse button — only shown for schedule-based closures */}
-          {canDismiss && (
+          {/* CTAs — only shown for schedule-based closures. With pre-orders
+              enabled, "Order ahead" leads: browsing + checkout will already be
+              in "Schedule for later" mode while the store is closed. */}
+          {canDismiss && canOrderAhead ? (
+            <div className="space-y-2">
+              <button
+                onClick={() => setDismissed(true)}
+                className="w-full bg-black-900 hover:bg-black-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm cursor-pointer flex items-center justify-center gap-2"
+              >
+                <CalendarClock size={16} />
+                Order ahead
+              </button>
+              <button
+                onClick={() => setDismissed(true)}
+                className="w-full text-black-500 hover:text-black-700 font-medium py-2 text-sm cursor-pointer transition-colors"
+              >
+                Just browse the menu
+              </button>
+            </div>
+          ) : canDismiss ? (
             <button
               onClick={() => setDismissed(true)}
               className="w-full bg-black-900 hover:bg-black-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm cursor-pointer"
             >
               Browse menu anyway
             </button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

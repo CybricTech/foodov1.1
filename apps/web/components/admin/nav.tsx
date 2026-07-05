@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   Sparkles,
   Stamp,
+  CalendarClock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,6 +34,7 @@ export const NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/settlements",  label: "Settlements",   icon: Banknote,        exact: false },
   { href: "/admin/disputes",     label: "Disputes",      icon: Scale,           exact: false },
   { href: "/admin/late-orders",  label: "Late Orders",   icon: AlertTriangle,   exact: false },
+  { href: "/admin/scheduled-orders", label: "Scheduled Orders", icon: CalendarClock, exact: false },
   { href: "/admin/landing",      label: "Landing",       icon: Globe,           exact: false },
   { href: "/admin/changelog",    label: "What's New",    icon: Sparkles,        exact: false },
   { href: "/admin/loyalty",      label: "Loyalty Test",  icon: Stamp,           exact: false },
@@ -52,6 +54,7 @@ export const MOBILE_MORE_ITEMS: AdminNavItem[] = NAV_ITEMS.filter((i) =>
     "/admin/analytics",
     "/admin/disputes",
     "/admin/late-orders",
+    "/admin/scheduled-orders",
     "/admin/landing",
     "/admin/changelog",
     "/admin/loyalty",
@@ -100,6 +103,7 @@ export function AdminNav({ userName }: { userName: string }) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors",
                   isActive
@@ -135,6 +139,7 @@ export function AdminNav({ userName }: { userName: string }) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               className={cn(
                 "flex-1 flex flex-col items-center justify-center py-3 gap-0.5 cursor-pointer transition-colors duration-150 relative",
                 isActive ? "text-purple-600" : "text-black-400"
@@ -152,6 +157,7 @@ export function AdminNav({ userName }: { userName: string }) {
         {/* More tab */}
         <Link
           href="/admin/more"
+          prefetch={false}
           className={cn(
             "flex-1 flex flex-col items-center justify-center py-3 gap-0.5 cursor-pointer transition-colors duration-150 relative",
             isMoreActive(pathname) ? "text-purple-600" : "text-black-400"

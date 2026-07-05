@@ -12,9 +12,36 @@ interface SmsPayload {
     | "order_in_transit"
     | "order_delivered"
     | "order_cancelled"
-    | "new_order_merchant";
+    | "new_order_merchant"
+    | "booking_confirmed"
+    | "order_rescheduled"
+    | "order_declined";
   orderId: string;
   orderNumber?: string | number;
+  /** ISO instant of the booked slot — booking_confirmed / order_rescheduled. */
+  scheduledFor?: string;
+  /** Merchant's reason — order_declined. */
+  reason?: string;
+}
+
+/** "Thu 3 Jul, 6:30 PM" in Africa/Lagos — how slot times read in SMS copy. */
+function formatSlotForSms(iso: string | undefined): string {
+  if (!iso) return "your booked time";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "your booked time";
+  const day = d.toLocaleDateString("en-NG", {
+    timeZone: "Africa/Lagos",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const time = d.toLocaleTimeString("en-NG", {
+    timeZone: "Africa/Lagos",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${day}, ${time}`;
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -34,10 +61,17 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 function buildMessage(
   eventType: SmsPayload["eventType"],
   orderNumber: string | number | undefined,
-  restaurantName: string
+  restaurantName: string,
+  extras?: { scheduledFor?: string; reason?: string }
 ): string {
   const num = orderNumber ? `#${orderNumber}` : "";
   switch (eventType) {
+    case "booking_confirmed":
+      return `Your order ${num} at ${restaurantName} is booked for ${formatSlotForSms(extras?.scheduledFor)}. We'll start preparing it then — you can cancel from your order page until shortly before.`;
+    case "order_rescheduled":
+      return `${restaurantName} moved your order ${num} to ${formatSlotForSms(extras?.scheduledFor)}.${extras?.reason ? ` Reason: ${extras.reason}` : ""} Check your order page for details.`;
+    case "order_declined":
+      return `${restaurantName} couldn't take your scheduled order ${num}.${extras?.reason ? ` Reason: ${extras.reason}` : ""} A refund will be processed within 3-5 business days.`;
     case "order_confirmed":
       return `Thanks for ordering from ${restaurantName}! Your order ${num} is confirmed — we'll text you again when it's ready.`;
     case "order_preparing":
@@ -71,6 +105,7 @@ interface OrderForMessage {
   fulfillment_type: string;
   delivery_address: string | null;
   special_instructions: string | null;
+  scheduled_for?: string | null;
   subtotal_kobo: number;
   delivery_fee_kobo: number;
   total_kobo: number;
@@ -85,7 +120,12 @@ interface OrderForMessage {
 function buildWhatsAppOrderMessage(order: OrderForMessage): string {
   const lines: string[] = [];
 
-  lines.push(`🍽️ *New Order #${order.order_number}*`);
+  if (order.scheduled_for) {
+    lines.push(`⏰ *Scheduled Order #${order.order_number}*`);
+    lines.push(`📅 *Booked for:* ${formatSlotForSms(order.scheduled_for)}`);
+  } else {
+    lines.push(`🍽️ *New Order #${order.order_number}*`);
+  }
   lines.push("");
   lines.push(`👤 *Customer:* ${order.customer_name ?? "—"}`);
   lines.push(`📞 *Phone:* ${order.customer_phone ?? "—"}`);
@@ -372,6 +412,7 @@ serve(async (req) => {
         fulfillment_type,
         delivery_address,
         special_instructions,
+        scheduled_for,
         subtotal_kobo,
         delivery_fee_kobo,
         total_kobo,
@@ -510,7 +551,10 @@ serve(async (req) => {
 
   // Sendchamp requires E.164-style digits-only ("23480...").
   const normalizedPhone = normalizePhoneE164(recipientPhone);
-  const message = buildMessage(eventType, orderNumber, restaurantName);
+  const message = buildMessage(eventType, orderNumber, restaurantName, {
+    scheduledFor: payload.scheduledFor,
+    reason: payload.reason,
+  });
 
   const logId = await createLog({
     restaurantId,

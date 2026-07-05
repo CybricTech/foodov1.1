@@ -1,11 +1,27 @@
 "use client";
 
 import Image from "next/image";
-import { Sparkles } from "lucide-react";
+import { Sparkles, CalendarClock } from "lucide-react";
 import { cn } from "@foodo/ui";
 import type { MenuItemWithOptions } from "@foodo/database";
 import { transformImage } from "@/lib/images";
 import { ItemPrice, SalePill, type MenuSale } from "./menu-price";
+
+/** "Made to Order" pill — flags items that need real advance notice (088). */
+export function MadeToOrderBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "flex-shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5",
+        "text-[9px] font-extrabold uppercase tracking-wider text-purple-700 bg-purple-100",
+        className
+      )}
+    >
+      <CalendarClock size={9} strokeWidth={2.5} />
+      Made to Order
+    </span>
+  );
+}
 
 /** Branded "NEW" pill — uses the restaurant's primary colour. */
 export function NewBadge({ className }: { className?: string }) {
@@ -33,6 +49,11 @@ interface MenuItemCardProps {
 export function MenuItemCard({ item, onSelect, sale = null }: MenuItemCardProps) {
   const unavailable = !item.is_available;
   const showSale = !!sale && !sale.conditional && !unavailable;
+  const itemExt = item as unknown as {
+    is_made_to_order?: boolean;
+    made_to_order_lead_hours?: number | null;
+  };
+  const madeToOrder = !!itemExt.is_made_to_order;
 
   return (
     <button
@@ -57,6 +78,7 @@ export function MenuItemCard({ item, onSelect, sale = null }: MenuItemCardProps)
             {item.name}
           </p>
           {item.show_new_badge && !unavailable && <NewBadge />}
+          {madeToOrder && !unavailable && <MadeToOrderBadge />}
           {unavailable && (
             <span className="flex-shrink-0 text-[10px] font-semibold text-black-400 bg-black-100 px-1.5 py-0.5 rounded-full">
               Unavailable
@@ -66,6 +88,11 @@ export function MenuItemCard({ item, onSelect, sale = null }: MenuItemCardProps)
         {item.description && (
           <p className="mt-0.5 text-xs text-black-400 line-clamp-2">
             {item.description}
+          </p>
+        )}
+        {madeToOrder && !unavailable && itemExt.made_to_order_lead_hours && (
+          <p className="mt-0.5 text-[11px] text-purple-600 font-medium">
+            Order {itemExt.made_to_order_lead_hours}h ahead
           </p>
         )}
         <div className="mt-2 text-sm font-bold">

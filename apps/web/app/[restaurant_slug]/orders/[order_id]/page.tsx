@@ -6,7 +6,7 @@ import Image from "next/image";
 import {
   Check, Bike, Package,
   AlertCircle, MapPin, ArrowLeft,
-  Store,
+  Store, CalendarClock, Loader2,
 } from "lucide-react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { transformImage } from "@/lib/images";
@@ -15,6 +15,12 @@ import { OrderEtaCountdown } from "@/components/storefront/order-eta-countdown";
 import { OrderStatusAnimation } from "@/components/storefront/order-status-animation";
 import { formatKobo } from "@foodo/utils";
 import { ORDER_PROGRESS_STEPS_DELIVERY, ORDER_PROGRESS_STEPS_PICKUP } from "@foodo/utils";
+import {
+  normalizeSchedulingSettings,
+  canSelfCancelScheduledOrder,
+  formatLagosSlotLabel,
+  formatLagosSlotRangeLabel,
+} from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import type { Order } from "@foodo/database";
 
@@ -114,6 +120,21 @@ export default function OrderTrackingPage() {
 
   const isCancelled = order.status === "cancelled";
 
+  // ── Scheduled (pre-order) state ───────────────────────────────────────────
+  // While booked-but-not-activated, the live countdown/stepper make no sense —
+  // show a "Scheduled for [slot]" card (+ self-cancel until the cutoff)
+  // instead. The moment activated_at flips (cron or merchant pull-forward),
+  // the realtime UPDATE re-renders this page straight into the normal
+  // tracking UI — no extra branching needed downstream.
+  const schedRaw = order as unknown as {
+    scheduled_for?: string | null;
+    activated_at?: string | null;
+  };
+  const isScheduledPending =
+    Boolean(schedRaw.scheduled_for) &&
+    !schedRaw.activated_at &&
+    (order.status === "pending" || order.status === "confirmed");
+
   return (
     <div className="min-h-screen bg-black-50 pb-10">
       {/* ── Branded Header ─────────────────────────────────────────── */}
@@ -169,7 +190,9 @@ export default function OrderTrackingPage() {
               "text-lg font-black",
               isCancelled ? "text-cinnabar-600" : "text-black-900"
             )}>
-              {statusLabel(customerFacingStatus, order.fulfillment_type as "delivery" | "pickup")}
+              {isScheduledPending
+                ? "Order scheduled"
+                : statusLabel(customerFacingStatus, order.fulfillment_type as "delivery" | "pickup")}
             </p>
             {order.status === "cancelled" && order.cancellation_reason && (
               <p className="text-sm text-black-400 mt-1 leading-relaxed">
@@ -178,21 +201,30 @@ export default function OrderTrackingPage() {
             )}
             {!isCancelled && (
               <p className="text-xs text-black-400 mt-1">
-                We’ll update you as your order progresses
+                {isScheduledPending
+                  ? "We’ll start preparing your order at your booked time"
+                  : "We’ll update you as your order progresses"}
               </p>
             )}
           </div>
         </div>
 
-        {/* ETA countdown */}
-        <OrderEtaCountdown
-          estimatedDeliveryAt={(order as unknown as { estimated_delivery_at?: string | null }).estimated_delivery_at ?? null}
-          status={order.status}
-          fulfillmentType={order.fulfillment_type as "delivery" | "pickup"}
-        />
+        {/* Scheduled card (pre-orders, before activation) OR ETA countdown */}
+        {isScheduledPending ? (
+          <ScheduledOrderCard
+            orderId={order.id}
+            scheduledFor={schedRaw.scheduled_for as string}
+            brandColor={brandColor}
+          />
+        ) : (
+          <OrderEtaCountdown
+            estimatedDeliveryAt={(order as unknown as { estimated_delivery_at?: string | null }).estimated_delivery_at ?? null}
+            status={order.status}
+          />
+        )}
 
         {/* ── Progress Stepper ─────────────────────────────────────── */}
-        {!isCancelled && (
+        {!isCancelled && !isScheduledPending && (
           <div className="bg-white rounded-2xl border border-black-100 shadow-sm px-4 py-5">
             <h2 className="text-sm font-bold text-black-700 mb-4">Order progress</h2>
             <div className="space-y-0">
@@ -293,6 +325,132 @@ export default function OrderTrackingPage() {
   );
 }
 
+/**
+ * The "Scheduled for [slot]" card shown while a pre-order awaits activation.
+ * Self-cancel stays available until scheduled_for − self_cancel_cutoff (the
+ * server enforces the same rule); once the order is cancelled the realtime
+ * UPDATE flips the whole page to the existing cancelled UI.
+ */
+function ScheduledOrderCard({
+  orderId,
+  scheduledFor,
+  brandColor,
+}: {
+  orderId: string;
+  scheduledFor: string;
+  brandColor: string;
+}) {
+  const { restaurant } = useRestaurant();
+  const schedulingSettings = normalizeSchedulingSettings(
+    (restaurant as unknown as { scheduling_settings?: unknown }).scheduling_settings
+  );
+
+  const [confirming, setConfirming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  // Re-check the cutoff every 30s so the cancel button retires on time.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const slot = new Date(scheduledFor);
+  const canCancel = canSelfCancelScheduledOrder(slot, schedulingSettings);
+
+  async function handleCancel() {
+    setCancelling(true);
+    setCancelError("");
+    try {
+      const res = await fetch(`/api/orders/${orderId}/cancel`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCancelError(
+          typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "Couldn't cancel the order. Please try again."
+        );
+      }
+      // On success the realtime UPDATE re-renders the page as cancelled.
+    } catch {
+      setCancelError("Couldn't cancel the order. Please try again.");
+    } finally {
+      setCancelling(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-black-100 shadow-sm px-4 py-5 space-y-4">
+      <div className="flex items-center gap-3">
+        <div
+          className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: `${brandColor}14` }}
+        >
+          <CalendarClock size={20} style={{ color: brandColor }} />
+        </div>
+        <div>
+          <p className="text-xs text-black-400 font-medium">Scheduled for</p>
+          <p className="text-base font-black text-black-900">
+            {formatLagosSlotRangeLabel(slot, schedulingSettings.slot_granularity_minutes)}
+          </p>
+        </div>
+      </div>
+
+      {canCancel && !confirming && (
+        <button
+          onClick={() => setConfirming(true)}
+          className="w-full py-2.5 rounded-xl border border-cinnabar-200 text-cinnabar-500 text-sm font-medium hover:bg-cinnabar-50 transition-colors cursor-pointer"
+        >
+          Cancel order
+        </button>
+      )}
+
+      {canCancel && confirming && (
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-black-900 text-center">
+            Cancel this scheduled order?
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="flex-1 bg-cinnabar-500 hover:bg-cinnabar-500/90 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              {cancelling ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Cancelling…
+                </>
+              ) : (
+                "Yes, cancel it"
+              )}
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={cancelling}
+              className="px-4 text-black-500 border border-black-200 text-sm font-medium rounded-xl hover:bg-black-50 transition-colors cursor-pointer"
+            >
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!canCancel && (
+        <p className="text-xs text-black-400 text-center">
+          It&rsquo;s too close to your slot to cancel online — please call{" "}
+          {restaurant.name} if something changed.
+        </p>
+      )}
+
+      {cancelError && (
+        <p className="text-xs text-cinnabar-500 text-center">{cancelError}</p>
+      )}
+    </div>
+  );
+}
+
 function OrderDetailsCard({ order, brandColor }: { order: OrderWithItems; brandColor: string }) {
   const raw = order as unknown as Record<string, unknown>;
 
@@ -347,6 +505,16 @@ function OrderDetailsCard({ order, brandColor }: { order: OrderWithItems; brandC
           <span className="text-black-500">Placed at</span>
           <span className="text-black-900 font-medium">{placedAtDate} · {placedAtTime}</span>
         </div>
+
+        {/* Booked slot — persists after activation so history still shows it */}
+        {typeof raw.scheduled_for === "string" && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-black-500">Booked for</span>
+            <span className="text-black-900 font-medium">
+              {formatLagosSlotLabel(new Date(raw.scheduled_for))}
+            </span>
+          </div>
+        )}
 
         {/* Price breakdown */}
         {subtotalKobo > 0 && (

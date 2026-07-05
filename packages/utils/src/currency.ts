@@ -70,9 +70,27 @@ export function parseNGN(formatted: string): number {
 }
 
 /**
+ * Round a customer-facing delivery fee (kobo) to the nearest ₦100.
+ *
+ * Distance-based pricing yields odd tail figures (e.g. ₦2,300 base + ₦1,401
+ * distance = ₦3,701); rounding to the nearest hundred keeps our books free of
+ * kobo/tens figures (₦3,700) without changing the delivery pricing structure.
+ * e.g. 370100 → 370000, 365000 → 370000.
+ */
+export function roundDeliveryFeeKobo(feeKobo: number): number {
+  if (feeKobo <= 0) return 0; // pickup / genuine free delivery stays ₦0
+  const ROUND_TO_KOBO = 10000; // ₦100
+  const rounded = Math.round(feeKobo / ROUND_TO_KOBO) * ROUND_TO_KOBO;
+  // A positive fee must never round down to ₦0 (a sub-₦50 fee would otherwise
+  // become accidental free delivery); floor it at one rounding step.
+  return Math.max(rounded, ROUND_TO_KOBO);
+}
+
+/**
  * Calculate delivery fee in kobo given a distance.
  * Uses the hardcoded fallback constants — the live endpoint uses platform_settings.
  * Returns -1 if the distance exceeds the maximum radius.
+ * The returned fee is rounded to the nearest ₦100 (see roundDeliveryFeeKobo).
  */
 export function calculateDeliveryFee(
   distanceKm: number,
@@ -91,5 +109,5 @@ export function calculateDeliveryFee(
 
   if (distanceKm > maxRadius) return -1;
   const fee = base + Math.round(distanceKm * perKm);
-  return Math.min(fee, maxFee);
+  return roundDeliveryFeeKobo(Math.min(fee, maxFee));
 }

@@ -158,6 +158,27 @@ export function dispatchOrder(
   });
 }
 
+/** POST /api/dashboard/orders/activate-now — pull a scheduled order into the live queue now. */
+export function activateScheduledOrder(orderId: string): Promise<{ success: true }> {
+  return apiPost("/api/dashboard/orders/activate-now", { orderId });
+}
+
+/** POST /api/dashboard/orders/reschedule — move a scheduled order to a new slot. */
+export function rescheduleOrder(
+  orderId: string,
+  scheduledFor: string
+): Promise<{ success: true; scheduledFor: string }> {
+  return apiPost("/api/dashboard/orders/reschedule", { orderId, scheduledFor });
+}
+
+/** POST /api/dashboard/orders/decline-scheduled — decline a not-yet-started scheduled order. */
+export function declineScheduledOrder(
+  orderId: string,
+  reason: string
+): Promise<{ success: true }> {
+  return apiPost("/api/dashboard/orders/decline-scheduled", { orderId, reason });
+}
+
 /** A single line item within a customer's historical order. */
 export interface CustomerOrderItem {
   id: string;

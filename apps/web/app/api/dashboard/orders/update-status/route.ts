@@ -103,21 +103,20 @@ export async function POST(req: NextRequest) {
 
   // When the merchant confirms an order they may adjust the estimated-ready time
   // (the modal pre-fills the computed default from item prep times). We store it
-  // as the order's ETA: ready-minutes + a delivery travel buffer for delivery
-  // orders, mirroring the at-checkout formula. Clamped to a sane 1–240 minutes.
-  // Applied on whichever transition first accepts the order: the web owner queue
-  // sends it on "confirmed", the mobile/frontline kanban on "preparing". Gate on
-  // the value being present, not the target status.
-  const DELIVERY_BUFFER_MINUTES = 30;
+  // as the order's ETA — the "ready" time only, with no delivery travel buffer:
+  // deliveries go out with 3rd-party riders whose timing we can't control, so
+  // the customer is shown a ready estimate, not a delivery ETA. Clamped to a
+  // sane 1–240 minutes. Applied on whichever transition first accepts the order:
+  // the web owner queue sends it on "confirmed", the mobile/frontline kanban on
+  // "preparing". Gate on the value being present, not the target status.
   const updatePayload: { status: string; estimated_delivery_at?: string } = { status };
   if (
     typeof estimatedReadyMinutes === "number" &&
     Number.isFinite(estimatedReadyMinutes)
   ) {
     const readyMinutes = Math.min(240, Math.max(1, Math.round(estimatedReadyMinutes)));
-    const buffer = order.fulfillment_type === "delivery" ? DELIVERY_BUFFER_MINUTES : 0;
     updatePayload.estimated_delivery_at = new Date(
-      Date.now() + (readyMinutes + buffer) * 60 * 1000
+      Date.now() + readyMinutes * 60 * 1000
     ).toISOString();
   }
 

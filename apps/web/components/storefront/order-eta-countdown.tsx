@@ -7,8 +7,13 @@ import { cn } from "@foodo/ui";
 interface OrderEtaCountdownProps {
   estimatedDeliveryAt: string | null;
   status: string;
-  fulfillmentType: "delivery" | "pickup";
 }
+
+// The ETA represents when the food will be *ready*, not a delivery time —
+// deliveries are fulfilled by 3rd-party riders whose timing we can't control.
+// So we only surface the countdown while the order is still being prepared;
+// once it's ready or dispatched we show no time at all.
+const PRE_READY_STATUSES = new Set(["pending", "confirmed", "preparing"]);
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString("en-NG", {
@@ -32,13 +37,14 @@ function formatRemaining(ms: number): string {
 export function OrderEtaCountdown({
   estimatedDeliveryAt,
   status,
-  fulfillmentType,
 }: OrderEtaCountdownProps) {
   const [remaining, setRemaining] = useState<number | null>(null);
 
+  const showCountdown =
+    !!estimatedDeliveryAt && PRE_READY_STATUSES.has(status);
+
   useEffect(() => {
-    if (!estimatedDeliveryAt) return;
-    if (status === "delivered" || status === "cancelled") return;
+    if (!showCountdown || !estimatedDeliveryAt) return;
 
     const estimatedAt = new Date(estimatedDeliveryAt).getTime();
 
@@ -49,19 +55,13 @@ export function OrderEtaCountdown({
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [estimatedDeliveryAt, status]);
+  }, [estimatedDeliveryAt, showCountdown]);
 
-  if (
-    !estimatedDeliveryAt ||
-    status === "delivered" ||
-    status === "cancelled" ||
-    remaining === null
-  ) {
+  if (!showCountdown || !estimatedDeliveryAt || remaining === null) {
     return null;
   }
 
   const estimatedAt = new Date(estimatedDeliveryAt);
-  const label = fulfillmentType === "delivery" ? "delivery" : "pickup";
   const isLate = remaining <= 0;
 
   return (
@@ -89,7 +89,7 @@ export function OrderEtaCountdown({
         ) : (
           <>
             <p className="text-xs font-medium text-black-500 mb-0.5">
-              Est. {label} at {formatTime(estimatedAt)}
+              Ready by {formatTime(estimatedAt)}
             </p>
             <p className="text-sm font-bold text-primary">
               {formatRemaining(remaining)}

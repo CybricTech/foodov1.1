@@ -69,30 +69,49 @@ CREATE INDEX IF NOT EXISTS restaurants_auto_payout_idx
 -- window has elapsed, enforced inside the engine, not by the schedule.
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    BEGIN
-      PERFORM cron.unschedule('settle-payouts');
-    EXCEPTION WHEN OTHERS THEN
-      NULL;
-    END;
-
-    PERFORM cron.schedule(
-      'settle-payouts',
-      '0 2 * * *',
-      $cron$
-      SELECT net.http_post(
-        url := current_setting('app.supabase_url') || '/functions/v1/settle-payouts',
-        headers := jsonb_build_object(
-          'Content-Type', 'application/json',
-          'Authorization', 'Bearer ' || current_setting('app.service_role_key')
-        ),
-        body := '{}'::jsonb
-      );
-      $cron$
-    );
-
-    RAISE NOTICE 'settle-payouts cron scheduled (daily 02:00 UTC)';
-  ELSE
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     RAISE NOTICE 'pg_cron not enabled — skipping settle-payouts schedule';
+    RETURN;
   END IF;
+
+  -- The cron command authenticates to the edge function with the service-role
+  -- key, read from DB GUCs (same pattern as migrations 016/081). If those GUCs
+  -- are NOT set, scheduling the GUC-based command below would create a job that
+  -- ERRORs on EVERY run ("unrecognized configuration parameter app.supabase_url")
+  -- and silently pays no one. That exact fail-silent trap bit prod once already
+  -- (the reconcile + settle crons both died on unset GUCs), so we now refuse to
+  -- schedule a doomed job and tell the operator how to fix it. Set the GUCs once
+  -- as superuser via the Supabase Dashboard → SQL editor:
+  --   ALTER DATABASE postgres SET app.supabase_url     = 'https://<ref>.supabase.co';
+  --   ALTER DATABASE postgres SET app.service_role_key = '<service_role_key>';
+  -- (ALTER DATABASE needs superuser; the service role / MCP gets 42501. If you
+  -- cannot set GUCs, schedule the job with the URL + bearer inlined instead.)
+  IF current_setting('app.supabase_url', true) IS NULL
+     OR current_setting('app.service_role_key', true) IS NULL THEN
+    RAISE WARNING 'settle-payouts NOT scheduled — app.supabase_url / app.service_role_key GUCs are unset. Set them (see comment above) then re-run this block, or schedule the cron with the URL+bearer inlined. Until then the nightly payout job does not exist.';
+    RETURN;
+  END IF;
+
+  BEGIN
+    PERFORM cron.unschedule('settle-payouts');
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
+
+  PERFORM cron.schedule(
+    'settle-payouts',
+    '0 2 * * *',
+    $cron$
+    SELECT net.http_post(
+      url := current_setting('app.supabase_url') || '/functions/v1/settle-payouts',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer ' || current_setting('app.service_role_key')
+      ),
+      body := '{}'::jsonb
+    );
+    $cron$
+  );
+
+  RAISE NOTICE 'settle-payouts cron scheduled (daily 02:00 UTC)';
 END $$;

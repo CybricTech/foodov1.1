@@ -28,6 +28,14 @@ export async function getMenuCategories(
 /**
  * Fetch all available menu items for a restaurant, with options and choices.
  * Filtered to is_available = true for the storefront.
+ *
+ * Add-on-only items (is_addon_only) are excluded — they exist solely to be
+ * offered as option choices, never as standalone products on the storefront.
+ *
+ * Unavailable choices are stripped here, not by RLS: the storefront reads
+ * through a service client (RLS bypassed), and the embedded choices come back
+ * unfiltered. A choice linked to a sold-out add-on has is_available synced to
+ * false (migration 086), so dropping unavailable choices hides it from the menu.
  */
 export async function getMenuItems(
   client: TypedSupabaseClient,
@@ -46,6 +54,7 @@ export async function getMenuItems(
     `
     )
     .eq("restaurant_id", restaurantId)
+    .eq("is_addon_only", false)
     .order("display_order", { ascending: true });
 
   if (!options?.includeUnavailable) {
@@ -54,7 +63,17 @@ export async function getMenuItems(
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data as unknown as MenuItemWithOptions[]) ?? [];
+
+  const items = (data as unknown as MenuItemWithOptions[]) ?? [];
+  if (options?.includeUnavailable) return items;
+
+  return items.map((item) => ({
+    ...item,
+    options: item.options?.map((opt) => ({
+      ...opt,
+      choices: opt.choices.filter((c) => c.is_available),
+    })),
+  }));
 }
 
 /**

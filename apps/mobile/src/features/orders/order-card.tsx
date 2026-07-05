@@ -9,9 +9,18 @@
  * platform-rider "Kitchyn rider handling" lock state.
  */
 import { useState } from "react";
-import { Modal, Pressable, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
-import { formatKobo } from "@foodo/utils";
+import {
+  formatKobo,
+  formatLagosSlotLabel,
+  generateScheduleSlots,
+  formatLagosDayLabel,
+  formatLagosTime,
+  lagosDateKey,
+  type OpeningHours,
+  type SchedulingSettings,
+} from "@foodo/utils";
 
 import { theme } from "../../theme";
 import { callCustomer, openInMaps } from "../../lib/intents";
@@ -31,6 +40,11 @@ interface OrderCardProps {
   loading: boolean;
   onUpdateStatus: (id: string, status: string, estimatedReadyMinutes?: number) => void;
   onDispatchReady: (order: OrderRow) => void;
+  onActivateNow: (id: string) => void;
+  onReschedule: (id: string, newSlotIso: string) => void;
+  onDeclineScheduled: (id: string, reason: string) => void;
+  schedulingSettings: SchedulingSettings;
+  openingHours: OpeningHours | null;
 }
 
 export function OrderCard({
@@ -40,19 +54,35 @@ export function OrderCard({
   loading,
   onUpdateStatus,
   onDispatchReady,
+  onActivateNow,
+  onReschedule,
+  onDeclineScheduled,
+  schedulingSettings,
+  openingHours,
 }: OrderCardProps) {
   const itemCount = getItemCount(order);
   // Accept dialog lets staff adjust the estimated-ready time before the order
   // moves into preparing (pre-filled with the longest item prep time).
   const [showAccept, setShowAccept] = useState(false);
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [showDecline, setShowDecline] = useState(false);
+  const isScheduled = column === "scheduled";
 
   return (
     <View
       style={{
-        backgroundColor: isNew ? theme.colors.dixie[100] : theme.colors.white,
+        backgroundColor: isNew
+          ? theme.colors.dixie[100]
+          : isScheduled
+            ? theme.colors.primary[50]
+            : theme.colors.white,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: isNew ? theme.colors.dixie[500] : theme.colors.black[100],
+        borderColor: isNew
+          ? theme.colors.dixie[500]
+          : isScheduled
+            ? theme.colors.primary[200]
+            : theme.colors.black[100],
         overflow: "hidden",
       }}
     >
@@ -105,29 +135,75 @@ export function OrderCard({
         </View>
       </View>
 
+      {/* Scheduled slot banner */}
+      {isScheduled && !!order.scheduled_for && (
+        <View
+          style={{
+            marginHorizontal: 14,
+            marginTop: 8,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 10,
+            backgroundColor: theme.colors.primary[100],
+          }}
+        >
+          <Text style={{ fontSize: 13, fontWeight: "800", color: theme.colors.brandDark }}>
+            📅 {formatLagosSlotLabel(new Date(order.scheduled_for))}
+          </Text>
+          <Text style={{ fontSize: 11, color: theme.colors.black[500], marginTop: 2 }}>
+            Paid in full — enters the live queue automatically at this time.
+          </Text>
+        </View>
+      )}
+
       {/* All order details — always visible (no expand/collapse). */}
       <OrderDetails order={order} />
 
       {/* Action row */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          paddingHorizontal: 14,
-          paddingTop: 10,
-          paddingBottom: 12,
-        }}
-      >
-        <ActionButton
-          order={order}
-          column={column}
-          loading={loading}
-          onUpdateStatus={onUpdateStatus}
-          onDispatchReady={onDispatchReady}
-          onAccept={() => setShowAccept(true)}
-        />
-      </View>
+      {isScheduled ? (
+        <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 12, gap: 8 }}>
+          <PrimaryButton
+            label={loading ? "Starting…" : "⚡ Start now"}
+            color={theme.colors.brand}
+            disabled={loading}
+            onPress={() => onActivateNow(order.id)}
+          />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <SecondaryButton
+              label="Reschedule"
+              disabled={loading}
+              onPress={() => setShowReschedule(true)}
+            />
+            <SecondaryButton
+              label="Decline"
+              color={theme.colors.cinnabar[500]}
+              borderColor={theme.colors.cinnabar[100]}
+              disabled={loading}
+              onPress={() => setShowDecline(true)}
+            />
+          </View>
+        </View>
+      ) : (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingHorizontal: 14,
+            paddingTop: 10,
+            paddingBottom: 12,
+          }}
+        >
+          <ActionButton
+            order={order}
+            column={column}
+            loading={loading}
+            onUpdateStatus={onUpdateStatus}
+            onDispatchReady={onDispatchReady}
+            onAccept={() => setShowAccept(true)}
+          />
+        </View>
+      )}
 
       <AcceptOrderModal
         visible={showAccept}
@@ -137,6 +213,30 @@ export function OrderCard({
         onConfirm={(minutes) => {
           onUpdateStatus(order.id, "preparing", minutes);
           setShowAccept(false);
+        }}
+      />
+
+      <RescheduleModal
+        visible={showReschedule}
+        order={order}
+        loading={loading}
+        openingHours={openingHours}
+        schedulingSettings={schedulingSettings}
+        onClose={() => setShowReschedule(false)}
+        onConfirm={(iso) => {
+          onReschedule(order.id, iso);
+          setShowReschedule(false);
+        }}
+      />
+
+      <DeclineModal
+        visible={showDecline}
+        order={order}
+        loading={loading}
+        onClose={() => setShowDecline(false)}
+        onConfirm={(reason) => {
+          onDeclineScheduled(order.id, reason);
+          setShowDecline(false);
         }}
       />
     </View>
@@ -272,6 +372,294 @@ function AcceptOrderModal({
             >
               <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.white }}>
                 {loading ? "Accepting…" : "Accept Order"}
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reschedule modal — day/time chips built from the SAME shared slot   */
+/*  generator the storefront/web dashboard picker use.                  */
+/* ------------------------------------------------------------------ */
+
+function RescheduleModal({
+  visible,
+  order,
+  loading,
+  openingHours,
+  schedulingSettings,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  order: OrderRow;
+  loading: boolean;
+  openingHours: OpeningHours | null;
+  schedulingSettings: SchedulingSettings;
+  onClose: () => void;
+  onConfirm: (iso: string) => void;
+}) {
+  const [activeDayKey, setActiveDayKey] = useState<string | null>(null);
+  const [selectedIso, setSelectedIso] = useState<string | null>(null);
+
+  const days = (() => {
+    const now = new Date();
+    const slots = generateScheduleSlots({ openingHours, schedulingSettings, now });
+    const groups: { key: string; label: string; slots: Date[] }[] = [];
+    const seen = new Map<string, number>();
+    for (const slot of slots) {
+      const key = lagosDateKey(slot);
+      if (!seen.has(key)) {
+        seen.set(key, groups.length);
+        groups.push({ key, label: formatLagosDayLabel(slot, now), slots: [] });
+      }
+      groups[seen.get(key)!].slots.push(slot);
+    }
+    return groups;
+  })();
+
+  function handleShow() {
+    setActiveDayKey(null);
+    setSelectedIso(null);
+  }
+
+  const activeDay = days.find((d) => d.key === activeDayKey) ?? days[0] ?? null;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onShow={handleShow}
+      onRequestClose={onClose}
+    >
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+      >
+        <Pressable
+          onPress={() => {}}
+          style={{
+            backgroundColor: theme.colors.white,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            padding: 20,
+            gap: 14,
+            maxHeight: "75%",
+          }}
+        >
+          <Text style={{ fontSize: 16, fontWeight: "700", color: theme.colors.black[900] }}>
+            Reschedule order #{order.order_number}
+          </Text>
+
+          {days.length === 0 ? (
+            <Text style={{ fontSize: 13, color: theme.colors.black[400] }}>
+              No bookable times right now — please check back later.
+            </Text>
+          ) : (
+            <>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {days.map((day) => {
+                    const active = day.key === activeDay?.key;
+                    return (
+                      <Pressable
+                        key={day.key}
+                        onPress={() => setActiveDayKey(day.key)}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 9,
+                          borderRadius: 12,
+                          backgroundColor: active ? theme.colors.brand : theme.colors.black[100],
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: "700",
+                            color: active ? theme.colors.white : theme.colors.black[500],
+                          }}
+                        >
+                          {day.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
+              <ScrollView style={{ maxHeight: 220 }}>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {activeDay?.slots.map((slot) => {
+                    const iso = slot.toISOString();
+                    const selected = selectedIso === iso;
+                    return (
+                      <Pressable
+                        key={iso}
+                        onPress={() => setSelectedIso(iso)}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: selected ? theme.colors.brand : theme.colors.black[200],
+                          backgroundColor: selected ? theme.colors.primary[50] : theme.colors.white,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: "700",
+                            color: selected ? theme.colors.brand : theme.colors.black[900],
+                          }}
+                        >
+                          {formatLagosTime(slot)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </>
+          )}
+
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Pressable
+              onPress={onClose}
+              style={{
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.colors.black[200],
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[500] }}>
+                Cancel
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => selectedIso && onConfirm(selectedIso)}
+              disabled={loading || !selectedIso}
+              style={{
+                flex: 1,
+                paddingVertical: 14,
+                borderRadius: 12,
+                backgroundColor: theme.colors.brand,
+                opacity: loading || !selectedIso ? 0.5 : 1,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.white }}>
+                {loading ? "Saving…" : "Confirm new time"}
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Decline modal — requires a reason (sent to the customer by SMS).    */
+/* ------------------------------------------------------------------ */
+
+function DeclineModal({
+  visible,
+  order,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean;
+  order: OrderRow;
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onShow={() => setReason("")}
+      onRequestClose={onClose}
+    >
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+      >
+        <Pressable
+          onPress={() => {}}
+          style={{
+            backgroundColor: theme.colors.white,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            padding: 20,
+            gap: 14,
+          }}
+        >
+          <View>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: theme.colors.black[900] }}>
+              Decline order #{order.order_number}?
+            </Text>
+            <Text style={{ fontSize: 13, color: theme.colors.black[400], marginTop: 2 }}>
+              The customer will be notified by SMS and a refund processed manually.
+            </Text>
+          </View>
+
+          <TextInput
+            value={reason}
+            onChangeText={setReason}
+            placeholder="Reason (shown to the customer)…"
+            style={{
+              borderWidth: 1,
+              borderColor: theme.colors.black[200],
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              fontSize: 14,
+              color: theme.colors.black[900],
+            }}
+            autoFocus
+          />
+
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Pressable
+              onPress={onClose}
+              style={{
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: theme.colors.black[200],
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[500] }}>
+                Keep
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => reason.trim() && onConfirm(reason.trim())}
+              disabled={loading || !reason.trim()}
+              style={{
+                flex: 1,
+                paddingVertical: 14,
+                borderRadius: 12,
+                backgroundColor: theme.colors.cinnabar[500],
+                opacity: loading || !reason.trim() ? 0.5 : 1,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.white }}>
+                {loading ? "Declining…" : "Confirm decline"}
               </Text>
             </Pressable>
           </View>
@@ -442,6 +830,46 @@ function PrimaryButton({
       })}
     >
       <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function SecondaryButton({
+  label,
+  color,
+  borderColor,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  color?: string;
+  borderColor?: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => ({
+        flex: 1,
+        borderWidth: 1,
+        borderColor: borderColor ?? theme.colors.black[200],
+        opacity: disabled ? 0.5 : pressed ? 0.7 : 1,
+        paddingVertical: 12,
+        borderRadius: 12,
+        alignItems: "center",
+      })}
+    >
+      <Text
+        style={{
+          color: color ?? theme.colors.black[500],
+          fontWeight: "600",
+          fontSize: 13,
+        }}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }

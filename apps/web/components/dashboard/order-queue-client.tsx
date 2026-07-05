@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
-import { formatKobo } from "@foodo/utils";
+import {
+  formatKobo,
+  getOrderQueueBucket,
+  formatLagosSlotLabel,
+  type OpeningHours,
+  type SchedulingSettings,
+} from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import {
   Inbox,
@@ -15,8 +21,12 @@ import {
   Clock,
   Radio,
   UserCheck,
+  CalendarClock,
+  Zap,
+  Users,
 } from "lucide-react";
 import type { Database } from "@foodo/database";
+import { ScheduleSlotPicker } from "@/components/storefront/schedule-slot-picker";
 
 type OptionChoice = {
   choiceId: string;
@@ -39,6 +49,9 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
   discount_kobo: number;
   discount_code: string | null;
   total_kobo: number;
+  // Scheduled orders (087) — explicit here until types are regenerated.
+  scheduled_for: string | null;
+  activated_at: string | null;
   order_items: Array<{
     id: string;
     item_name: string;
@@ -62,13 +75,7 @@ function defaultPrepMinutes(order: OrderRow): number {
   return times.length > 0 ? Math.max(...times) : DEFAULT_PREP_MINUTES;
 }
 
-type Tab = "new" | "in_progress" | "completed";
-
-const TAB_STATUSES: Record<Tab, string[]> = {
-  new: ["pending", "confirmed"],
-  in_progress: ["preparing", "ready_for_pickup", "assigned_to_rider", "in_transit"],
-  completed: ["delivered"],
-};
+type Tab = "scheduled" | "new" | "in_progress" | "completed";
 
 interface OrderQueueClientProps {
   restaurantId: string;
@@ -76,6 +83,10 @@ interface OrderQueueClientProps {
   /** Server-side exact count of delivered orders for this restaurant. Used as
    *  the base for the "Completed" badge so it isn't capped by the row limit. */
   initialCompletedTotal: number;
+  /** Normalized restaurant scheduling config — drives the Scheduled tab +
+   *  reschedule picker. */
+  schedulingSettings: SchedulingSettings;
+  openingHours: OpeningHours | null;
 }
 
 function formatTimeAgo(dateStr: string | null): string {
@@ -87,12 +98,30 @@ function formatTimeAgo(dateStr: string | null): string {
   return new Date(dateStr).toLocaleDateString("en-NG", { day: "numeric", month: "short" });
 }
 
+/** "in 2h 15m" / "in 12m" / "now" — countdown to a scheduled slot. */
+function formatUntil(dateStr: string): string {
+  const diffMin = Math.round((new Date(dateStr).getTime() - Date.now()) / 60_000);
+  if (diffMin <= 0) return "now";
+  if (diffMin < 60) return `in ${diffMin}m`;
+  const days = Math.floor(diffMin / 1440);
+  if (days >= 1) return `in ${days}d ${Math.floor((diffMin % 1440) / 60)}h`;
+  return `in ${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
+}
+
 export function OrderQueueClient({
   restaurantId,
   initialOrders,
   initialCompletedTotal,
+  schedulingSettings,
+  openingHours,
 }: OrderQueueClientProps) {
   const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
+  // Refresh scheduled-slot countdowns every 30s.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Track which delivered orders were already counted in initialCompletedTotal
   // so live transitions to "delivered" can be added on top without double-counting.
@@ -104,6 +133,12 @@ export function OrderQueueClient({
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
+  // Live snapshot for the realtime UPDATE handler (bound once) so it can
+  // detect bucket transitions — e.g. a scheduled order activating into "new".
+  const ordersRef = useRef<OrderRow[]>(initialOrders);
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
   const supabase = createBrowserClient();
 
   // Real-time subscription
@@ -126,17 +161,33 @@ export function OrderQueueClient({
               .eq("id", (payload.new as OrderRow).id)
               .single();
             if (data) {
-              setOrders((prev) => [data as unknown as OrderRow, ...prev]);
+              const incoming = data as unknown as OrderRow;
+              setOrders((prev) =>
+                prev.some((o) => o.id === incoming.id) ? prev : [incoming, ...prev]
+              );
+              playNewOrderSound();
+              // A pre-order booking lands in Scheduled, not New — don't hijack
+              // the live queue for something due hours from now.
+              setActiveTab(
+                getOrderQueueBucket(incoming) === "scheduled" ? "scheduled" : "new"
+              );
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const updated = payload.new as Partial<OrderRow> & { id: string };
+            // Activation moment (cron or pull-forward on another device):
+            // scheduled → new must FEEL like a new order — chime + jump —
+            // or it silently slides between tabs and gets missed.
+            const prevRow = ordersRef.current.find((o) => o.id === updated.id);
+            if (
+              prevRow &&
+              getOrderQueueBucket(prevRow) === "scheduled" &&
+              getOrderQueueBucket({ ...prevRow, ...updated }) === "new"
+            ) {
               playNewOrderSound();
               setActiveTab("new");
             }
-          } else if (payload.eventType === "UPDATE") {
             setOrders((prev) =>
-              prev.map((o) =>
-                o.id === (payload.new as OrderRow).id
-                  ? { ...o, ...(payload.new as Partial<OrderRow>) }
-                  : o
-              )
+              prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o))
             );
           }
         }
@@ -268,7 +319,113 @@ export function OrderQueueClient({
     setActionLoading(null);
   }
 
-  const filteredOrders = orders.filter((o) => TAB_STATUSES[activeTab].includes(o.status));
+  // ── Scheduled-order actions ────────────────────────────────────────────────
+
+  async function activateNow(orderId: string) {
+    setActionLoading(orderId);
+    setActionError(null);
+    const previous = orders.find((x) => x.id === orderId)?.activated_at ?? null;
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId ? { ...o, activated_at: new Date().toISOString() } : o
+      )
+    );
+    try {
+      const res = await fetch("/api/dashboard/orders/activate-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to start the order");
+      }
+      // The order is live now — take the merchant to it.
+      setActiveTab("new");
+    } catch (err) {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, activated_at: previous } : o))
+      );
+      setActionError(err instanceof Error ? err.message : "Failed to start the order.");
+    }
+    setActionLoading(null);
+  }
+
+  async function rescheduleOrder(orderId: string, newSlotIso: string) {
+    setActionLoading(orderId);
+    setActionError(null);
+    const previous = orders.find((x) => x.id === orderId)?.scheduled_for ?? null;
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, scheduled_for: newSlotIso } : o))
+    );
+    try {
+      const res = await fetch("/api/dashboard/orders/reschedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, scheduledFor: newSlotIso }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to reschedule");
+      }
+    } catch (err) {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, scheduled_for: previous } : o))
+      );
+      setActionError(err instanceof Error ? err.message : "Failed to reschedule.");
+    }
+    setActionLoading(null);
+  }
+
+  async function declineScheduled(orderId: string, reason: string) {
+    setActionLoading(orderId);
+    setActionError(null);
+    const previous = orders.find((x) => x.id === orderId)?.status;
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId ? { ...o, status: "cancelled" as OrderRow["status"] } : o
+      )
+    );
+    try {
+      const res = await fetch("/api/dashboard/orders/decline-scheduled", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, reason }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to decline");
+      }
+    } catch (err) {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: (previous ?? o.status) as OrderRow["status"] } : o
+        )
+      );
+      setActionError(err instanceof Error ? err.message : "Failed to decline the order.");
+    }
+    setActionLoading(null);
+  }
+
+  const filteredOrders = orders
+    .filter((o) => getOrderQueueBucket(o) === activeTab)
+    // Scheduled: soonest slot first (the queue is otherwise newest-created first).
+    .sort((a, b) =>
+      activeTab === "scheduled"
+        ? new Date(a.scheduled_for ?? 0).getTime() - new Date(b.scheduled_for ?? 0).getTime()
+        : 0
+    );
+
+  // Soft per-slot capacity: how many pending pre-orders share each exact slot.
+  const slotCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const o of orders) {
+      if (o.scheduled_for && getOrderQueueBucket(o) === "scheduled") {
+        counts.set(o.scheduled_for, (counts.get(o.scheduled_for) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [orders]);
 
   // Group completed orders by calendar date for the date-divider UI
   const completedByDate = useMemo(() => {
@@ -305,10 +462,15 @@ export function OrderQueueClient({
   ).length;
 
   const counts = {
-    new: orders.filter((o) => TAB_STATUSES.new.includes(o.status)).length,
-    in_progress: orders.filter((o) => TAB_STATUSES.in_progress.includes(o.status)).length,
+    scheduled: orders.filter((o) => getOrderQueueBucket(o) === "scheduled").length,
+    new: orders.filter((o) => getOrderQueueBucket(o) === "new").length,
+    in_progress: orders.filter((o) => getOrderQueueBucket(o) === "in_progress").length,
     completed: initialCompletedTotal + liveCompletedDelta,
   };
+
+  // The Scheduled tab shows when pre-orders are enabled OR when bookings
+  // already exist (a merchant who just paused scheduling must still see them).
+  const showScheduledTab = schedulingSettings.enabled || counts.scheduled > 0;
 
   const today = new Date().toLocaleDateString("en-NG", {
     weekday: "long",
@@ -337,7 +499,16 @@ export function OrderQueueClient({
             </div>
           </div>
           <div className="hidden md:flex items-center gap-3 text-xs text-black-400">
-            <span>{orders.filter(o => TAB_STATUSES.new.includes(o.status)).length + orders.filter(o => TAB_STATUSES.in_progress.includes(o.status)).length} active</span>
+            {counts.scheduled > 0 && (
+              <>
+                <span className="inline-flex items-center gap-1">
+                  <CalendarClock size={12} />
+                  {counts.scheduled} scheduled
+                </span>
+                <span className="w-px h-3 bg-black-200" />
+              </>
+            )}
+            <span>{counts.new + counts.in_progress} active</span>
             <span className="w-px h-3 bg-black-200" />
             <span>{counts.completed} completed today</span>
           </div>
@@ -349,6 +520,9 @@ export function OrderQueueClient({
         <div className="flex gap-0">
           {(
             [
+              ...(showScheduledTab
+                ? [{ key: "scheduled" as Tab, label: "Scheduled" }]
+                : []),
               { key: "new", label: "New Orders" },
               { key: "in_progress", label: "In Progress" },
               { key: "completed", label: "Completed" },
@@ -399,14 +573,20 @@ export function OrderQueueClient({
           <div className="flex flex-col items-center justify-center py-20 text-black-300">
             <Inbox size={36} strokeWidth={1.5} className="mb-3" />
             <p className="text-sm font-medium text-black-400">
-              {activeTab === "new"
+              {activeTab === "scheduled"
+                ? "No scheduled orders"
+                : activeTab === "new"
                 ? "No new orders yet"
                 : activeTab === "in_progress"
                 ? "Nothing in progress"
                 : "No completed orders yet"}
             </p>
             <p className="text-xs text-black-300 mt-1">
-              {activeTab === "new" ? "New orders will appear here in real time" : ""}
+              {activeTab === "new"
+                ? "New orders will appear here in real time"
+                : activeTab === "scheduled"
+                ? "Pre-orders customers book ahead will appear here"
+                : ""}
             </p>
           </div>
         ) : completedByDate ? (
@@ -424,6 +604,12 @@ export function OrderQueueClient({
                       onUpdateStatus={updateStatus}
                       onDispatch={dispatchOrder}
                       onCancel={cancelOrder}
+                      onActivateNow={activateNow}
+                      onReschedule={rescheduleOrder}
+                      onDeclineScheduled={declineScheduled}
+                      schedulingSettings={schedulingSettings}
+                      openingHours={openingHours}
+                      slotCount={order.scheduled_for ? slotCounts.get(order.scheduled_for) ?? 1 : 0}
                       loading={actionLoading === order.id}
                     />
                   ))}
@@ -440,6 +626,12 @@ export function OrderQueueClient({
                 onUpdateStatus={updateStatus}
                 onDispatch={dispatchOrder}
                 onCancel={cancelOrder}
+                onActivateNow={activateNow}
+                onReschedule={rescheduleOrder}
+                onDeclineScheduled={declineScheduled}
+                schedulingSettings={schedulingSettings}
+                openingHours={openingHours}
+                slotCount={order.scheduled_for ? slotCounts.get(order.scheduled_for) ?? 1 : 0}
                 loading={actionLoading === order.id}
               />
             ))}
@@ -458,12 +650,25 @@ function OrderCard({
   onUpdateStatus,
   onDispatch,
   onCancel,
+  onActivateNow,
+  onReschedule,
+  onDeclineScheduled,
+  schedulingSettings,
+  openingHours,
+  slotCount,
   loading,
 }: {
   order: OrderRow;
   onUpdateStatus: (id: string, status: string, estimatedReadyMinutes?: number) => void;
   onDispatch: (orderId: string, dispatchType: "platform_rider" | "own_rider") => void;
   onCancel: (id: string, reason: string) => void;
+  onActivateNow: (id: string) => void;
+  onReschedule: (id: string, newSlotIso: string) => void;
+  onDeclineScheduled: (id: string, reason: string) => void;
+  schedulingSettings: SchedulingSettings;
+  openingHours: OpeningHours | null;
+  /** Pending pre-orders sharing this exact slot (soft capacity indicator). */
+  slotCount: number;
   loading: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -473,6 +678,13 @@ function OrderCard({
   // with the longest item prep time) before the order moves to confirmed.
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmMinutes, setConfirmMinutes] = useState<number>(20);
+  // Scheduled-order panels (decline reason / reschedule slot).
+  const [showDecline, setShowDecline] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
+  const [showReschedule, setShowReschedule] = useState(false);
+
+  const isScheduled = getOrderQueueBucket(order) === "scheduled";
+  const capacity = schedulingSettings.capacity_per_slot;
 
   // Once a Foodo platform rider has the order, completion is handled exclusively
   // from the admin riders page. The merchant sees a status pill, not an action.
@@ -523,7 +735,14 @@ function OrderCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-black-900 text-sm">#{order.order_number}</span>
-            <StatusBadge status={order.status} fulfillmentType={order.fulfillment_type} />
+            {isScheduled ? (
+              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-semibold bg-dixie-100 text-dixie-500">
+                <CalendarClock size={11} />
+                Scheduled
+              </span>
+            ) : (
+              <StatusBadge status={order.status} fulfillmentType={order.fulfillment_type} />
+            )}
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <span className="text-xs text-black-500 font-medium">{order.customer_name}</span>
@@ -541,7 +760,13 @@ function OrderCard({
         <div className="flex items-center gap-3 ml-3 flex-shrink-0">
           <div className="text-right">
             <p className="text-sm font-bold text-black-900">{formatKobo(order.total_kobo)}</p>
-            <p className="text-[10px] text-black-300 mt-0.5">{formatTimeAgo(order.created_at)}</p>
+            {isScheduled && order.scheduled_for ? (
+              <p className="text-[10px] font-bold text-dixie-500 mt-0.5">
+                starts {formatUntil(order.scheduled_for)}
+              </p>
+            ) : (
+              <p className="text-[10px] text-black-300 mt-0.5">{formatTimeAgo(order.created_at)}</p>
+            )}
           </div>
           {expanded
             ? <ChevronUp size={16} className="text-black-300" />
@@ -553,6 +778,37 @@ function OrderCard({
       {/* ── Expanded body ── */}
       {expanded && (
         <div className="border-t border-black-100 divide-y divide-black-50">
+
+          {/* Scheduled slot banner */}
+          {isScheduled && order.scheduled_for && (
+            <div className="px-4 py-3 bg-dixie-100/40">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <CalendarClock size={14} className="text-dixie-500 flex-shrink-0" />
+                  <p className="text-sm font-bold text-black-900">
+                    {formatLagosSlotLabel(new Date(order.scheduled_for))}
+                  </p>
+                </div>
+                {capacity != null && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full",
+                      slotCount >= capacity
+                        ? "bg-cinnabar-100 text-cinnabar-500"
+                        : "bg-black-100 text-black-500"
+                    )}
+                    title="Pre-orders booked for this exact slot (informational — booking is never blocked)"
+                  >
+                    <Users size={11} />
+                    {slotCount}/{capacity} this slot
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-black-400 mt-1">
+                Paid in full — enters your live queue automatically at the booked time.
+              </p>
+            </div>
+          )}
 
           {/* Items */}
           <div className="px-4 py-3 space-y-3">
@@ -659,8 +915,106 @@ function OrderCard({
             )}
           </div>
 
+          {/* ── Scheduled-order actions ── */}
+          {isScheduled && !showDecline && !showReschedule && (
+            <div className="px-4 py-3 space-y-2">
+              <button
+                onClick={() => onActivateNow(order.id)}
+                disabled={loading}
+                className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors duration-150 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Zap size={14} />
+                {loading ? "Starting…" : "Pull forward — start now"}
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowReschedule(true)}
+                  disabled={loading}
+                  className="flex-1 px-4 text-black-600 border border-black-200 text-sm font-medium rounded-xl hover:bg-black-50 transition-colors duration-150 cursor-pointer disabled:opacity-50"
+                >
+                  Reschedule
+                </button>
+                <button
+                  onClick={() => setShowDecline(true)}
+                  disabled={loading}
+                  className="flex-1 px-4 text-cinnabar-500 border border-cinnabar-200 text-sm font-medium rounded-xl hover:bg-cinnabar-100 transition-colors duration-150 cursor-pointer disabled:opacity-50"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Inline reschedule panel — compact day/time picker built from the
+              SAME shared slot generator the storefront picker uses. */}
+          {isScheduled && showReschedule && (
+            <div className="px-4 py-3 space-y-3">
+              <p className="text-sm font-semibold text-black-900">
+                Reschedule order #{order.order_number}
+              </p>
+              <ScheduleSlotPicker
+                openingHours={openingHours}
+                schedulingSettings={schedulingSettings}
+                value={null}
+                onChange={(iso) => {
+                  if (iso) {
+                    onReschedule(order.id, iso);
+                    setShowReschedule(false);
+                  }
+                }}
+              />
+              <button
+                onClick={() => setShowReschedule(false)}
+                className="w-full text-black-500 border border-black-200 text-sm font-medium rounded-xl py-2.5 hover:bg-black-50 transition-colors duration-150 cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Inline decline panel — requires a reason (sent to the customer). */}
+          {isScheduled && showDecline && (
+            <div className="px-4 py-3 space-y-2.5">
+              <p className="text-sm font-semibold text-black-900">
+                Decline order #{order.order_number}?
+              </p>
+              <p className="text-xs text-black-400">
+                The customer will be notified by SMS and a refund processed manually.
+              </p>
+              <input
+                type="text"
+                placeholder="Reason (shown to the customer)…"
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                className="w-full px-3 py-2.5 text-sm border border-black-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cinnabar-500/20 focus:border-cinnabar-500 placeholder:text-black-300"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    if (declineReason.trim()) {
+                      onDeclineScheduled(order.id, declineReason.trim());
+                      setShowDecline(false);
+                      setDeclineReason("");
+                    }
+                  }}
+                  disabled={!declineReason.trim() || loading}
+                  className="flex-1 bg-cinnabar-500 hover:bg-cinnabar-500/90 disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors duration-150 cursor-pointer"
+                >
+                  {loading ? "Declining…" : "Confirm Decline"}
+                </button>
+                <button
+                  onClick={() => { setShowDecline(false); setDeclineReason(""); }}
+                  className="px-4 text-black-500 border border-black-200 text-sm font-medium rounded-xl hover:bg-black-50 transition-colors duration-150 cursor-pointer"
+                >
+                  Keep
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── Delivery method picker ── */}
-          {needsDeliveryChoice && !showCancel && (
+          {!isScheduled && needsDeliveryChoice && !showCancel && (
             <div className="px-4 py-4 space-y-3">
               <div>
                 <p className="text-sm font-bold text-black-900">Choose delivery method</p>
@@ -704,7 +1058,7 @@ function OrderCard({
           )}
 
           {/* ── Platform-rider handover indicator ── */}
-          {platformRiderHandling && !showCancel && (
+          {!isScheduled && platformRiderHandling && !showCancel && (
             <div className="px-4 py-3">
               <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-purple-50 border border-purple-100 text-purple-700">
                 <Radio size={14} className="flex-shrink-0" />
@@ -719,7 +1073,7 @@ function OrderCard({
           )}
 
           {/* ── Normal action buttons (non-delivery-choice states) ── */}
-          {!platformRiderHandling && !needsDeliveryChoice && (next || canCancel) && !showCancel && (
+          {!isScheduled && !platformRiderHandling && !needsDeliveryChoice && (next || canCancel) && !showCancel && (
             <div className="px-4 py-3 flex gap-2">
               {next && (
                 <button
@@ -796,11 +1150,6 @@ function OrderCard({
                   +
                 </button>
               </div>
-              {order.fulfillment_type === "delivery" && (
-                <p className="text-[11px] text-black-400 text-center">
-                  Delivery travel time is added automatically.
-                </p>
-              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => {

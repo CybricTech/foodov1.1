@@ -60,26 +60,26 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServiceClient();
 
+  // Single round-trip via the customer_addresses FK relationship. The previous
+  // version did two sequential queries (customer, then addresses) which
+  // doubled the floor latency for returning customers — visible as the
+  // 10s p95 on Vercel/Sentry once cross-region cold-starts piled on top.
   const { data: customer } = await supabase
     .from("customers")
-    .select("id, full_name, email")
+    .select(
+      "full_name, email, addresses:customer_addresses(id, address, label, is_default, lat, lng)"
+    )
     .eq("restaurant_id", restaurantId)
     .eq("phone", phone)
+    .order("is_default", { ascending: false, foreignTable: "customer_addresses" })
+    .order("created_at", { ascending: false, foreignTable: "customer_addresses" })
     .maybeSingle();
 
   if (!customer) return NextResponse.json({});
 
-  const { data: addresses } = await supabase
-    .from("customer_addresses")
-    .select("id, address, label, is_default, lat, lng")
-    .eq("customer_id", customer.id)
-    .eq("restaurant_id", restaurantId)
-    .order("is_default", { ascending: false })
-    .order("created_at", { ascending: false });
-
   return NextResponse.json({
     full_name: customer.full_name,
     email: customer.email,
-    addresses: addresses ?? [],
+    addresses: customer.addresses ?? [],
   });
 }

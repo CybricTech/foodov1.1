@@ -21,6 +21,35 @@ interface PushPayload {
   orderNumber?: string | number;
   totalKobo?: number;
   customerName?: string;
+  /**
+   * What this push announces (default "new_order", fully backward compatible):
+   *   new_order                 — a live order just landed in the queue
+   *   scheduled_booking         — a pre-order was booked for a future slot
+   *   scheduled_slot_approaching — a booked slot is alert_lead_minutes away
+   */
+  kind?: "new_order" | "scheduled_booking" | "scheduled_slot_approaching";
+  /** ISO instant of the booked slot — the two scheduled kinds. */
+  scheduledFor?: string;
+}
+
+/** "Thu 3 Jul, 6:30 PM" in Africa/Lagos. */
+function formatSlot(iso: string | undefined): string {
+  if (!iso) return "the booked time";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "the booked time";
+  const day = d.toLocaleDateString("en-NG", {
+    timeZone: "Africa/Lagos",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const time = d.toLocaleTimeString("en-NG", {
+    timeZone: "Africa/Lagos",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${day}, ${time}`;
 }
 
 interface ExpoMessage {
@@ -67,7 +96,8 @@ serve(async (req) => {
     return new Response("Invalid JSON", { status: 400, headers: corsHeaders });
   }
 
-  const { restaurantId, orderId, orderNumber, totalKobo, customerName } = payload;
+  const { restaurantId, orderId, orderNumber, totalKobo, customerName, scheduledFor } = payload;
+  const kind = payload.kind ?? "new_order";
   if (!restaurantId || !orderId) {
     return new Response(
       JSON.stringify({ error: "restaurantId and orderId are required" }),
@@ -100,8 +130,18 @@ serve(async (req) => {
     );
   }
 
-  const title = orderNumber ? `New order #${orderNumber}` : "New order";
+  const numLabel = orderNumber ? ` #${orderNumber}` : "";
+  let title: string;
   const bodyParts: string[] = [];
+  if (kind === "scheduled_slot_approaching") {
+    title = `⏰ Scheduled order${numLabel} coming up`;
+    bodyParts.push(`Due ${formatSlot(scheduledFor)}`);
+  } else if (kind === "scheduled_booking") {
+    title = `📅 Pre-order${numLabel} booked`;
+    bodyParts.push(`For ${formatSlot(scheduledFor)}`);
+  } else {
+    title = `New order${numLabel}`;
+  }
   if (customerName) bodyParts.push(customerName);
   if (typeof totalKobo === "number") bodyParts.push(formatKoboToNaira(totalKobo));
   const body = bodyParts.join(" · ") || "Tap to view the order.";

@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { SettlementsClient } from "@/components/admin/settlements-client";
+import { getNgnBalanceKobo } from "@/lib/paystack";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,7 @@ export default async function AdminSettlementsPage() {
         available_balance_kobo,
         total_earned_kobo,
         total_withdrawn_kobo,
-        restaurants (name, slug, paystack_recipient_code, monnify_bank_verified_at)
+        restaurants (name, slug, paystack_recipient_code, monnify_bank_verified_at, auto_payout_enabled)
       `
       )
       .order("total_earned_kobo", { ascending: false }),
@@ -112,11 +113,19 @@ export default async function AdminSettlementsPage() {
       )
       .order("created_at", { ascending: false }),
 
-    // Platform settings for fee calculations
+    // Platform settings for fee calculations + payout controls.
+    // auto_payout_* were added after type generation, so cast the result.
     supabase
       .from("platform_settings")
-      .select("merchant_charge_pct, delivery_commission_pct")
-      .single(),
+      .select("merchant_charge_pct, delivery_commission_pct, auto_payout_enabled, auto_payout_shadow" as never)
+      .single() as unknown as Promise<{
+        data: {
+          merchant_charge_pct: number | null;
+          delivery_commission_pct: number | null;
+          auto_payout_enabled: boolean | null;
+          auto_payout_shadow: boolean | null;
+        } | null;
+      }>,
   ]);
 
   // Resolve dispatch_type. Order of preference:
@@ -158,6 +167,17 @@ export default async function AdminSettlementsPage() {
     };
   });
 
+  // Live Paystack balance — the float that automated transfers draw from. Since
+  // the account auto-settles to the bank daily, this is what the operator must
+  // keep funded for live payouts to succeed. Best-effort: a Paystack outage must
+  // never break the settlements page, so fall back to null (UI shows "—").
+  let paystackBalanceKobo: number | null = null;
+  try {
+    paystackBalanceKobo = await getNgnBalanceKobo();
+  } catch {
+    paystackBalanceKobo = null;
+  }
+
   // Build per-restaurant settlement summaries
   const restaurantSettlementMap: Record<string, { totalPaid: number; totalPending: number; settlementCount: number }> = {};
   for (const s of settlementsByRestaurant ?? []) {
@@ -173,7 +193,7 @@ export default async function AdminSettlementsPage() {
   }
 
   const merchantSummaries = (allWallets ?? []).map((w: Record<string, unknown>) => {
-    const restaurant = w.restaurants as { name: string; slug: string; paystack_recipient_code: string | null; monnify_bank_verified_at: string | null } | null;
+    const restaurant = w.restaurants as { name: string; slug: string; paystack_recipient_code: string | null; monnify_bank_verified_at: string | null; auto_payout_enabled: boolean | null } | null;
     const rid = w.restaurant_id as string;
     const settlementData = restaurantSettlementMap[rid] ?? { totalPaid: 0, totalPending: 0, settlementCount: 0 };
 
@@ -183,6 +203,7 @@ export default async function AdminSettlementsPage() {
       restaurant_slug: restaurant?.slug ?? "",
       has_bank_account:
         !!restaurant?.paystack_recipient_code || !!restaurant?.monnify_bank_verified_at,
+      auto_payout_enabled: !!restaurant?.auto_payout_enabled,
       pending_balance_kobo: (w.pending_balance_kobo as number) ?? 0,
       available_balance_kobo: (w.available_balance_kobo as number) ?? 0,
       total_earned_kobo: (w.total_earned_kobo as number) ?? 0,
@@ -210,6 +231,11 @@ export default async function AdminSettlementsPage() {
           merchantChargePct: platformSettings?.merchant_charge_pct ?? 0.01,
           deliveryCommissionPct: platformSettings?.delivery_commission_pct ?? 0.10,
         }}
+        autoPayout={{
+          enabled: (platformSettings as { auto_payout_enabled?: boolean } | null)?.auto_payout_enabled ?? false,
+          shadow: (platformSettings as { auto_payout_shadow?: boolean } | null)?.auto_payout_shadow ?? true,
+        }}
+        paystackBalanceKobo={paystackBalanceKobo}
       />
     </div>
   );

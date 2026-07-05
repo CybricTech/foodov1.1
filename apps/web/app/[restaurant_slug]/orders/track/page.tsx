@@ -261,6 +261,7 @@ export default function TrackOrderPage() {
                           <span className="flex items-center gap-1">
                             <Clock size={12} />
                             {new Date(order.created_at).toLocaleDateString("en-NG", {
+                              timeZone: "Africa/Lagos",
                               month: "short",
                               day: "numeric",
                               hour: "2-digit",

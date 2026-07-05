@@ -44,6 +44,10 @@ export async function createTestOrder(
     num("service_fee_kobo") -
     num("discount_kobo");
 
+  // Pre-order slot (087): mirrored from the real webhooks so a test merchant
+  // can exercise the full scheduled-order loop without money moving.
+  const scheduledFor = str("scheduled_for");
+
   const orderPayload = {
     restaurant_id: restaurantId,
     payment_id: paymentId,
@@ -53,6 +57,7 @@ export async function createTestOrder(
     fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
     delivery_address: str("delivery_address"),
     special_instructions: str("special_instructions"),
+    scheduled_for: scheduledFor,
     status: "confirmed" as const,
     payment_status: "paid" as const,
     subtotal_kobo: num("subtotal_kobo"),
@@ -127,10 +132,13 @@ export async function createTestOrder(
     .filter((p): p is number => p != null);
   const maxPrep = prepTimes.length > 0 ? Math.max(...prepTimes) : 20;
   const buffer = meta.fulfillment_type === "delivery" ? 30 : 0;
+  // Scheduled orders count prep from the SLOT, not from payment — otherwise
+  // the late-orders cron would flag every pre-order "late" before activation.
+  const etaBaseMs = scheduledFor ? new Date(scheduledFor).getTime() : Date.now();
   await supabase
     .from("orders")
     .update({
-      estimated_delivery_at: new Date(Date.now() + (maxPrep + buffer) * 60_000).toISOString(),
+      estimated_delivery_at: new Date(etaBaseMs + (maxPrep + buffer) * 60_000).toISOString(),
     })
     .eq("id", order.id);
 

@@ -11,6 +11,10 @@ build
 .expo
 *.tsbuildinfo
 
+# Claude Code local settings — its allowlist captures ad-hoc commands that can
+# embed secrets (API keys, tokens). Never commit it.
+.claude/settings.local.json
+
 # Environment variables
 .env
 .env.local
