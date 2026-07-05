@@ -11,6 +11,8 @@ import {
   DELIVERY_MAX_FEE_KOBO,
   roundDeliveryFeeKobo,
   computeLoyaltyRewardKobo,
+  normalizeSchedulingSettings,
+  isValidScheduleSlot,
 } from "@foodo/utils";
 
 type DayHours = { enabled: boolean; open: string; close: string };
@@ -44,6 +46,8 @@ const InitializeSchema = z.object({
   deliveryLat: z.number().min(-90).max(90).optional(),
   deliveryLng: z.number().min(-180).max(180).optional(),
   specialInstructions: z.string().max(500).optional(),
+  /** ISO instant of the booked pre-order slot. Omitted = ordinary order-now. */
+  scheduledFor: z.string().datetime({ offset: true }).optional(),
   deliveryFeeKobo: z.number().int().min(0).optional(),
   deliveryDistanceKm: z.number().min(0).optional(),
   discountCode: z.string().trim().max(40).optional(),
@@ -98,19 +102,25 @@ export async function POST(request: NextRequest) {
     .eq("is_active", true)
     .single();
 
-  // Fetch vat_percentage + opening_hours separately (columns added after type generation)
+  // Fetch vat_percentage + opening_hours + scheduling_settings separately
+  // (columns added after type generation)
   const { data: extraRow } = await supabase
     .from("restaurants")
-    .select("vat_percentage, opening_hours")
+    .select("vat_percentage, opening_hours, scheduling_settings")
     .eq("id", data.restaurantId)
     .single();
   const vatPercentageRaw = extraRow ? (extraRow as unknown as Record<string, unknown>)["vat_percentage"] : null;
   const openingHoursRaw = extraRow ? (extraRow as unknown as Record<string, unknown>)["opening_hours"] : null;
+  const schedulingRaw = extraRow ? (extraRow as unknown as Record<string, unknown>)["scheduling_settings"] : null;
 
   if (restError || !restaurant) {
     return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
   }
 
+  // A manual "Accept orders" OFF blocks EVERYTHING, scheduled or not — it
+  // signals an unexpected closure (holiday, emergency), so we can't promise a
+  // future slot either. Only the schedule-based closure below is bypassed by
+  // a valid pre-order.
   if (!restaurant.accepts_orders) {
     return NextResponse.json(
       { error: "This restaurant is currently closed" },
@@ -118,8 +128,96 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ── Server-side price verification ─────────────────────────────────────────
+  // Fetch base prices from DB — never trust client-submitted priceKobo. Also
+  // pulls the Made to Order flag (088) so it can gate scheduling below —
+  // fetched once and reused, rather than a second round-trip.
+  const menuItemIds = data.items.map((i) => i.menuItemId);
+
+  const { data: menuItems } = await supabase
+    .from("menu_items")
+    .select("id, price_kobo, is_available, is_made_to_order, made_to_order_lead_hours")
+    .in("id", menuItemIds);
+
+  // ── Made to Order (088) ─────────────────────────────────────────────────────
+  // An item flagged Made to Order forces the WHOLE order into the scheduled
+  // flow with a minimum lead of at least its required notice — a customer
+  // can't check out "now" with a custom cake in the cart. When several such
+  // items share a cart, the strictest (longest) lead time wins.
+  const requiredLeadHours = Math.max(
+    0,
+    ...(menuItems ?? [])
+      .filter((m) => (m as unknown as { is_made_to_order?: boolean }).is_made_to_order)
+      .map((m) => (m as unknown as { made_to_order_lead_hours?: number | null }).made_to_order_lead_hours ?? 0)
+  );
+
+  if (requiredLeadHours > 0 && !data.scheduledFor) {
+    return NextResponse.json(
+      {
+        error: `This order includes an item that's made to order — please pick a time at least ${requiredLeadHours}h ahead.`,
+      },
+      { status: 422 }
+    );
+  }
+
+  // ── Scheduled orders (pre-ordering) ────────────────────────────────────────
+  // Validate the submitted slot against the SAME generator the storefront
+  // picker uses (never trust the client's chosen time). A valid slot also
+  // skips the opening-hours closed check below — booking while closed for
+  // the next open window is the whole point.
+  let scheduledForIso: string | null = null;
+  if (data.scheduledFor) {
+    const schedulingSettings = normalizeSchedulingSettings(schedulingRaw);
+    if (!schedulingSettings.enabled) {
+      return NextResponse.json(
+        {
+          error:
+            requiredLeadHours > 0
+              ? "This restaurant can't currently accept this item — please contact them directly."
+              : "This restaurant doesn't accept scheduled orders",
+        },
+        { status: 409 }
+      );
+    }
+    // A Made to Order item's lead time is a FLOOR, never shorter than the
+    // restaurant's general minimum — it can only push the earliest bookable
+    // slot later, never earlier.
+    const effectiveSchedulingSettings =
+      requiredLeadHours > 0
+        ? {
+            ...schedulingSettings,
+            min_lead_minutes: Math.max(
+              schedulingSettings.min_lead_minutes,
+              requiredLeadHours * 60
+            ),
+          }
+        : schedulingSettings;
+    const slot = new Date(data.scheduledFor);
+    const valid = isValidScheduleSlot({
+      openingHours: (openingHoursRaw ?? null) as OpeningHours | null,
+      schedulingSettings: effectiveSchedulingSettings,
+      scheduledFor: slot,
+    });
+    if (!valid) {
+      return NextResponse.json(
+        {
+          error:
+            requiredLeadHours > 0
+              ? `That time is too soon — this order needs at least ${requiredLeadHours}h notice. Please pick a later slot.`
+              : "That time slot is no longer available. Please pick another slot.",
+        },
+        { status: 422 }
+      );
+    }
+    scheduledForIso = slot.toISOString();
+  }
+
   // If the restaurant has operating hours configured, enforce them server-side
-  if (openingHoursRaw && typeof openingHoursRaw === "object" && Object.keys(openingHoursRaw).length > 0) {
+  // (skipped for scheduled orders — the slot itself was validated above).
+  if (
+    !scheduledForIso &&
+    openingHoursRaw && typeof openingHoursRaw === "object" && Object.keys(openingHoursRaw).length > 0
+  ) {
     if (!isWithinOpeningHours(openingHoursRaw as OpeningHours)) {
       return NextResponse.json(
         { error: "This restaurant is currently closed" },
@@ -127,15 +225,6 @@ export async function POST(request: NextRequest) {
       );
     }
   }
-
-  // ── Server-side price verification ─────────────────────────────────────────
-  // Fetch base prices from DB — never trust client-submitted priceKobo
-  const menuItemIds = data.items.map((i) => i.menuItemId);
-
-  const { data: menuItems } = await supabase
-    .from("menu_items")
-    .select("id, price_kobo, is_available")
-    .in("id", menuItemIds);
 
   const menuItemPriceMap = new Map(
     (menuItems ?? []).map((m) => [m.id, m.price_kobo])
@@ -479,6 +568,9 @@ export async function POST(request: NextRequest) {
     fulfillment_type: data.fulfillmentType,
     delivery_address: data.deliveryAddress || null,
     special_instructions: data.specialInstructions || null,
+    // Pre-order slot (validated above). Read back by every order-creation
+    // path (webhooks, status poll, test orders) into orders.scheduled_for.
+    scheduled_for: scheduledForIso,
     items: verifiedItems as unknown as import("@foodo/database").Json,
     subtotal_kobo: subtotalKobo,
     delivery_fee_kobo: deliveryFeeKobo,
@@ -585,6 +677,7 @@ export async function POST(request: NextRequest) {
       total_kobo: totalKobo,
       item_count: data.items.length,
       payment_provider: provider,
+      scheduled_for: scheduledForIso,
     },
   });
   await posthog.shutdown();

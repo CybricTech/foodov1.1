@@ -6,3 +6,5 @@ export * from "./discount-engine";
 export * from "./settlements";
 export * from "./loyalty";
 export * from "./opening-hours";
+export * from "./schedule-slots";
+export * from "./order-buckets";

@@ -4,6 +4,7 @@
  * colors derived from brand tokens).
  */
 import type { Database } from "@foodo/database";
+import { getFrontlineColumn, type FrontlineColumn } from "@foodo/utils";
 import { theme } from "../../theme";
 
 export type OptionChoice = {
@@ -27,6 +28,9 @@ export type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
   discount_kobo: number;
   discount_code: string | null;
   total_kobo: number;
+  // Scheduled orders (087) — explicit here until types are regenerated.
+  scheduled_for: string | null;
+  activated_at: string | null;
   order_items: Array<{
     id: string;
     item_name: string;
@@ -50,22 +54,15 @@ export function defaultPrepMinutes(order: OrderRow): number {
   return times.length > 0 ? Math.max(...times) : DEFAULT_PREP_MINUTES;
 }
 
-export type Column = "new" | "in_progress" | "in_transit" | "completed";
+export type Column = FrontlineColumn;
 
 export const COLUMN_ORDER: Column[] = [
+  "scheduled",
   "new",
   "in_progress",
   "in_transit",
   "completed",
 ];
-
-/** EXACT mirror of web COLUMN_STATUSES. */
-export const COLUMN_STATUSES: Record<Column, string[]> = {
-  new: ["pending", "confirmed"],
-  in_progress: ["preparing"],
-  in_transit: ["ready_for_pickup", "assigned_to_rider", "in_transit"],
-  completed: ["delivered"],
-};
 
 /**
  * High-contrast, large-tap-target color config per column. Web uses Tailwind
@@ -79,6 +76,11 @@ export const COLUMN_CONFIG: Record<
   Column,
   { label: string; accent: string; accentSoft: string }
 > = {
+  scheduled: {
+    label: "Scheduled",
+    accent: theme.colors.brandDark,
+    accentSoft: theme.colors.primary[50],
+  },
   new: {
     label: "New",
     accent: theme.colors.dixie[500],
@@ -101,13 +103,7 @@ export const COLUMN_CONFIG: Record<
   },
 };
 
-export function columnForStatus(status: string): Column | null {
-  if (COLUMN_STATUSES.new.includes(status)) return "new";
-  if (COLUMN_STATUSES.in_progress.includes(status)) return "in_progress";
-  if (COLUMN_STATUSES.in_transit.includes(status)) return "in_transit";
-  if (COLUMN_STATUSES.completed.includes(status)) return "completed";
-  return null;
-}
+export { getFrontlineColumn };
 
 export function formatTimeAgo(dateStr: string | null): string {
   if (!dateStr) return "";
@@ -131,5 +127,6 @@ export const ORDERS_SELECT = `
   customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
   vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
   special_instructions, delivery_address, dispatch_type, estimated_delivery_at,
+  scheduled_for, activated_at,
   order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
 `;

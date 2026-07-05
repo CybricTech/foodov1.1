@@ -63,6 +63,9 @@ interface ItemFormModalProps {
   categories: MenuCategory[];
   item: MenuItemWithOptions | null;
   defaultCategoryId: string | null;
+  /** Whether the restaurant has pre-orders enabled — Made to Order reuses
+   *  that whole pipeline, so it's gated behind it here too. */
+  schedulingEnabled: boolean;
   onClose: () => void;
   onSave: (item: MenuItemWithOptions) => void;
 }
@@ -73,6 +76,7 @@ export function ItemFormModal({
   categories,
   item,
   defaultCategoryId,
+  schedulingEnabled,
   onClose,
   onSave,
 }: ItemFormModalProps) {
@@ -121,6 +125,14 @@ export function ItemFormModal({
     (item as { prep_time_minutes?: number | null } | null)?.prep_time_minutes != null
       ? String((item as { prep_time_minutes?: number | null }).prep_time_minutes)
       : ""
+  );
+
+  // Made to Order (088): forces any cart containing this item into the
+  // scheduled-order flow with at least this many hours' notice.
+  const itemRaw = item as { is_made_to_order?: boolean; made_to_order_lead_hours?: number | null } | null;
+  const [isMadeToOrder, setIsMadeToOrder] = useState(itemRaw?.is_made_to_order ?? false);
+  const [madeToOrderLeadHours, setMadeToOrderLeadHours] = useState(
+    itemRaw?.made_to_order_lead_hours != null ? String(itemRaw.made_to_order_lead_hours) : "24"
   );
 
   const [draftOptions, setDraftOptions] = useState<DraftOption[]>(
@@ -204,6 +216,13 @@ export function ItemFormModal({
       setError("Valid price required");
       return;
     }
+    if (isMadeToOrder) {
+      const hours = parseInt(madeToOrderLeadHours, 10);
+      if (!madeToOrderLeadHours.trim() || !Number.isFinite(hours) || hours <= 0) {
+        setError("Enter how many hours' notice this item needs");
+        return;
+      }
+    }
 
     setSaving(true);
     setError("");
@@ -227,6 +246,8 @@ export function ItemFormModal({
         is_featured: isFeatured,
         show_new_badge: showNewBadge,
         prep_time_minutes: prepMinutes.trim() ? parseInt(prepMinutes, 10) || null : null,
+        is_made_to_order: isMadeToOrder,
+        made_to_order_lead_hours: isMadeToOrder ? parseInt(madeToOrderLeadHours, 10) : null,
       };
 
       let itemId: string;
@@ -488,6 +509,38 @@ export function ItemFormModal({
                 How long this takes to prepare. Leave blank to use your default.
               </Text>
             </Field>
+
+            {/* Made to Order — forces this item into the scheduled-order flow
+                with a minimum lead time (custom cakes, whole roasts, etc.).
+                Needs pre-orders enabled first since it reuses that pipeline. */}
+            <View style={{ gap: 6 }}>
+              <View style={{ opacity: schedulingEnabled ? 1 : 0.5 }} pointerEvents={schedulingEnabled ? "auto" : "none"}>
+                <ToggleRow
+                  value={isMadeToOrder}
+                  onValueChange={setIsMadeToOrder}
+                  title="Made to Order"
+                  subtitle={'Customer must book ahead — can’t order this "now"'}
+                />
+              </View>
+              {!schedulingEnabled && (
+                <Text style={styles.photoSub}>
+                  Enable pre-orders in Settings → Pre-orders first to use this.
+                </Text>
+              )}
+              {schedulingEnabled && isMadeToOrder && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <TextInput
+                    value={madeToOrderLeadHours}
+                    onChangeText={setMadeToOrderLeadHours}
+                    keyboardType="numeric"
+                    placeholder="24"
+                    placeholderTextColor={theme.colors.black[400]}
+                    style={[styles.input, { width: 72 }]}
+                  />
+                  <Text style={styles.photoSub}>hours ahead, minimum</Text>
+                </View>
+              )}
+            </View>
 
             {/* Photo */}
             <Field label="Photo (max 5MB)">

@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   Sparkles,
   Stamp,
+  CalendarClock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,6 +34,7 @@ export const NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/settlements",  label: "Settlements",   icon: Banknote,        exact: false },
   { href: "/admin/disputes",     label: "Disputes",      icon: Scale,           exact: false },
   { href: "/admin/late-orders",  label: "Late Orders",   icon: AlertTriangle,   exact: false },
+  { href: "/admin/scheduled-orders", label: "Scheduled Orders", icon: CalendarClock, exact: false },
   { href: "/admin/landing",      label: "Landing",       icon: Globe,           exact: false },
   { href: "/admin/changelog",    label: "What's New",    icon: Sparkles,        exact: false },
   { href: "/admin/loyalty",      label: "Loyalty Test",  icon: Stamp,           exact: false },
@@ -52,6 +54,7 @@ export const MOBILE_MORE_ITEMS: AdminNavItem[] = NAV_ITEMS.filter((i) =>
     "/admin/analytics",
     "/admin/disputes",
     "/admin/late-orders",
+    "/admin/scheduled-orders",
     "/admin/landing",
     "/admin/changelog",
     "/admin/loyalty",

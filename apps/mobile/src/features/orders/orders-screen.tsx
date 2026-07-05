@@ -28,9 +28,22 @@ import {
 } from "react-native";
 import { useFocusEffect, useSegments } from "expo-router";
 
+import {
+  normalizeSchedulingSettings,
+  type OpeningHours,
+  type SchedulingSettings,
+} from "@foodo/utils";
+
 import { getSupabase } from "../../lib/supabase";
 import { useConnection } from "../../lib/connection";
-import { updateOrderStatus, dispatchOrder, ApiError } from "../../lib/api";
+import {
+  updateOrderStatus,
+  dispatchOrder,
+  activateScheduledOrder,
+  rescheduleOrder,
+  declineScheduledOrder,
+  ApiError,
+} from "../../lib/api";
 import { capture } from "../../lib/observability";
 import { theme } from "../../theme";
 import { useNewOrderSound } from "./use-new-order-sound";
@@ -39,8 +52,8 @@ import { DispatchModal, type DispatchState } from "./dispatch-modal";
 import {
   COLUMN_CONFIG,
   COLUMN_ORDER,
-  COLUMN_STATUSES,
   ORDERS_SELECT,
+  getFrontlineColumn,
   type Column,
   type OrderRow,
 } from "./types";
@@ -130,32 +143,84 @@ export function OrdersScreen({
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
 
+  // Scheduling config for the reschedule picker — settings change rarely, so a
+  // single fetch on mount is enough (no realtime subscription needed).
+  const [schedulingSettings, setSchedulingSettings] = useState<SchedulingSettings>(
+    normalizeSchedulingSettings(null)
+  );
+  const [openingHours, setOpeningHours] = useState<OpeningHours | null>(null);
+  useEffect(() => {
+    if (!supabase) return;
+    supabase
+      .from("restaurants")
+      .select("opening_hours, scheduling_settings")
+      .eq("id", restaurantId)
+      .single()
+      .then(({ data }) => {
+        if (!data) return;
+        const row = data as unknown as Record<string, unknown>;
+        setSchedulingSettings(normalizeSchedulingSettings(row.scheduling_settings));
+        setOpeningHours((row.opening_hours ?? null) as OpeningHours | null);
+      });
+  }, [restaurantId, supabase]);
+
   const { play } = useNewOrderSound(muted);
   // Keep a ref so the realtime handler (bound once) always sees the live values.
   const playRef = useRef(play);
   playRef.current = play;
+  // Live snapshot for the realtime UPDATE handler so it can detect bucket
+  // transitions — e.g. a scheduled order activating into "new".
+  const ordersRef = useRef<OrderRow[]>([]);
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
 
   /* ---- Fetch (initial + catch-up + pull-to-refresh) ---- */
   const fetchOrders = useCallback(async () => {
     if (!supabase) return;
-    const [{ data, error }, { count }] = await Promise.all([
-      supabase
-        .from("orders")
-        .select(ORDERS_SELECT)
-        .eq("restaurant_id", restaurantId)
-        .order("created_at", { ascending: false })
-        .limit(200),
-      supabase
-        .from("orders")
-        .select("id", { count: "exact", head: true })
-        .eq("restaurant_id", restaurantId)
-        .eq("status", "delivered"),
-    ]);
+    // Scheduled pre-orders are fetched separately from the newest-200 window:
+    // one can be booked days ahead, so on a busy kitchen it would age out of
+    // that window long before its slot arrives — it must still show on the
+    // Scheduled column (mirrors the web dashboard's same fix).
+    const [{ data, error }, { count }, { data: scheduledData, error: scheduledError }] =
+      await Promise.all([
+        supabase
+          .from("orders")
+          .select(ORDERS_SELECT)
+          .eq("restaurant_id", restaurantId)
+          .order("created_at", { ascending: false })
+          .limit(200),
+        supabase
+          .from("orders")
+          .select("id", { count: "exact", head: true })
+          .eq("restaurant_id", restaurantId)
+          .eq("status", "delivered"),
+        supabase
+          .from("orders")
+          .select(ORDERS_SELECT)
+          .eq("restaurant_id", restaurantId)
+          .not("scheduled_for", "is", null)
+          .is("activated_at", null)
+          .in("status", ["pending", "confirmed"])
+          .order("scheduled_for", { ascending: true }),
+      ]);
     if (error) {
       console.error("[orders] fetch error:", error.message);
       return;
     }
-    if (data) setOrders(data as unknown as OrderRow[]);
+    if (scheduledError) {
+      console.error("[orders] scheduled fetch error:", scheduledError.message);
+    }
+    if (data) {
+      const seen = new Set<string>();
+      const merged = [...data, ...(scheduledData ?? [])].filter((o) => {
+        const id = (o as { id: string }).id;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setOrders(merged as unknown as OrderRow[]);
+    }
     if (typeof count === "number") setCompletedTotal(count);
   }, [restaurantId, supabase]);
 
@@ -203,24 +268,48 @@ export function OrdersScreen({
               setOrders((prev) =>
                 prev.some((o) => o.id === newOrder.id) ? prev : [newOrder, ...prev]
               );
-              setNewOrderIds((prev) => new Set(prev).add(newOrder.id));
-              setAlertActive(true);
               playRef.current();
+              if (getFrontlineColumn(newOrder) === "scheduled") {
+                // A pre-order booking lands in Scheduled, not New — don't fire
+                // the repeating "accept me" siren for something due hours out.
+                setActiveTab("scheduled");
+              } else {
+                setNewOrderIds((prev) => new Set(prev).add(newOrder.id));
+                setAlertActive(true);
+                setTimeout(() => {
+                  setNewOrderIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(newOrder.id);
+                    return next;
+                  });
+                }, 8000);
+              }
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const updated = payload.new as Partial<OrderRow> & { id: string };
+            // Activation moment (cron or pull-forward on another device):
+            // scheduled → new must FEEL like a new order — chime + jump —
+            // or it silently slides between columns and gets missed.
+            const prevRow = ordersRef.current.find((o) => o.id === updated.id);
+            if (
+              prevRow &&
+              getFrontlineColumn(prevRow) === "scheduled" &&
+              getFrontlineColumn({ ...prevRow, ...updated }) === "new"
+            ) {
+              playRef.current();
+              setNewOrderIds((prev) => new Set(prev).add(updated.id));
+              setAlertActive(true);
+              setActiveTab("new");
               setTimeout(() => {
                 setNewOrderIds((prev) => {
                   const next = new Set(prev);
-                  next.delete(newOrder.id);
+                  next.delete(updated.id);
                   return next;
                 });
               }, 8000);
             }
-          } else if (payload.eventType === "UPDATE") {
             setOrders((prev) =>
-              prev.map((o) =>
-                o.id === (payload.new as { id: string }).id
-                  ? { ...o, ...(payload.new as Partial<OrderRow>) }
-                  : o
-              )
+              prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o))
             );
           }
         }
@@ -244,17 +333,20 @@ export function OrdersScreen({
   /* ---- Columns ---- */
   const columns = useMemo(() => {
     const result: Record<Column, OrderRow[]> = {
+      scheduled: [],
       new: [],
       in_progress: [],
       in_transit: [],
       completed: [],
     };
     for (const order of orders) {
-      if (COLUMN_STATUSES.new.includes(order.status)) result.new.push(order);
-      else if (COLUMN_STATUSES.in_progress.includes(order.status)) result.in_progress.push(order);
-      else if (COLUMN_STATUSES.in_transit.includes(order.status)) result.in_transit.push(order);
-      else if (COLUMN_STATUSES.completed.includes(order.status)) result.completed.push(order);
+      const col = getFrontlineColumn(order);
+      if (col) result[col].push(order);
     }
+    result.scheduled.sort(
+      (a, b) =>
+        new Date(a.scheduled_for ?? 0).getTime() - new Date(b.scheduled_for ?? 0).getTime()
+    );
     return result;
   }, [orders]);
 
@@ -300,6 +392,87 @@ export function OrdersScreen({
           err instanceof ApiError || err instanceof Error
             ? err.message
             : "Failed to update order status"
+        );
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [orders]
+  );
+
+  /* ---- Scheduled-order actions ---- */
+  const handleActivateNow = useCallback(
+    async (orderId: string) => {
+      setActionLoading(orderId);
+      setActionError(null);
+      const prevActivatedAt = orders.find((o) => o.id === orderId)?.activated_at ?? null;
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, activated_at: new Date().toISOString() } : o))
+      );
+      try {
+        await activateScheduledOrder(orderId);
+        setActiveTab("new");
+        capture("scheduled_order_pulled_forward");
+      } catch (err) {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? { ...o, activated_at: prevActivatedAt } : o))
+        );
+        setActionError(
+          err instanceof ApiError || err instanceof Error
+            ? err.message
+            : "Failed to start the order"
+        );
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [orders]
+  );
+
+  const handleReschedule = useCallback(
+    async (orderId: string, newSlotIso: string) => {
+      setActionLoading(orderId);
+      setActionError(null);
+      const prevSlot = orders.find((o) => o.id === orderId)?.scheduled_for ?? null;
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, scheduled_for: newSlotIso } : o))
+      );
+      try {
+        await rescheduleOrder(orderId, newSlotIso);
+        capture("scheduled_order_rescheduled");
+      } catch (err) {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? { ...o, scheduled_for: prevSlot } : o))
+        );
+        setActionError(
+          err instanceof ApiError || err instanceof Error ? err.message : "Failed to reschedule"
+        );
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [orders]
+  );
+
+  const handleDeclineScheduled = useCallback(
+    async (orderId: string, reason: string) => {
+      setActionLoading(orderId);
+      setActionError(null);
+      const prevStatus = orders.find((o) => o.id === orderId)?.status;
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" as OrderRow["status"] } : o))
+      );
+      try {
+        await declineScheduledOrder(orderId, reason);
+        capture("scheduled_order_declined");
+      } catch (err) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderId ? { ...o, status: (prevStatus ?? o.status) as OrderRow["status"] } : o
+          )
+        );
+        setActionError(
+          err instanceof ApiError || err instanceof Error ? err.message : "Failed to decline the order"
         );
       } finally {
         setActionLoading(null);
@@ -533,7 +706,9 @@ export function OrdersScreen({
                           textAlign: "center",
                         }}
                       >
-                        {col === "new"
+                        {col === "scheduled"
+                          ? "No scheduled orders"
+                          : col === "new"
                           ? "No new orders"
                           : col === "in_progress"
                             ? "Nothing in progress"
@@ -551,6 +726,11 @@ export function OrdersScreen({
                       loading={actionLoading === item.id}
                       onUpdateStatus={handleUpdateStatus}
                       onDispatchReady={openDispatch}
+                      onActivateNow={handleActivateNow}
+                      onReschedule={handleReschedule}
+                      onDeclineScheduled={handleDeclineScheduled}
+                      schedulingSettings={schedulingSettings}
+                      openingHours={openingHours}
                     />
                   )}
                 />
@@ -640,7 +820,9 @@ export function OrdersScreen({
             ListEmptyComponent={
               <View style={{ alignItems: "center", paddingVertical: 64 }}>
                 <Text style={{ fontSize: 14, fontWeight: "600", color: theme.colors.black[400] }}>
-                  {activeTab === "new"
+                  {activeTab === "scheduled"
+                    ? "No scheduled orders"
+                    : activeTab === "new"
                     ? "No new orders"
                     : activeTab === "in_progress"
                       ? "Nothing in progress"
@@ -653,6 +835,11 @@ export function OrdersScreen({
                     New orders appear here in real time
                   </Text>
                 )}
+                {activeTab === "scheduled" && (
+                  <Text style={{ fontSize: 12, color: theme.colors.black[400], marginTop: 4 }}>
+                    Pre-orders customers book ahead appear here
+                  </Text>
+                )}
               </View>
             }
             renderItem={({ item }) => (
@@ -663,6 +850,11 @@ export function OrdersScreen({
                 loading={actionLoading === item.id}
                 onUpdateStatus={handleUpdateStatus}
                 onDispatchReady={openDispatch}
+                onActivateNow={handleActivateNow}
+                onReschedule={handleReschedule}
+                onDeclineScheduled={handleDeclineScheduled}
+                schedulingSettings={schedulingSettings}
+                openingHours={openingHours}
               />
             )}
           />

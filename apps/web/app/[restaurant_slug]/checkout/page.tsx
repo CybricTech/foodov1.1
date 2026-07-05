@@ -1,16 +1,25 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check, Navigation, Gift } from "lucide-react";
+import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check, Navigation, Gift, CalendarClock, ChevronRight } from "lucide-react";
 import { z } from "zod";
 import posthog from "posthog-js";
 import { useCartStore } from "@/lib/stores/cart";
 import { transformImage } from "@/lib/images";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { LoyaltyProgressCard } from "@/components/storefront/loyalty-progress-card";
-import { normalizeToE164, formatKobo, isValidNigerianPhone } from "@foodo/utils";
+import { ScheduleOrderSheet } from "@/components/storefront/schedule-order-sheet";
+import {
+  normalizeToE164,
+  formatKobo,
+  isValidNigerianPhone,
+  normalizeSchedulingSettings,
+  isWithinOpeningHours,
+  formatLagosSlotRangeLabel,
+  type OpeningHours,
+} from "@foodo/utils";
 import { cn } from "@foodo/ui";
 
 const CustomerSchema = z.object({
@@ -113,6 +122,112 @@ export default function CheckoutPage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [step, setStep] = useState<"phone" | "checkout">("phone");
+
+  // ── Scheduled orders (pre-ordering) ────────────────────────────────────────
+  // scheduling_settings/opening_hours were added after type generation, so they
+  // come off the context row via the same extended-cast pattern as closed-notice.
+  const restExt = restaurant as unknown as {
+    opening_hours?: OpeningHours | null;
+    scheduling_settings?: unknown;
+  };
+  const schedulingSettings = useMemo(
+    () => normalizeSchedulingSettings(restExt.scheduling_settings),
+    [restExt.scheduling_settings]
+  );
+  // A manual "Accept orders" OFF blocks scheduling too (unexpected closure —
+  // we can't promise a future slot); only schedule-based closure is bookable.
+  const schedulingEnabled = schedulingSettings.enabled && restaurant.accepts_orders;
+  const [whenMode, setWhenMode] = useState<"now" | "later">("now");
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
+  const [showScheduleSheet, setShowScheduleSheet] = useState(false);
+  // Outside opening hours right now? Then "Now" is impossible — auto-select
+  // "Schedule for later" so the closed-store order-ahead flow needs zero taps.
+  const [scheduleClosed, setScheduleClosed] = useState(false);
+  useEffect(() => {
+    const hours = restExt.opening_hours;
+    function check() {
+      setScheduleClosed(
+        !!hours && Object.keys(hours).length > 0 && !isWithinOpeningHours(hours)
+      );
+    }
+    check();
+    const id = setInterval(check, 60_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restExt.opening_hours]);
+  useEffect(() => {
+    if (scheduleClosed && schedulingEnabled) setWhenMode("later");
+  }, [scheduleClosed, schedulingEnabled]);
+  // Store is closed right now (so "Now" isn't an option) — surface a brief
+  // toast explaining why, THEN open the schedule sheet, so the closed-store
+  // order-ahead flow still needs zero taps but doesn't feel like the sheet
+  // just materializes out of nowhere the instant checkout loads. Ref-guarded
+  // so it doesn't refire as scheduleClosed re-evaluates every 60s, or reopen
+  // a sheet the customer already dismissed.
+  const [showClosedToast, setShowClosedToast] = useState(false);
+  const autoOpenedForClosedRef = useRef(false);
+  useEffect(() => {
+    // Gate on the checkout step actually being visible — the phone gate
+    // overlay sits on top of this same tree, so without this the toast/sheet
+    // could fire (and its 2.4s timer burn down) while still hidden behind it.
+    if (
+      step === "checkout" &&
+      scheduleClosed &&
+      schedulingEnabled &&
+      !autoOpenedForClosedRef.current
+    ) {
+      autoOpenedForClosedRef.current = true;
+      setShowClosedToast(true);
+      const toastTimer = setTimeout(() => setShowClosedToast(false), 2400);
+      const openTimer = setTimeout(() => setShowScheduleSheet(true), 900);
+      return () => {
+        clearTimeout(toastTimer);
+        clearTimeout(openTimer);
+      };
+    }
+  }, [step, scheduleClosed, schedulingEnabled]);
+
+  // Made to Order (088): re-verified live against the CURRENT menu config on
+  // every cart change — carts persist indefinitely in localStorage, so an
+  // item's flag/lead-time can have changed since it was added.
+  const [requiredLeadHours, setRequiredLeadHours] = useState(0);
+  useEffect(() => {
+    const ids = items.map((i) => i.menuItemId);
+    if (ids.length === 0) {
+      setRequiredLeadHours(0);
+      return;
+    }
+    const controller = new AbortController();
+    fetch("/api/checkout/made-to-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ menuItemIds: ids }),
+      signal: controller.signal,
+    })
+      .then((r) => r.json())
+      .then((d) => setRequiredLeadHours(Number(d.requiredLeadHours ?? 0)))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [items]);
+  const madeToOrderRequired = requiredLeadHours > 0;
+  // A Made to Order item flagged while pre-orders are switched off is a
+  // merchant misconfiguration (menu editor gates this, but defensively
+  // handle it) — there's no valid slot to offer, so block checkout outright
+  // rather than leaving "Now" disabled with no way forward.
+  const madeToOrderBlocked = madeToOrderRequired && !schedulingEnabled;
+  // A Made to Order item forces scheduling on and floors the picker's
+  // earliest slot at the item's required notice — never shorter than the
+  // restaurant's own minimum, only ever longer.
+  const effectiveSchedulingSettings = madeToOrderRequired
+    ? {
+        ...schedulingSettings,
+        min_lead_minutes: Math.max(schedulingSettings.min_lead_minutes, requiredLeadHours * 60),
+      }
+    : schedulingSettings;
+  useEffect(() => {
+    if (madeToOrderRequired) setWhenMode("later");
+  }, [madeToOrderRequired]);
+  const isScheduling = (schedulingEnabled && whenMode === "later") || madeToOrderRequired;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -547,6 +662,7 @@ export default function CheckoutPage() {
               ? selectedLng
               : undefined,
           specialInstructions: restaurantNote.trim() || undefined,
+          scheduledFor: isScheduling && scheduledFor ? scheduledFor : undefined,
           deliveryFeeKobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
           deliveryDistanceKm: distanceKm ?? undefined,
           discountCode: appliedCode || undefined,
@@ -591,6 +707,7 @@ export default function CheckoutPage() {
         restaurant_name: restaurant.name,
         provider: initData.provider,
         fulfillment_type: fulfillmentType,
+        scheduled_for: isScheduling && scheduledFor ? scheduledFor : null,
         item_count: items.reduce((s, i) => s + i.quantity, 0),
         subtotal_kobo: subtotal,
         delivery_fee_kobo: fulfillmentType === "delivery" ? (deliveryFeeKobo ?? 0) : 0,
@@ -770,6 +887,8 @@ export default function CheckoutPage() {
   const payDisabled =
     loading ||
     storeClosed ||
+    madeToOrderBlocked ||
+    (isScheduling && !scheduledFor) ||
     (fulfillmentType === "delivery" &&
       (deliveryFeeKobo === null || !!deliveryFeeError || deliveryFeeLoading));
 
@@ -847,6 +966,15 @@ export default function CheckoutPage() {
         </div>
       )}
 
+      {/* Closed-store toast — precedes the auto-opened schedule sheet so the
+          reason it's about to appear is never a surprise. */}
+      {showClosedToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] px-4 py-3 rounded-2xl bg-black-900 text-white text-sm font-medium shadow-xl flex items-center gap-2 max-w-[90vw] animate-fade-in">
+          <CalendarClock size={15} className="flex-shrink-0" />
+          {restaurant.name} is closed right now — pick a time below
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white border-b border-black-100 px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
         <button
@@ -884,6 +1012,71 @@ export default function CheckoutPage() {
               ))}
             </div>
           </div>
+
+          {/* Made to Order (088) but pre-orders are off — a merchant
+              misconfiguration the menu editor normally prevents. Block
+              checkout outright rather than leaving "Now" disabled with no
+              way forward. */}
+          {madeToOrderBlocked && (
+            <div className="px-4 py-4 border-b border-black-100">
+              <div className="bg-cinnabar-50 border border-cinnabar-200 rounded-xl px-3.5 py-3">
+                <p className="text-sm font-semibold text-cinnabar-600">
+                  Can&rsquo;t order this right now
+                </p>
+                <p className="text-xs text-cinnabar-500 mt-1 leading-relaxed">
+                  Your cart has an item that needs advance notice, but {restaurant.name} isn&rsquo;t
+                  currently accepting scheduled orders. Please remove it or contact them directly.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* "When?" — a compact row that opens the schedule bottom sheet,
+              rather than permanently expanding the card the moment a
+              merchant enables pre-orders. */}
+          {schedulingEnabled && !madeToOrderBlocked && (
+            <button
+              type="button"
+              onClick={() => setShowScheduleSheet(true)}
+              className="w-full px-4 py-4 border-b border-black-100 flex items-center gap-3 text-left hover:bg-black-50 transition-colors cursor-pointer"
+            >
+              <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <CalendarClock size={16} className="text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-black-400 font-medium">When?</p>
+                <p className="text-sm font-semibold text-black-900 truncate">
+                  {isScheduling && scheduledFor
+                    ? formatLagosSlotRangeLabel(
+                        new Date(scheduledFor),
+                        effectiveSchedulingSettings.slot_granularity_minutes
+                      )
+                    : isScheduling
+                      ? "Pick a time"
+                      : "Order now"}
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-black-300 flex-shrink-0" />
+            </button>
+          )}
+
+          {showScheduleSheet && (
+            <ScheduleOrderSheet
+              fulfillmentType={fulfillmentType}
+              openingHours={restExt.opening_hours}
+              schedulingSettings={effectiveSchedulingSettings}
+              allowNow={!scheduleClosed && !madeToOrderRequired}
+              initialMode={whenMode}
+              initialSlot={scheduledFor}
+              brandColor={restaurant.primary_color ?? undefined}
+              onClose={() => setShowScheduleSheet(false)}
+              onConfirm={(mode, iso) => {
+                setWhenMode(mode);
+                setScheduledFor(iso);
+                setShowScheduleSheet(false);
+              }}
+            />
+          )}
 
           {/* Pickup info OR delivery address */}
           {fulfillmentType === "pickup" ? (
@@ -1383,6 +1576,8 @@ export default function CheckoutPage() {
               </>
             ) : storeClosed ? (
               "Store is closed"
+            ) : madeToOrderBlocked ? (
+              "Remove item to continue"
             ) : fulfillmentType === "delivery" && deliveryFeeLoading ? (
               <>
                 <Loader2 size={18} className="animate-spin" />
@@ -1393,6 +1588,13 @@ export default function CheckoutPage() {
                 <MapPin size={18} />
                 Enter address to continue
               </>
+            ) : isScheduling && !scheduledFor ? (
+              <>
+                <CalendarClock size={18} />
+                Pick a time to continue
+              </>
+            ) : isScheduling ? (
+              `Schedule order · ${formatKobo(total)}`
             ) : (
               `Pay now · ${formatKobo(total)}`
             )}

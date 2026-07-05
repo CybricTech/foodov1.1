@@ -31,12 +31,16 @@ interface MenuManagerClientProps {
   restaurantId: string;
   initialCategories: MenuCategory[];
   initialItems: MenuItemWithOptions[];
+  /** Whether the restaurant has pre-orders enabled — gates the Made to Order
+   *  toggle in the item form, since it reuses that pipeline entirely. */
+  schedulingEnabled: boolean;
 }
 
 export function MenuManagerClient({
   restaurantId,
   initialCategories,
   initialItems,
+  schedulingEnabled,
 }: MenuManagerClientProps) {
   const supabase = createBrowserClient();
   const [categories, setCategories] = useState(initialCategories);
@@ -421,6 +425,7 @@ export function MenuManagerClient({
           defaultCategoryId={activeCategory}
           addons={addonItems}
           addonCategory={addonCategory}
+          schedulingEnabled={schedulingEnabled}
           onClose={() => {
             setShowAddItem(false);
             setEditingItem(null);
@@ -777,6 +782,10 @@ interface ItemFormModalProps {
   addons: { id: string; name: string }[];
   /** The reserved "Add-ons" category, if it exists yet. */
   addonCategory: MenuCategory | null;
+  /** Whether the restaurant has pre-orders enabled (Settings → Pre-orders).
+   *  Made to Order reuses the whole scheduled-order pipeline, so it's
+   *  meaningless — and disabled in this form — without that switched on. */
+  schedulingEnabled: boolean;
   onClose: () => void;
   onSave: (item: MenuItemWithOptions) => void;
   /** A new add-on item was created inline — bubble it up to the manager. */
@@ -792,6 +801,7 @@ function ItemFormModal({
   defaultCategoryId,
   addons,
   addonCategory,
+  schedulingEnabled,
   onClose,
   onSave,
   onAddonCreated,
@@ -897,6 +907,16 @@ function ItemFormModal({
       : ""
   );
 
+  // Made to Order (088): forces any cart containing this item into the
+  // scheduled-order flow with at least this many hours' notice — for items
+  // like custom cakes that need real advance lead time, distinct from the
+  // restaurant-wide pre-order booking window.
+  const itemRaw = item as { is_made_to_order?: boolean; made_to_order_lead_hours?: number | null } | null;
+  const [isMadeToOrder, setIsMadeToOrder] = useState(itemRaw?.is_made_to_order ?? false);
+  const [madeToOrderLeadHours, setMadeToOrderLeadHours] = useState(
+    itemRaw?.made_to_order_lead_hours != null ? String(itemRaw.made_to_order_lead_hours) : "24"
+  );
+
   const [draftOptions, setDraftOptions] = useState<DraftOption[]>(
     (item?.options ?? [])
       .filter((o) => o.id !== existingSizeGroup?.id)
@@ -976,6 +996,13 @@ function ItemFormModal({
         if (!priceNgn || isNaN(parseFloat(priceNgn))) { setError("Valid price required"); return; }
       }
     }
+    if (!addonOnly && isMadeToOrder) {
+      const hours = parseInt(madeToOrderLeadHours, 10);
+      if (!madeToOrderLeadHours.trim() || !Number.isFinite(hours) || hours <= 0) {
+        setError("Enter how many hours' notice this item needs");
+        return;
+      }
+    }
     setSaving(true);
     setError("");
 
@@ -1008,6 +1035,9 @@ function ItemFormModal({
         show_new_badge: addonOnly ? false : showNewBadge,
         is_addon_only: addonOnly,
         prep_time_minutes: prepMinutes.trim() ? parseInt(prepMinutes, 10) || null : null,
+        is_made_to_order: addonOnly ? false : isMadeToOrder,
+        made_to_order_lead_hours:
+          !addonOnly && isMadeToOrder ? parseInt(madeToOrderLeadHours, 10) : null,
       };
 
       let itemId: string;
@@ -1324,6 +1354,66 @@ function ItemFormModal({
             <p className="text-[11px] text-black-400 mt-1">
               How long this takes to prepare. Leave blank to use your default.
             </p>
+          </div>
+
+          {/* Made to Order — forces this item into the scheduled-order flow
+              with a minimum lead time (custom cakes, whole roasts, etc.).
+              Needs pre-orders enabled first since it reuses that pipeline. */}
+          <div>
+            <label
+              className={cn(
+                "flex items-center gap-3",
+                schedulingEnabled ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+              )}
+            >
+              <div className={cn(
+                "relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                isMadeToOrder ? "bg-purple-500" : "bg-black-200"
+              )}>
+                <input
+                  type="checkbox"
+                  checked={isMadeToOrder}
+                  disabled={!schedulingEnabled}
+                  onChange={(e) => setIsMadeToOrder(e.target.checked)}
+                  className="sr-only"
+                />
+                <span className={cn(
+                  "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200",
+                  isMadeToOrder ? "translate-x-[18px]" : "translate-x-0"
+                )} />
+              </div>
+              <div>
+                <span className="text-sm font-medium text-black-900">Made to Order</span>
+                <p className="text-xs text-black-400">
+                  Customer must book ahead — can&rsquo;t order this &ldquo;now&rdquo;
+                </p>
+              </div>
+            </label>
+            {!schedulingEnabled && (
+              <p className="text-[11px] text-gold-600 mt-1.5">
+                Enable pre-orders in Settings → Pre-orders first to use this.
+              </p>
+            )}
+            {schedulingEnabled && isMadeToOrder && (
+              <div className="mt-2.5 pl-[52px]">
+                <label className="block text-xs font-medium text-black-600 mb-1.5">
+                  Notice required
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    inputMode="numeric"
+                    value={madeToOrderLeadHours}
+                    onChange={(e) => setMadeToOrderLeadHours(e.target.value)}
+                    className="w-24 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-colors"
+                    placeholder="24"
+                  />
+                  <span className="text-sm text-black-500">hours ahead, minimum</span>
+                </div>
+              </div>
+            )}
           </div>
             </>
           )}
