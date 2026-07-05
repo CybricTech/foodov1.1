@@ -15,6 +15,10 @@ build
 # embed secrets (API keys, tokens). Never commit it.
 .claude/settings.local.json
 
+# Playwright MCP runtime output (console logs, page snapshots) — tool
+# artifacts from local sessions, not source.
+.playwright-mcp/
+
 # Environment variables
 .env
 .env.local
