@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
+import { resolveDeliveryCommissionPct } from "@foodo/utils";
 import { MerchantSettlementDetailClient } from "@/components/admin/merchant-settlement-detail-client";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
   const restaurantRes = await (supabase
     .from("restaurants")
     .select(
-      "id, name, slug, logistics_default, paystack_recipient_code, monnify_bank_verified_at, bank_account_name, bank_account_number, bank_code" as never
+      "id, name, slug, logistics_default, delivery_commission_pct, paystack_recipient_code, monnify_bank_verified_at, bank_account_name, bank_account_number, bank_code" as never
     )
     .eq("id", restaurantId)
     .single() as unknown as Promise<{
@@ -25,6 +26,7 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
         name: string;
         slug: string;
         logistics_default: string | null;
+        delivery_commission_pct: number | null;
         paystack_recipient_code: string | null;
         monnify_bank_verified_at: string | null;
         bank_account_name: string | null;
@@ -158,7 +160,12 @@ export default async function MerchantSettlementDetailPage({ params }: PageProps
         orders={normalizedOrders}
         platformSettings={{
           merchantChargePct: platformSettings?.merchant_charge_pct ?? 0.01,
-          deliveryCommissionPct: platformSettings?.delivery_commission_pct ?? 0.10,
+          // Merchant-effective rate: this page is single-merchant, so the
+          // override (when set) replaces the platform default everywhere.
+          deliveryCommissionPct: resolveDeliveryCommissionPct(
+            restaurant.delivery_commission_pct,
+            platformSettings?.delivery_commission_pct
+          ),
         }}
       />
     </div>

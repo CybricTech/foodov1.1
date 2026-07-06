@@ -4,8 +4,14 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/images";
 import { cn } from "@foodo/ui";
-import { ImagePlus, UserPlus, Trash2, KeyRound, Eye, EyeOff, ExternalLink } from "lucide-react";
+import { ImagePlus, UserPlus, Trash2, KeyRound, Eye, EyeOff, ExternalLink, Plus, X } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
+import {
+  normalizeSchedulingSettings,
+  SCHEDULING_DEFAULTS,
+  type SchedulingSettings,
+  type PausedRange,
+} from "@foodo/utils";
 
 // Nigerian bank list fetched from Paystack (cached in component state)
 type PaystackBank = { id: number; name: string; code: string };
@@ -454,6 +460,7 @@ type RestaurantExtended = Restaurant & {
   vat_percentage?: number | null;
   opening_hours?: OpeningHours | null;
   closure_message?: string | null;
+  scheduling_settings?: unknown;
 };
 
 export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
@@ -487,6 +494,9 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   const [closureMessage, setClosureMessage] = useState(r.closure_message ?? "");
   const [openingHours, setOpeningHours] = useState<OpeningHours>(
     r.opening_hours ?? DEFAULT_HOURS
+  );
+  const [schedulingSettings, setSchedulingSettings] = useState<SchedulingSettings>(
+    normalizeSchedulingSettings(r.scheduling_settings)
   );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -629,6 +639,7 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         accepts_orders: acceptsOrders,
         closure_message: closureMessage || null,
         opening_hours: openingHours,
+        scheduling_settings: schedulingSettings,
         instagram_url: instagramUrl || null,
         facebook_url: facebookUrl || null,
         twitter_url: twitterUrl || null,
@@ -1112,6 +1123,156 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
             </div>
           </Section>
 
+          {/* Pre-orders (scheduled orders) */}
+          <Section title="Pre-orders">
+            <p className="text-xs text-black-400 -mt-1 mb-1">
+              Let customers book a future time slot at checkout — even while
+              you&rsquo;re closed, so they can order ahead for when you open.
+              A pre-order is paid in full up front and enters your live queue
+              automatically at the booked time.
+            </p>
+            <div className="flex items-center justify-between py-3 border-b border-black-100">
+              <div>
+                <p className="text-sm font-medium text-black-900">Accept scheduled orders</p>
+                <p className="text-xs text-black-400">Adds a &ldquo;Schedule for later&rdquo; option at checkout</p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setSchedulingSettings((s) => ({ ...s, enabled: !s.enabled }))
+                }
+                aria-label={
+                  schedulingSettings.enabled
+                    ? "Pre-orders on — tap to turn off"
+                    : "Pre-orders off — tap to turn on"
+                }
+                aria-checked={schedulingSettings.enabled}
+                role="switch"
+                className={cn(
+                  "relative w-12 h-6 rounded-full transition-colors flex-shrink-0",
+                  schedulingSettings.enabled ? "bg-purple-500" : "bg-black-200"
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform",
+                    schedulingSettings.enabled ? "left-7" : "left-1"
+                  )}
+                />
+              </button>
+            </div>
+
+            {schedulingSettings.enabled && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Booking window (hours)" hint="How far ahead customers can book">
+                    <input
+                      type="number"
+                      min={1}
+                      max={720}
+                      value={schedulingSettings.booking_horizon_hours}
+                      onChange={(e) =>
+                        setSchedulingSettings((s) => ({
+                          ...s,
+                          booking_horizon_hours: clampInt(e.target.value, 1, 720, SCHEDULING_DEFAULTS.booking_horizon_hours),
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Slot size (minutes)">
+                    <select
+                      value={schedulingSettings.slot_granularity_minutes}
+                      onChange={(e) =>
+                        setSchedulingSettings((s) => ({
+                          ...s,
+                          slot_granularity_minutes: parseInt(e.target.value, 10),
+                        }))
+                      }
+                      className={cn(inputCls, "bg-white")}
+                    >
+                      <option value={15}>15 minutes</option>
+                      <option value={30}>30 minutes</option>
+                      <option value={60}>60 minutes</option>
+                    </select>
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Earliest booking (minutes)" hint="Minimum lead time from now">
+                    <input
+                      type="number"
+                      min={0}
+                      max={1440}
+                      value={schedulingSettings.min_lead_minutes}
+                      onChange={(e) =>
+                        setSchedulingSettings((s) => ({
+                          ...s,
+                          min_lead_minutes: clampInt(e.target.value, 0, 1440, SCHEDULING_DEFAULTS.min_lead_minutes),
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Capacity per slot" hint="Optional — soft cap shown to you only">
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="No limit"
+                      value={schedulingSettings.capacity_per_slot ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value.trim();
+                        setSchedulingSettings((s) => ({
+                          ...s,
+                          capacity_per_slot: v ? Math.max(1, parseInt(v, 10) || 1) : null,
+                        }));
+                      }}
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Alert me before (minutes)" hint="Push notification lead time">
+                    <input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={schedulingSettings.alert_lead_minutes}
+                      onChange={(e) =>
+                        setSchedulingSettings((s) => ({
+                          ...s,
+                          alert_lead_minutes: clampInt(e.target.value, 1, 1440, SCHEDULING_DEFAULTS.alert_lead_minutes),
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Customer self-cancel cutoff (minutes)" hint="Before the slot">
+                    <input
+                      type="number"
+                      min={0}
+                      max={1440}
+                      value={schedulingSettings.self_cancel_cutoff_minutes}
+                      onChange={(e) =>
+                        setSchedulingSettings((s) => ({
+                          ...s,
+                          self_cancel_cutoff_minutes: clampInt(e.target.value, 0, 1440, SCHEDULING_DEFAULTS.self_cancel_cutoff_minutes),
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+
+                <PausedRangesField
+                  ranges={schedulingSettings.paused_ranges}
+                  onChange={(paused_ranges) =>
+                    setSchedulingSettings((s) => ({ ...s, paused_ranges }))
+                  }
+                />
+              </>
+            )}
+          </Section>
+
           {/* Bank account */}
           <BankAccountSection
             restaurantId={r.id}
@@ -1533,3 +1694,95 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 const inputCls =
   "w-full px-4 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500";
+
+function clampInt(raw: string, min: number, max: number, fallback: number): number {
+  const v = parseInt(raw, 10);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.min(max, Math.max(min, v));
+}
+
+/** Add/remove list of blackout windows (holidays, private events) — no
+ *  bookable slots fall inside a paused range. */
+function PausedRangesField({
+  ranges,
+  onChange,
+}: {
+  ranges: PausedRange[];
+  onChange: (ranges: PausedRange[]) => void;
+}) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  function addRange() {
+    if (!from || !to) return;
+    const fromIso = new Date(from).toISOString();
+    const toIso = new Date(to).toISOString();
+    if (new Date(toIso) <= new Date(fromIso)) return;
+    onChange([...ranges, { from: fromIso, to: toIso }]);
+    setFrom("");
+    setTo("");
+  }
+
+  function removeRange(idx: number) {
+    onChange(ranges.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-black-500 mb-1">
+        Blackout windows
+      </label>
+      <p className="text-xs text-black-400 mb-2">
+        No slots will be offered inside these ranges (holidays, private events).
+      </p>
+      {ranges.length > 0 && (
+        <div className="space-y-1.5 mb-2">
+          {ranges.map((r, idx) => (
+            <div
+              key={`${r.from}-${r.to}`}
+              className="flex items-center justify-between gap-2 bg-black-50 rounded-lg px-3 py-2"
+            >
+              <span className="text-xs text-black-700">
+                {new Date(r.from).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
+                {" – "}
+                {new Date(r.to).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeRange(idx)}
+                className="text-black-400 hover:text-cinnabar-500 transition-colors cursor-pointer flex-shrink-0"
+                aria-label="Remove blackout window"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <input
+          type="datetime-local"
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+          className="flex-1 text-sm border border-black-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-300"
+        />
+        <span className="text-xs text-black-400">to</span>
+        <input
+          type="datetime-local"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          className="flex-1 text-sm border border-black-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-300"
+        />
+        <button
+          type="button"
+          onClick={addRange}
+          disabled={!from || !to}
+          className="w-8 h-8 flex-shrink-0 rounded-lg bg-purple-500 hover:bg-purple-400 disabled:opacity-40 text-white flex items-center justify-center transition-colors cursor-pointer"
+          aria-label="Add blackout window"
+        >
+          <Plus size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}

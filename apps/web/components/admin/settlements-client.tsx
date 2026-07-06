@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { formatKobo, computeOrderNet, gatewayFee } from "@foodo/utils";
 import Link from "next/link";
 import { Download, ChevronDown, ChevronRight } from "lucide-react";
-import { PayoutControls, MerchantPayoutToggle } from "./payout-controls";
+import { PayoutControls, MerchantPayoutToggle, MerchantCommissionEditor } from "./payout-controls";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -24,6 +24,8 @@ type OrderRow = {
   status: string;
   created_at: string;
   restaurants: { name: string } | null;
+  /** Effective in-house commission for this order's merchant (override or platform default). */
+  delivery_commission_pct: number;
   restaurant_has_paystack: boolean;
 };
 
@@ -56,6 +58,8 @@ type MerchantSummary = {
   restaurant_slug: string;
   has_bank_account: boolean;
   auto_payout_enabled: boolean;
+  /** Raw per-merchant commission override; null = inherits the platform default. */
+  delivery_commission_pct_override: number | null;
   pending_balance_kobo: number;
   available_balance_kobo: number;
   total_earned_kobo: number;
@@ -140,6 +144,16 @@ export function SettlementsClient({
 
   const { merchantChargePct, deliveryCommissionPct } = platformSettings;
 
+  // Per-order fee settings: the commission rate is merchant-effective (override
+  // or platform default), resolved server-side and carried on each order row.
+  const feesFor = useCallback(
+    (o: OrderRow) => ({
+      merchantChargePct,
+      deliveryCommissionPct: o.delivery_commission_pct ?? deliveryCommissionPct,
+    }),
+    [merchantChargePct, deliveryCommissionPct]
+  );
+
   /* ── Revenue aggregation ────────────────────────────────────────────────── */
 
   const completedOrders = useMemo(
@@ -153,9 +167,8 @@ export function SettlementsClient({
     let totalCustomerServiceFees = 0;
     let totalCommissions = 0;
 
-    const fees = { merchantChargePct, deliveryCommissionPct };
     for (const o of completedOrders) {
-      const n = computeOrderNet(o, fees);
+      const n = computeOrderNet(o, feesFor(o));
       grossVolume += n.gross;
       totalMerchantCharge += n.merchantCharge;
       totalCustomerServiceFees += o.service_fee_kobo ?? 0;
@@ -175,7 +188,7 @@ export function SettlementsClient({
       totalFoodoRevenue,
       netSettled,
     };
-  }, [completedOrders, settlements, merchantChargePct, deliveryCommissionPct]);
+  }, [completedOrders, settlements, feesFor]);
 
   /* ── Daily grouped orders ───────────────────────────────────────────────── */
 
@@ -189,12 +202,11 @@ export function SettlementsClient({
     return Object.entries(groups)
       .sort(([a], [b]) => b.localeCompare(a))
       .map(([date, dayOrders]) => {
-        const fees = { merchantChargePct, deliveryCommissionPct };
         let gross = 0;
         let merchantChargeTotal = 0;
         let commission = 0;
         for (const o of dayOrders) {
-          const n = computeOrderNet(o, fees);
+          const n = computeOrderNet(o, feesFor(o));
           gross += n.gross;
           merchantChargeTotal += n.merchantCharge;
           commission += n.deliveryCommission;
@@ -209,7 +221,7 @@ export function SettlementsClient({
             merchantMap[rid] = { name: o.restaurants?.name ?? "Unknown", orders: 0, gross: 0 };
           }
           merchantMap[rid].orders++;
-          merchantMap[rid].gross += computeOrderNet(o, fees).gross;
+          merchantMap[rid].gross += computeOrderNet(o, feesFor(o)).gross;
         }
 
         return {
@@ -223,7 +235,7 @@ export function SettlementsClient({
           merchants: Object.values(merchantMap),
         };
       });
-  }, [completedOrders, merchantChargePct, deliveryCommissionPct]);
+  }, [completedOrders, feesFor]);
 
   /* ── Daily Foodo P&L ─────────────────────────────────────────────────────
    * Per-day picture of money flow:
@@ -276,9 +288,10 @@ export function SettlementsClient({
               pendingPlatformDeliveries++;
             }
           } else if (o.dispatch_type === "own_rider" || o.dispatch_type === "third_party") {
-            // Foodo's slice of own/third-party delivery: the configured commission.
-            // No rider cost on our side — the merchant pays the rider directly.
-            ownCommission += Math.round(fee * deliveryCommissionPct);
+            // Foodo's slice of own/third-party delivery: the merchant's
+            // effective commission rate (override or platform default). No
+            // rider cost on our side — the merchant pays the rider directly.
+            ownCommission += Math.round(fee * (o.delivery_commission_pct ?? deliveryCommissionPct));
           }
         }
         const paystackPayout = customerTotal - paystackFees;
@@ -399,7 +412,7 @@ export function SettlementsClient({
           <SummaryCard
             label="Delivery Commission"
             value={formatKobo(revenue.totalCommissions)}
-            sublabel={`100% platform · ${(deliveryCommissionPct * 100).toFixed(0)}% in-house`}
+            sublabel={`100% platform · ${(deliveryCommissionPct * 100).toFixed(0)}% in-house default (per-merchant)`}
           />
           <SummaryCard
             label="Customer Svc Fees"
@@ -646,6 +659,12 @@ export function SettlementsClient({
                   Outstanding
                 </th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">Bank</th>
+                <th
+                  className="text-center px-4 py-2.5 text-xs font-semibold text-black-500"
+                  title="Kitchyn's commission on this merchant's own/third-party delivery fees"
+                >
+                  In-house %
+                </th>
                 <th className="text-center px-4 py-2.5 text-xs font-semibold text-black-500">
                   Auto-pay
                 </th>
@@ -692,6 +711,14 @@ export function SettlementsClient({
                         />
                       </td>
                       <td className="px-4 py-3 text-center">
+                        <MerchantCommissionEditor
+                          restaurantId={m.restaurant_id}
+                          restaurantName={m.restaurant_name}
+                          initialOverridePct={m.delivery_commission_pct_override}
+                          platformDefaultPct={deliveryCommissionPct}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-center">
                         <MerchantPayoutToggle
                           restaurantId={m.restaurant_id}
                           initialEnabled={m.auto_payout_enabled}
@@ -714,7 +741,7 @@ export function SettlementsClient({
                 })}
               {merchantSummaries.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-black-400 text-sm">
+                  <td colSpan={9} className="text-center py-10 text-black-400 text-sm">
                     No merchants found
                   </td>
                 </tr>
@@ -910,7 +937,8 @@ export function SettlementsClient({
                 filteredOrderBreakdown.slice(0, 200).map((o) => {
                   const pTotal = paystackTotal(o);
                   const { merchantCharge, deliveryCommission: delCommission, net: merchantNet } =
-                    computeOrderNet(o, { merchantChargePct, deliveryCommissionPct });
+                    computeOrderNet(o, feesFor(o));
+                  const orderCommissionPct = o.delivery_commission_pct ?? deliveryCommissionPct;
                   const foodoRevenue = merchantCharge + delCommission + (o.service_fee_kobo ?? 0);
                   const dispatchLabel =
                     o.fulfillment_type !== "delivery"
@@ -918,9 +946,9 @@ export function SettlementsClient({
                       : o.dispatch_type === "platform_rider"
                       ? { text: "Platform", pct: "100%", style: "bg-purple-100 text-purple-700" }
                       : o.dispatch_type === "own_rider"
-                      ? { text: "In-House", pct: `${(deliveryCommissionPct * 100).toFixed(0)}%`, style: "bg-black-100 text-black-700" }
+                      ? { text: "In-House", pct: `${(orderCommissionPct * 100).toFixed(0)}%`, style: "bg-black-100 text-black-700" }
                       : o.dispatch_type === "third_party"
-                      ? { text: "3rd Party", pct: `${(deliveryCommissionPct * 100).toFixed(0)}%`, style: "bg-blue-100 text-blue-700" }
+                      ? { text: "3rd Party", pct: `${(orderCommissionPct * 100).toFixed(0)}%`, style: "bg-blue-100 text-blue-700" }
                       : { text: "Pending", pct: "", style: "bg-dixie-100 text-dixie-700" };
                   const dateLabel = new Date(o.created_at).toLocaleDateString("en-NG", {
                     day: "numeric",

@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useConnection } from "@/lib/connection-context";
-import { formatKobo } from "@foodo/utils";
+import {
+  formatKobo,
+  isPendingScheduledOrder,
+  formatLagosSlotLabel,
+  type OpeningHours,
+  type SchedulingSettings,
+} from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import {
   Inbox,
@@ -11,6 +17,7 @@ import {
   StickyNote,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Clock,
   Volume2,
   VolumeX,
@@ -22,10 +29,13 @@ import {
   UserCheck,
   X,
   Printer,
+  CalendarClock,
+  Zap,
 } from "lucide-react";
 import type { Database } from "@foodo/database";
 import { printEngine } from "@/lib/printing/use-printer";
 import { toReceiptOrder } from "@/lib/printing/map-order";
+import { ScheduleSlotPicker } from "@/components/storefront/schedule-slot-picker";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -52,6 +62,9 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
   discount_kobo: number;
   discount_code: string | null;
   total_kobo: number;
+  // Scheduled orders (087) — explicit here until types are regenerated.
+  scheduled_for: string | null;
+  activated_at: string | null;
   order_items: Array<{
     id: string;
     item_name: string;
@@ -102,6 +115,16 @@ function formatTimeAgo(dateStr: string | null): string {
 
 function getItemCount(order: OrderRow): number {
   return (order.order_items ?? []).reduce((sum, item) => sum + item.quantity, 0);
+}
+
+/** "in 2h 15m" / "in 12m" / "due now" — countdown to a scheduled slot. */
+function formatUntil(dateStr: string): string {
+  const diffMin = Math.round((new Date(dateStr).getTime() - Date.now()) / 60_000);
+  if (diffMin <= 0) return "due now";
+  if (diffMin < 60) return `in ${diffMin}m`;
+  const days = Math.floor(diffMin / 1440);
+  if (days >= 1) return `in ${days}d ${Math.floor((diffMin % 1440) / 60)}h`;
+  return `in ${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -168,12 +191,18 @@ interface FrontlineOrdersClientProps {
   /** Server-side exact count of delivered orders for this restaurant. Used as
    *  the base for the "Completed" count so it isn't capped by the row limit. */
   initialCompletedTotal: number;
+  /** Normalized restaurant scheduling config — drives the Scheduled shelf +
+   *  reschedule picker. */
+  schedulingSettings: SchedulingSettings;
+  openingHours: OpeningHours | null;
 }
 
 export function FrontlineOrdersClient({
   restaurantId,
   initialOrders,
   initialCompletedTotal,
+  schedulingSettings,
+  openingHours,
 }: FrontlineOrdersClientProps) {
   const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
   // Track which delivered orders were already counted in initialCompletedTotal
@@ -196,33 +225,73 @@ export function FrontlineOrdersClient({
   } | null>(null);
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  // The scheduled order currently open in the shelf's detail modal.
+  const [scheduledModalOrder, setScheduledModalOrder] = useState<OrderRow | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
   const supabase = createBrowserClient();
   const { reportRealtimeStatus, onReconnect } = useConnection();
 
+  // Live snapshot for the realtime UPDATE handler (bound once) so it can
+  // detect bucket transitions — e.g. a scheduled order activating into "new".
+  const ordersRef = useRef<OrderRow[]>(initialOrders);
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
+
   // Refetch the full order list — used after a disconnect to fill in any
   // events that were missed while the realtime channel was down.
   const runCatchup = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("orders")
-      .select(
+    const [{ data, error }, { data: scheduledData, error: scheduledError }] = await Promise.all([
+      supabase
+        .from("orders")
+        .select(
+          `
+          id, order_number, status, payment_status, fulfillment_type,
+          customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
+          vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
+          special_instructions, delivery_address, dispatch_type,
+          scheduled_for, activated_at,
+          order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
         `
-        id, order_number, status, payment_status, fulfillment_type,
-        customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
-        vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
-        special_instructions, delivery_address, dispatch_type,
-        order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
-      `
-      )
-      .eq("restaurant_id", restaurantId)
-      .order("created_at", { ascending: false })
-      .limit(200);
+        )
+        .eq("restaurant_id", restaurantId)
+        .order("created_at", { ascending: false })
+        .limit(200),
+      // Scheduled pre-orders can be booked days ahead, so they'd age out of the
+      // newest-200 window long before their slot — fetch them separately.
+      supabase
+        .from("orders")
+        .select(
+          `
+          id, order_number, status, payment_status, fulfillment_type,
+          customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
+          vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
+          special_instructions, delivery_address, dispatch_type,
+          scheduled_for, activated_at,
+          order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
+        `
+        )
+        .eq("restaurant_id", restaurantId)
+        .not("scheduled_for", "is", null)
+        .is("activated_at", null)
+        .in("status", ["pending", "confirmed"])
+        .order("scheduled_for", { ascending: true }),
+    ]);
     if (error) {
       console.error("[frontline] catchup fetch error:", error.message);
       return;
     }
+    if (scheduledError) {
+      console.error("[frontline] scheduled catchup fetch error:", scheduledError.message);
+    }
     if (data) {
-      setOrders(data as unknown as OrderRow[]);
+      const seen = new Set<string>();
+      const merged = [...data, ...(scheduledData ?? [])].filter((o) => {
+        if (seen.has(o.id)) return false;
+        seen.add(o.id);
+        return true;
+      });
+      setOrders(merged as unknown as OrderRow[]);
     }
   }, [restaurantId, supabase]);
 
@@ -261,6 +330,13 @@ export function FrontlineOrdersClient({
             if (data) {
               const newOrder = data as unknown as OrderRow;
               setOrders((prev) => [newOrder, ...prev]);
+              if (isPendingScheduledOrder(newOrder)) {
+                // A pre-order booking lands on the Scheduled shelf, not the
+                // New column — a quiet chime is enough, no persistent siren
+                // for something that isn't due for hours.
+                if (soundEnabled) playNewOrderSound();
+                return;
+              }
               setNewOrderIds((prev) => new Set(prev).add(newOrder.id));
               setAlertActive(true);
               if (soundEnabled) playNewOrderSound();
@@ -274,12 +350,29 @@ export function FrontlineOrdersClient({
               }, 8000);
             }
           } else if (payload.eventType === "UPDATE") {
+            const updated = payload.new as Partial<OrderRow> & { id: string };
+            // Activation moment (cron or another device's pull-forward):
+            // scheduled → new must FEEL like a new order arriving — chime +
+            // highlight — or it silently slides onto the board unnoticed.
+            const prevRow = ordersRef.current.find((o) => o.id === updated.id);
+            if (
+              prevRow &&
+              isPendingScheduledOrder(prevRow) &&
+              !isPendingScheduledOrder({ ...prevRow, ...updated })
+            ) {
+              setNewOrderIds((prev) => new Set(prev).add(updated.id));
+              setAlertActive(true);
+              if (soundEnabled) playNewOrderSound();
+              setTimeout(() => {
+                setNewOrderIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(updated.id);
+                  return next;
+                });
+              }, 8000);
+            }
             setOrders((prev) =>
-              prev.map((o) =>
-                o.id === (payload.new as OrderRow).id
-                  ? { ...o, ...(payload.new as Partial<OrderRow>) }
-                  : o
-              )
+              prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o))
             );
           }
         }
@@ -428,6 +521,108 @@ export function FrontlineOrdersClient({
     }
   }, [dispatchModal]);
 
+  // ── Scheduled-order actions ────────────────────────────────────────────────
+
+  const activateScheduledOrder = useCallback(async (orderId: string) => {
+    setActionLoading(orderId);
+    setActionError(null);
+    const previous = orders.find((x) => x.id === orderId)?.activated_at ?? null;
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, activated_at: new Date().toISOString() } : o))
+    );
+    try {
+      const res = await fetch("/api/dashboard/orders/activate-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to start the order");
+      }
+      setScheduledModalOrder(null);
+    } catch (err) {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, activated_at: previous } : o))
+      );
+      setActionError(err instanceof Error ? err.message : "Failed to start the order.");
+    } finally {
+      setActionLoading(null);
+    }
+  }, [orders]);
+
+  const rescheduleOrder = useCallback(async (orderId: string, newSlotIso: string) => {
+    setActionLoading(orderId);
+    setActionError(null);
+    const previous = orders.find((x) => x.id === orderId)?.scheduled_for ?? null;
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, scheduled_for: newSlotIso } : o))
+    );
+    try {
+      const res = await fetch("/api/dashboard/orders/reschedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, scheduledFor: newSlotIso }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to reschedule");
+      }
+      setScheduledModalOrder(null);
+    } catch (err) {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, scheduled_for: previous } : o))
+      );
+      setActionError(err instanceof Error ? err.message : "Failed to reschedule.");
+    } finally {
+      setActionLoading(null);
+    }
+  }, [orders]);
+
+  const declineScheduledOrder = useCallback(async (orderId: string, reason: string) => {
+    setActionLoading(orderId);
+    setActionError(null);
+    const previous = orders.find((x) => x.id === orderId)?.status;
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" as OrderRow["status"] } : o))
+    );
+    try {
+      const res = await fetch("/api/dashboard/orders/decline-scheduled", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, reason }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Failed to decline");
+      }
+      setScheduledModalOrder(null);
+    } catch (err) {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: (previous ?? o.status) as OrderRow["status"] } : o
+        )
+      );
+      setActionError(err instanceof Error ? err.message : "Failed to decline the order.");
+    } finally {
+      setActionLoading(null);
+    }
+  }, [orders]);
+
+  // Scheduled pre-orders (paid, booked ahead, not yet due) live on the shelf,
+  // never in the 4-column board — they'd otherwise wrongly claim "New" the
+  // instant they're booked, hours or days before the merchant should see them.
+  const scheduledOrders = useMemo(
+    () =>
+      orders
+        .filter(isPendingScheduledOrder)
+        .sort(
+          (a, b) =>
+            new Date(a.scheduled_for ?? 0).getTime() - new Date(b.scheduled_for ?? 0).getTime()
+        ),
+    [orders]
+  );
+
   // Column data
   const columns = useMemo(() => {
     const result: Record<Column, OrderRow[]> = {
@@ -438,6 +633,7 @@ export function FrontlineOrdersClient({
     };
 
     for (const order of orders) {
+      if (isPendingScheduledOrder(order)) continue;
       if (COLUMN_STATUSES.new.includes(order.status)) {
         result.new.push(order);
       } else if (COLUMN_STATUSES.in_progress.includes(order.status)) {
@@ -535,6 +731,16 @@ export function FrontlineOrdersClient({
         </div>
       </div>
 
+      {/* Scheduled shelf — ambient awareness of upcoming pre-orders without
+          shrinking the 4-column board. Only rendered when there's something
+          to show, so a merchant who never enables pre-orders sees nothing. */}
+      {scheduledOrders.length > 0 && (
+        <ScheduledShelf
+          orders={scheduledOrders}
+          onSelect={setScheduledModalOrder}
+        />
+      )}
+
       {/* Error banner */}
       {actionError && (
         <div className="px-4 md:px-6 pt-4">
@@ -548,6 +754,20 @@ export function FrontlineOrdersClient({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Scheduled order detail modal — pull forward / reschedule / decline. */}
+      {scheduledModalOrder && (
+        <ScheduledOrderModal
+          order={scheduledModalOrder}
+          loading={actionLoading === scheduledModalOrder.id}
+          openingHours={openingHours}
+          schedulingSettings={schedulingSettings}
+          onClose={() => setScheduledModalOrder(null)}
+          onActivateNow={activateScheduledOrder}
+          onReschedule={rescheduleOrder}
+          onDecline={declineScheduledOrder}
+        />
       )}
 
       {/* Dispatch modal */}
@@ -1205,6 +1425,286 @@ function FrontlineOrderCard({
 
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Scheduled shelf — ambient strip of upcoming pre-orders. Deliberately     */
+/*  NOT a 5th kanban column: it sits above the 4-column board as a slim,    */
+/*  horizontally-scrolling row of chips so it never competes with the       */
+/*  live columns for width on a tablet-sized Kitchen Display. Tapping a     */
+/*  chip opens the full detail modal below.                                 */
+/* ------------------------------------------------------------------ */
+
+function ScheduledShelf({
+  orders,
+  onSelect,
+}: {
+  orders: OrderRow[];
+  onSelect: (order: OrderRow) => void;
+}) {
+  // Refresh countdowns every 30s.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="bg-purple-50/60 border-b border-purple-100 px-4 md:px-6 py-2.5">
+      <div className="flex items-center gap-3">
+        <span className="flex items-center gap-1.5 text-xs font-bold text-purple-600 flex-shrink-0">
+          <CalendarClock size={14} />
+          Scheduled ({orders.length})
+        </span>
+        <div className="flex-1 min-w-0 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-2 w-max">
+            {orders.map((order) => {
+              const dueSoon =
+                order.scheduled_for &&
+                new Date(order.scheduled_for).getTime() - Date.now() <= 30 * 60_000;
+              return (
+                <button
+                  key={order.id}
+                  onClick={() => onSelect(order)}
+                  className={cn(
+                    "flex items-center gap-2 pl-3 pr-2.5 py-1.5 rounded-full border text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap",
+                    dueSoon
+                      ? "bg-dixie-50 border-dixie-200 text-dixie-700 hover:bg-dixie-100"
+                      : "bg-white border-purple-200 text-purple-700 hover:bg-purple-50"
+                  )}
+                >
+                  <span>#{order.order_number}</span>
+                  <span className="text-black-300">·</span>
+                  <span className="font-bold tabular-nums">
+                    {order.scheduled_for ? formatUntil(order.scheduled_for) : ""}
+                  </span>
+                  <ChevronRight size={12} className="opacity-50" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Scheduled order detail modal                                       */
+/* ------------------------------------------------------------------ */
+
+function ScheduledOrderModal({
+  order,
+  loading,
+  openingHours,
+  schedulingSettings,
+  onClose,
+  onActivateNow,
+  onReschedule,
+  onDecline,
+}: {
+  order: OrderRow;
+  loading: boolean;
+  openingHours: OpeningHours | null;
+  schedulingSettings: SchedulingSettings;
+  onClose: () => void;
+  onActivateNow: (orderId: string) => void;
+  onReschedule: (orderId: string, newSlotIso: string) => void;
+  onDecline: (orderId: string, reason: string) => void;
+}) {
+  const [mode, setMode] = useState<"detail" | "reschedule" | "decline">("detail");
+  const [declineReason, setDeclineReason] = useState("");
+  const itemCount = getItemCount(order);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto">
+        {/* Header */}
+        <div className="px-5 pt-5 pb-3 flex items-start justify-between sticky top-0 bg-white">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-black-900">#{order.order_number}</h3>
+              <FulfillmentBadge type={order.fulfillment_type} />
+            </div>
+            {order.scheduled_for && (
+              <p className="text-xs font-semibold text-purple-600 mt-1 flex items-center gap-1">
+                <CalendarClock size={12} />
+                {formatLagosSlotLabel(new Date(order.scheduled_for))}
+              </p>
+            )}
+            <p className="text-xs text-black-400 mt-0.5">
+              {order.customer_name} · {formatKobo(order.total_kobo)} · {itemCount} item
+              {itemCount !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-black-400 hover:text-black-600 cursor-pointer p-1 -mt-1 -mr-1"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {mode === "detail" && (
+          <>
+            {/* Items */}
+            <div className="px-5 py-3 space-y-2.5 border-t border-black-100">
+              {order.order_items.map((item) => {
+                const opts = Array.isArray(item.selected_options)
+                  ? (item.selected_options as OptionSnapshot[])
+                  : [];
+                return (
+                  <div key={item.id}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2 flex-1 min-w-0">
+                        <span className="w-5 h-5 rounded-md bg-purple-50 text-purple-600 text-[11px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                          {item.quantity}
+                        </span>
+                        <span className="text-sm font-medium text-black-900 leading-snug">
+                          {item.item_name}
+                        </span>
+                      </div>
+                      <span className="text-xs font-semibold text-black-700 flex-shrink-0">
+                        {formatKobo(item.line_total_kobo)}
+                      </span>
+                    </div>
+                    {opts.length > 0 && (
+                      <div className="ml-7 mt-1 space-y-0.5">
+                        {opts.map((opt) =>
+                          opt.choices.map((c) => (
+                            <div key={c.choiceId} className="flex items-center justify-between">
+                              <span className="text-xs text-black-400">
+                                {(c.quantity ?? 1) > 1 ? `${c.quantity}x ` : ""}
+                                {c.choiceName}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {order.customer_phone && (
+              <div className="px-5 pb-2">
+                <a
+                  href={`tel:${order.customer_phone}`}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 hover:text-purple-700"
+                >
+                  <Phone size={12} />
+                  {order.customer_phone}
+                </a>
+              </div>
+            )}
+
+            {order.fulfillment_type === "delivery" && order.delivery_address && (
+              <div className="px-5 pb-3">
+                <div className="flex items-start gap-1.5 text-xs text-black-500 leading-relaxed">
+                  <MapPin size={12} className="flex-shrink-0 mt-0.5 text-black-400" />
+                  <span>{order.delivery_address}</span>
+                </div>
+              </div>
+            )}
+
+            {order.special_instructions && (
+              <div className="px-5 pb-3">
+                <div className="flex items-start gap-2 bg-dixie-50 border border-dixie-100 text-dixie-600 text-xs px-3 py-2 rounded-lg">
+                  <StickyNote size={12} className="flex-shrink-0 mt-0.5" />
+                  <span>{order.special_instructions}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="px-5 pb-5 pt-2 border-t border-black-100 space-y-2">
+              <button
+                onClick={() => onActivateNow(order.id)}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-1.5 bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-bold py-2.5 rounded-xl transition-colors duration-150 cursor-pointer"
+              >
+                <Zap size={14} />
+                {loading ? "Starting…" : "Pull forward — start now"}
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMode("reschedule")}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2.5 text-black-600 border border-black-200 text-xs font-semibold rounded-xl hover:bg-black-50 transition-colors duration-150 cursor-pointer disabled:opacity-50"
+                >
+                  Reschedule
+                </button>
+                <button
+                  onClick={() => setMode("decline")}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2.5 text-cinnabar-500 border border-cinnabar-200 text-xs font-semibold rounded-xl hover:bg-cinnabar-100 transition-colors duration-150 cursor-pointer disabled:opacity-50"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {mode === "reschedule" && (
+          <div className="px-5 py-4 space-y-3 border-t border-black-100">
+            <p className="text-sm font-semibold text-black-900">Pick a new time</p>
+            <ScheduleSlotPicker
+              openingHours={openingHours}
+              schedulingSettings={schedulingSettings}
+              value={null}
+              onChange={(iso) => {
+                if (iso) onReschedule(order.id, iso);
+              }}
+            />
+            <button
+              onClick={() => setMode("detail")}
+              className="w-full text-black-500 border border-black-200 text-sm font-medium rounded-xl py-2.5 hover:bg-black-50 transition-colors duration-150 cursor-pointer"
+            >
+              Back
+            </button>
+          </div>
+        )}
+
+        {mode === "decline" && (
+          <div className="px-5 py-4 space-y-2.5 border-t border-black-100">
+            <p className="text-sm font-semibold text-black-900">
+              Decline order #{order.order_number}?
+            </p>
+            <p className="text-xs text-black-400">
+              The customer will be notified by SMS and a refund processed manually.
+            </p>
+            <input
+              type="text"
+              placeholder="Reason (shown to the customer)…"
+              value={declineReason}
+              onChange={(e) => setDeclineReason(e.target.value)}
+              className="w-full px-3 py-2.5 text-sm border border-black-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cinnabar-500/20 focus:border-cinnabar-500 placeholder:text-black-300"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (declineReason.trim()) onDecline(order.id, declineReason.trim());
+                }}
+                disabled={!declineReason.trim() || loading}
+                className="flex-1 bg-cinnabar-500 hover:bg-cinnabar-500/90 disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors duration-150 cursor-pointer"
+              >
+                {loading ? "Declining…" : "Confirm Decline"}
+              </button>
+              <button
+                onClick={() => setMode("detail")}
+                className="px-4 text-black-500 border border-black-200 text-sm font-medium rounded-xl hover:bg-black-50 transition-colors duration-150 cursor-pointer"
+              >
+                Keep
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -168,6 +168,11 @@ async function handleSuccessfulTransaction(
   // with the proper prefix + sequence format if present.
   const fallbackOrderNumber = `FD-${Date.now()}`;
 
+  // Pre-order slot (087): stamped onto the order; activated_at stays NULL so
+  // the order sits in the Scheduled bucket until the activation cron (or a
+  // merchant pull-forward) flips it into the live queue.
+  const scheduledFor = (meta.scheduled_for as string) || null;
+
   const orderPayload = {
     restaurant_id: restaurantId,
     payment_id: ep.id,
@@ -177,6 +182,7 @@ async function handleSuccessfulTransaction(
     fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
     delivery_address: (meta.delivery_address as string) || null,
     special_instructions: (meta.special_instructions as string) || null,
+    scheduled_for: scheduledFor,
     status: "confirmed" as const,
     payment_status: "paid" as const,
     subtotal_kobo: meta.subtotal_kobo as number,
@@ -298,7 +304,10 @@ async function handleSuccessfulTransaction(
   // Ready time only — no delivery travel buffer (3rd-party riders, see
   // checkout/status route for the full rationale).
   const etaMs = maxPrepMinutes * 60 * 1000;
-  const estimatedDeliveryAt = new Date(Date.now() + etaMs).toISOString();
+  // Scheduled orders count prep from the SLOT, not from payment — otherwise
+  // the late-orders cron would flag every pre-order "late" before activation.
+  const etaBaseMs = scheduledFor ? new Date(scheduledFor).getTime() : Date.now();
+  const estimatedDeliveryAt = new Date(etaBaseMs + etaMs).toISOString();
 
   await supabase
     .from("orders")
@@ -485,9 +494,12 @@ async function handleSuccessfulTransaction(
       body: JSON.stringify({
         restaurantId,
         phone: meta.customer_phone,
-        eventType: "order_confirmed",
+        // Pre-orders get a booking confirmation (with the slot time) instead
+        // of the live "we're on it" confirmation.
+        eventType: scheduledFor ? "booking_confirmed" : "order_confirmed",
         orderId: order.id,
         orderNumber: order.order_number,
+        ...(scheduledFor ? { scheduledFor } : {}),
       }),
     }).catch(console.error),
 
@@ -512,6 +524,7 @@ async function handleSuccessfulTransaction(
         orderNumber: order.order_number,
         totalKobo: orderTotalKobo,
         customerName: meta.customer_name as string,
+        ...(scheduledFor ? { kind: "scheduled_booking", scheduledFor } : {}),
       }),
     }).catch(console.error),
   ];

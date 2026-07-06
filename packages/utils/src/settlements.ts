@@ -27,7 +27,11 @@
  *   merchant_charge = round(order_total × merchant_charge_pct)
  *   delivery_commission (delivery orders only — pickup has no delivery fee):
  *       - platform_rider           → 100% of the delivery fee  (Foodo provided & paid the rider)
- *       - own_rider / third_party  → round(delivery_fee × delivery_commission_pct)  (10%)
+ *       - own_rider / third_party  → round(delivery_fee × delivery_commission_pct)
+ *         The rate is per-merchant: restaurants.delivery_commission_pct overrides
+ *         the platform default (platform_settings.delivery_commission_pct, 10%).
+ *         Resolve it with {@link resolveDeliveryCommissionPct} — never read either
+ *         column directly.
  *       - un-dispatched (null)     → 0 (commission isn't known until the rider type is picked)
  *   net = gross − merchant_charge − delivery_commission
  *       = order_total − service_fee − merchant_charge − delivery_commission
@@ -42,8 +46,40 @@
 export interface FeeSettings {
   /** Foodo's payment-processing cut as a fraction of order total (e.g. 0.01 = 1%). */
   merchantChargePct: number;
-  /** Commission on own/third-party delivery fees as a fraction (e.g. 0.10 = 10%). */
+  /**
+   * Commission on own/third-party delivery fees as a fraction (e.g. 0.10 = 10%).
+   * This is the MERCHANT-EFFECTIVE rate — resolve it with
+   * {@link resolveDeliveryCommissionPct} before building this object.
+   */
   deliveryCommissionPct: number;
+}
+
+/** Canonical platform default when neither the merchant nor platform row has a rate. */
+export const DEFAULT_DELIVERY_COMMISSION_PCT = 0.1;
+
+/**
+ * Resolve the effective in-house delivery commission rate for one merchant:
+ * the merchant's negotiated override (restaurants.delivery_commission_pct)
+ * when set, otherwise the platform default
+ * (platform_settings.delivery_commission_pct, canonically 10%).
+ *
+ * Mirrored in SQL by recompute_restaurant_wallet (migration 089):
+ *   COALESCE(restaurants.delivery_commission_pct,
+ *            platform_settings.delivery_commission_pct, 0.10)
+ *
+ * Out-of-range or non-numeric values fall through to the next tier — a
+ * corrupted rate must degrade to the default, never to NaN money.
+ */
+export function resolveDeliveryCommissionPct(
+  merchantPct: number | string | null | undefined,
+  platformPct: number | string | null | undefined
+): number {
+  for (const raw of [merchantPct, platformPct]) {
+    if (raw == null) continue;
+    const pct = Number(raw);
+    if (Number.isFinite(pct) && pct >= 0 && pct <= 1) return pct;
+  }
+  return DEFAULT_DELIVERY_COMMISSION_PCT;
 }
 
 /** The order fields required to compute a settlement net. */

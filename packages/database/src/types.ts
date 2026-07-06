@@ -10,10 +10,547 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.4"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          actor_id: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          target_id: string
+          target_type: string
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          target_id: string
+          target_type: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          target_id?: string
+          target_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      blog_posts: {
+        Row: {
+          author_name: string
+          content: string
+          cover_image_url: string | null
+          created_at: string
+          excerpt: string | null
+          id: string
+          is_published: boolean
+          published_at: string | null
+          read_minutes: number | null
+          slug: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          author_name?: string
+          content: string
+          cover_image_url?: string | null
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          is_published?: boolean
+          published_at?: string | null
+          read_minutes?: number | null
+          slug: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          author_name?: string
+          content?: string
+          cover_image_url?: string | null
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          is_published?: boolean
+          published_at?: string | null
+          read_minutes?: number | null
+          slug?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      changelog_entries: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          image_url: string | null
+          published_at: string | null
+          tag: string
+          title: string
+          updated_at: string
+          version_label: string | null
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          published_at?: string | null
+          tag?: string
+          title: string
+          updated_at?: string
+          version_label?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          image_url?: string | null
+          published_at?: string | null
+          tag?: string
+          title?: string
+          updated_at?: string
+          version_label?: string | null
+        }
+        Relationships: []
+      }
+      customer_addresses: {
+        Row: {
+          address: string
+          created_at: string
+          customer_id: string
+          id: string
+          is_default: boolean
+          label: string | null
+          lat: number | null
+          lng: number | null
+          restaurant_id: string
+          updated_at: string
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          customer_id: string
+          id?: string
+          is_default?: boolean
+          label?: string | null
+          lat?: number | null
+          lng?: number | null
+          restaurant_id: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          customer_id?: string
+          id?: string
+          is_default?: boolean
+          label?: string | null
+          lat?: number | null
+          lng?: number | null
+          restaurant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_addresses_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_addresses_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customers: {
+        Row: {
+          created_at: string
+          email: string | null
+          first_order_at: string | null
+          full_name: string | null
+          id: string
+          last_order_at: string | null
+          notes: string | null
+          phone: string
+          restaurant_id: string
+          total_orders: number
+          total_spent: number
+          total_spent_kobo: number
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          first_order_at?: string | null
+          full_name?: string | null
+          id?: string
+          last_order_at?: string | null
+          notes?: string | null
+          phone: string
+          restaurant_id: string
+          total_orders?: number
+          total_spent?: number
+          total_spent_kobo?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          first_order_at?: string | null
+          full_name?: string | null
+          id?: string
+          last_order_at?: string | null
+          notes?: string | null
+          phone?: string
+          restaurant_id?: string
+          total_orders?: number
+          total_spent?: number
+          total_spent_kobo?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_assignments: {
+        Row: {
+          assigned_at: string
+          delivered_at: string | null
+          dispatch_type: string
+          id: string
+          order_id: string
+          picked_up_at: string | null
+          restaurant_id: string
+          rider_id: string | null
+          rider_lat: number | null
+          rider_lng: number | null
+          share_link_token: string | null
+          status: string
+          third_party_provider: string | null
+          third_party_ref: string | null
+        }
+        Insert: {
+          assigned_at?: string
+          delivered_at?: string | null
+          dispatch_type: string
+          id?: string
+          order_id: string
+          picked_up_at?: string | null
+          restaurant_id: string
+          rider_id?: string | null
+          rider_lat?: number | null
+          rider_lng?: number | null
+          share_link_token?: string | null
+          status?: string
+          third_party_provider?: string | null
+          third_party_ref?: string | null
+        }
+        Update: {
+          assigned_at?: string
+          delivered_at?: string | null
+          dispatch_type?: string
+          id?: string
+          order_id?: string
+          picked_up_at?: string | null
+          restaurant_id?: string
+          rider_id?: string | null
+          rider_lat?: number | null
+          rider_lng?: number | null
+          share_link_token?: string | null
+          status?: string
+          third_party_provider?: string | null
+          third_party_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_assignments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_assignments_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_assignments_rider_id_fkey"
+            columns: ["rider_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      demo_requests: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          message: string | null
+          name: string
+          notes: string | null
+          phone: string
+          restaurant_name: string
+          source: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          message?: string | null
+          name: string
+          notes?: string | null
+          phone: string
+          restaurant_name: string
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          message?: string | null
+          name?: string
+          notes?: string | null
+          phone?: string
+          restaurant_name?: string
+          source?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      device_tokens: {
+        Row: {
+          created_at: string
+          expo_push_token: string
+          id: string
+          last_seen_at: string
+          platform: string | null
+          restaurant_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expo_push_token: string
+          id?: string
+          last_seen_at?: string
+          platform?: string | null
+          restaurant_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expo_push_token?: string
+          id?: string
+          last_seen_at?: string
+          platform?: string | null
+          restaurant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_tokens_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      discount_redemptions: {
+        Row: {
+          amount_kobo: number
+          created_at: string
+          customer_id: string | null
+          customer_phone: string
+          discount_id: string
+          id: string
+          order_id: string | null
+          restaurant_id: string
+        }
+        Insert: {
+          amount_kobo: number
+          created_at?: string
+          customer_id?: string | null
+          customer_phone: string
+          discount_id: string
+          id?: string
+          order_id?: string | null
+          restaurant_id: string
+        }
+        Update: {
+          amount_kobo?: number
+          created_at?: string
+          customer_id?: string | null
+          customer_phone?: string
+          discount_id?: string
+          id?: string
+          order_id?: string | null
+          restaurant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discount_redemptions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_redemptions_discount_id_fkey"
+            columns: ["discount_id"]
+            isOneToOne: false
+            referencedRelation: "discounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_redemptions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discount_redemptions_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      discounts: {
+        Row: {
+          archived_at: string | null
+          code: string | null
+          created_at: string
+          delivery_zones: Json | null
+          description: string | null
+          ends_at: string | null
+          free_delivery_dispatch: string | null
+          fulfillment_type: string | null
+          id: string
+          is_active: boolean
+          max_discount_kobo: number | null
+          min_order_kobo: number
+          name: string
+          restaurant_id: string
+          starts_at: string | null
+          times_redeemed: number
+          trigger: string
+          type: string
+          updated_at: string
+          usage_limit_per_customer: number | null
+          usage_limit_total: number | null
+          value: number | null
+        }
+        Insert: {
+          archived_at?: string | null
+          code?: string | null
+          created_at?: string
+          delivery_zones?: Json | null
+          description?: string | null
+          ends_at?: string | null
+          free_delivery_dispatch?: string | null
+          fulfillment_type?: string | null
+          id?: string
+          is_active?: boolean
+          max_discount_kobo?: number | null
+          min_order_kobo?: number
+          name: string
+          restaurant_id: string
+          starts_at?: string | null
+          times_redeemed?: number
+          trigger: string
+          type: string
+          updated_at?: string
+          usage_limit_per_customer?: number | null
+          usage_limit_total?: number | null
+          value?: number | null
+        }
+        Update: {
+          archived_at?: string | null
+          code?: string | null
+          created_at?: string
+          delivery_zones?: Json | null
+          description?: string | null
+          ends_at?: string | null
+          free_delivery_dispatch?: string | null
+          fulfillment_type?: string | null
+          id?: string
+          is_active?: boolean
+          max_discount_kobo?: number | null
+          min_order_kobo?: number
+          name?: string
+          restaurant_id?: string
+          starts_at?: string | null
+          times_redeemed?: number
+          trigger?: string
+          type?: string
+          updated_at?: string
+          usage_limit_per_customer?: number | null
+          usage_limit_total?: number | null
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discounts_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       loyalty_programs: {
         Row: {
           created_at: string
@@ -106,399 +643,21 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "loyalty_stamps_program_id_fkey"
-            columns: ["program_id"]
-            isOneToOne: false
-            referencedRelation: "loyalty_programs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      changelog_entries: {
-        Row: {
-          body: string
-          created_at: string
-          id: string
-          image_url: string | null
-          published_at: string | null
-          tag: string
-          title: string
-          updated_at: string
-          version_label: string | null
-        }
-        Insert: {
-          body: string
-          created_at?: string
-          id?: string
-          image_url?: string | null
-          published_at?: string | null
-          tag?: string
-          title: string
-          updated_at?: string
-          version_label?: string | null
-        }
-        Update: {
-          body?: string
-          created_at?: string
-          id?: string
-          image_url?: string | null
-          published_at?: string | null
-          tag?: string
-          title?: string
-          updated_at?: string
-          version_label?: string | null
-        }
-        Relationships: []
-      }
-      audit_logs: {
-        Row: {
-          action: string
-          actor_id: string
-          created_at: string
-          id: string
-          metadata: Json | null
-          target_id: string
-          target_type: string
-        }
-        Insert: {
-          action: string
-          actor_id: string
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          target_id: string
-          target_type: string
-        }
-        Update: {
-          action?: string
-          actor_id?: string
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          target_id?: string
-          target_type?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "audit_logs_actor_id_fkey"
-            columns: ["actor_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      blog_posts: {
-        Row: {
-          id: string
-          slug: string
-          title: string
-          excerpt: string | null
-          content: string
-          cover_image_url: string | null
-          author_name: string
-          read_minutes: number | null
-          is_published: boolean
-          published_at: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          slug: string
-          title: string
-          excerpt?: string | null
-          content: string
-          cover_image_url?: string | null
-          author_name?: string
-          read_minutes?: number | null
-          is_published?: boolean
-          published_at?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          slug?: string
-          title?: string
-          excerpt?: string | null
-          content?: string
-          cover_image_url?: string | null
-          author_name?: string
-          read_minutes?: number | null
-          is_published?: boolean
-          published_at?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      customers: {
-        Row: {
-          created_at: string
-          email: string | null
-          first_order_at: string | null
-          full_name: string | null
-          id: string
-          last_order_at: string | null
-          notes: string | null
-          phone: string
-          restaurant_id: string
-          total_orders: number
-          total_spent: number
-          total_spent_kobo: number
-          updated_at: string
-          user_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          email?: string | null
-          first_order_at?: string | null
-          full_name?: string | null
-          id?: string
-          last_order_at?: string | null
-          notes?: string | null
-          phone: string
-          restaurant_id: string
-          total_orders?: number
-          total_spent?: number
-          total_spent_kobo?: number
-          updated_at?: string
-          user_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          email?: string | null
-          first_order_at?: string | null
-          full_name?: string | null
-          id?: string
-          last_order_at?: string | null
-          notes?: string | null
-          phone?: string
-          restaurant_id?: string
-          total_orders?: number
-          total_spent?: number
-          total_spent_kobo?: number
-          updated_at?: string
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "customers_restaurant_id_fkey"
-            columns: ["restaurant_id"]
-            isOneToOne: false
-            referencedRelation: "restaurants"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "customers_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      customer_addresses: {
-        Row: {
-          address: string
-          created_at: string
-          customer_id: string
-          id: string
-          is_default: boolean
-          label: string | null
-          lat: number | null
-          lng: number | null
-          restaurant_id: string
-          updated_at: string
-        }
-        Insert: {
-          address: string
-          created_at?: string
-          customer_id: string
-          id?: string
-          is_default?: boolean
-          label?: string | null
-          lat?: number | null
-          lng?: number | null
-          restaurant_id: string
-          updated_at?: string
-        }
-        Update: {
-          address?: string
-          created_at?: string
-          customer_id?: string
-          id?: string
-          is_default?: boolean
-          label?: string | null
-          lat?: number | null
-          lng?: number | null
-          restaurant_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "customer_addresses_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "customers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "customer_addresses_restaurant_id_fkey"
-            columns: ["restaurant_id"]
-            isOneToOne: false
-            referencedRelation: "restaurants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      demo_requests: {
-        Row: {
-          id: string
-          name: string
-          restaurant_name: string
-          email: string
-          phone: string
-          message: string | null
-          status: string
-          source: string
-          notes: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          restaurant_name: string
-          email: string
-          phone: string
-          message?: string | null
-          status?: string
-          source?: string
-          notes?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          restaurant_name?: string
-          email?: string
-          phone?: string
-          message?: string | null
-          status?: string
-          source?: string
-          notes?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      delivery_assignments: {
-        Row: {
-          assigned_at: string
-          delivered_at: string | null
-          dispatch_type: string
-          id: string
-          order_id: string
-          picked_up_at: string | null
-          restaurant_id: string
-          rider_id: string | null
-          rider_lat: number | null
-          rider_lng: number | null
-          share_link_token: string | null
-          status: string
-          third_party_provider: string | null
-          third_party_ref: string | null
-        }
-        Insert: {
-          assigned_at?: string
-          delivered_at?: string | null
-          dispatch_type: string
-          id?: string
-          order_id: string
-          picked_up_at?: string | null
-          restaurant_id: string
-          rider_id?: string | null
-          rider_lat?: number | null
-          rider_lng?: number | null
-          share_link_token?: string | null
-          status?: string
-          third_party_provider?: string | null
-          third_party_ref?: string | null
-        }
-        Update: {
-          assigned_at?: string
-          delivered_at?: string | null
-          dispatch_type?: string
-          id?: string
-          order_id?: string
-          picked_up_at?: string | null
-          restaurant_id?: string
-          rider_id?: string | null
-          rider_lat?: number | null
-          rider_lng?: number | null
-          share_link_token?: string | null
-          status?: string
-          third_party_provider?: string | null
-          third_party_ref?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "delivery_assignments_order_id_fkey"
+            foreignKeyName: "loyalty_stamps_order_id_fkey"
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "delivery_assignments_restaurant_id_fkey"
-            columns: ["restaurant_id"]
+            foreignKeyName: "loyalty_stamps_program_id_fkey"
+            columns: ["program_id"]
             isOneToOne: false
-            referencedRelation: "restaurants"
+            referencedRelation: "loyalty_programs"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "delivery_assignments_rider_id_fkey"
-            columns: ["rider_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      device_tokens: {
-        Row: {
-          created_at: string
-          expo_push_token: string
-          id: string
-          last_seen_at: string
-          platform: string | null
-          restaurant_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          expo_push_token: string
-          id?: string
-          last_seen_at?: string
-          platform?: string | null
-          restaurant_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          expo_push_token?: string
-          id?: string
-          last_seen_at?: string
-          platform?: string | null
-          restaurant_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "device_tokens_restaurant_id_fkey"
+            foreignKeyName: "loyalty_stamps_restaurant_id_fkey"
             columns: ["restaurant_id"]
             isOneToOne: false
             referencedRelation: "restaurants"
@@ -580,6 +739,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "menu_item_option_choices_linked_item_id_fkey"
+            columns: ["linked_item_id"]
+            isOneToOne: false
+            referencedRelation: "menu_items"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "menu_item_option_choices_option_id_fkey"
             columns: ["option_id"]
             isOneToOne: false
@@ -652,6 +818,8 @@ export type Database = {
           is_addon_only: boolean
           is_available: boolean
           is_featured: boolean
+          is_made_to_order: boolean
+          made_to_order_lead_hours: number | null
           name: string
           prep_time_minutes: number | null
           price: number
@@ -671,6 +839,8 @@ export type Database = {
           is_addon_only?: boolean
           is_available?: boolean
           is_featured?: boolean
+          is_made_to_order?: boolean
+          made_to_order_lead_hours?: number | null
           name: string
           prep_time_minutes?: number | null
           price: number
@@ -690,6 +860,8 @@ export type Database = {
           is_addon_only?: boolean
           is_available?: boolean
           is_featured?: boolean
+          is_made_to_order?: boolean
+          made_to_order_lead_hours?: number | null
           name?: string
           prep_time_minutes?: number | null
           price?: number
@@ -714,6 +886,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      monnify_auth_tokens: {
+        Row: {
+          access_token: string
+          expires_at: string
+          id: string
+          refreshed_at: string
+        }
+        Insert: {
+          access_token: string
+          expires_at: string
+          id?: string
+          refreshed_at?: string
+        }
+        Update: {
+          access_token?: string
+          expires_at?: string
+          id?: string
+          refreshed_at?: string
+        }
+        Relationships: []
       }
       order_items: {
         Row: {
@@ -779,150 +972,9 @@ export type Database = {
           },
         ]
       }
-      discounts: {
-        Row: {
-          code: string | null
-          created_at: string
-          delivery_zones: Json | null
-          description: string | null
-          ends_at: string | null
-          free_delivery_dispatch: string | null
-          fulfillment_type: string | null
-          id: string
-          is_active: boolean
-          max_discount_kobo: number | null
-          min_order_kobo: number
-          name: string
-          restaurant_id: string
-          starts_at: string | null
-          times_redeemed: number
-          trigger: string
-          type: string
-          updated_at: string
-          usage_limit_per_customer: number | null
-          usage_limit_total: number | null
-          value: number | null
-        }
-        Insert: {
-          code?: string | null
-          created_at?: string
-          delivery_zones?: Json | null
-          description?: string | null
-          ends_at?: string | null
-          free_delivery_dispatch?: string | null
-          fulfillment_type?: string | null
-          id?: string
-          is_active?: boolean
-          max_discount_kobo?: number | null
-          min_order_kobo?: number
-          name: string
-          restaurant_id: string
-          starts_at?: string | null
-          times_redeemed?: number
-          trigger: string
-          type: string
-          updated_at?: string
-          usage_limit_per_customer?: number | null
-          usage_limit_total?: number | null
-          value?: number | null
-        }
-        Update: {
-          code?: string | null
-          created_at?: string
-          delivery_zones?: Json | null
-          description?: string | null
-          ends_at?: string | null
-          free_delivery_dispatch?: string | null
-          fulfillment_type?: string | null
-          id?: string
-          is_active?: boolean
-          max_discount_kobo?: number | null
-          min_order_kobo?: number
-          name?: string
-          restaurant_id?: string
-          starts_at?: string | null
-          times_redeemed?: number
-          trigger?: string
-          type?: string
-          updated_at?: string
-          usage_limit_per_customer?: number | null
-          usage_limit_total?: number | null
-          value?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "discounts_restaurant_id_fkey"
-            columns: ["restaurant_id"]
-            isOneToOne: false
-            referencedRelation: "restaurants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      discount_redemptions: {
-        Row: {
-          amount_kobo: number
-          created_at: string
-          customer_id: string | null
-          customer_phone: string
-          discount_id: string
-          id: string
-          order_id: string | null
-          restaurant_id: string
-        }
-        Insert: {
-          amount_kobo: number
-          created_at?: string
-          customer_id?: string | null
-          customer_phone: string
-          discount_id: string
-          id?: string
-          order_id?: string | null
-          restaurant_id: string
-        }
-        Update: {
-          amount_kobo?: number
-          created_at?: string
-          customer_id?: string | null
-          customer_phone?: string
-          discount_id?: string
-          id?: string
-          order_id?: string | null
-          restaurant_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "discount_redemptions_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "customers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "discount_redemptions_discount_id_fkey"
-            columns: ["discount_id"]
-            isOneToOne: false
-            referencedRelation: "discounts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "discount_redemptions_order_id_fkey"
-            columns: ["order_id"]
-            isOneToOne: false
-            referencedRelation: "orders"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "discount_redemptions_restaurant_id_fkey"
-            columns: ["restaurant_id"]
-            isOneToOne: false
-            referencedRelation: "restaurants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       orders: {
         Row: {
+          activated_at: string | null
           cancellation_reason: string | null
           cancelled_reason: string | null
           created_at: string
@@ -949,14 +1001,17 @@ export type Database = {
           fulfillment_type: string
           id: string
           late_at: string | null
+          loyalty_redeemed: boolean
+          loyalty_stamps_spent: number | null
           order_number: string
           payment_id: string | null
           payment_ref: string | null
           payment_status: string
-          loyalty_redeemed: boolean
-          loyalty_stamps_spent: number | null
           restaurant_id: string
+          rider_alert_sent_at: string | null
           rider_id: string | null
+          scheduled_alert_sent_at: string | null
+          scheduled_for: string | null
           service_fee_kobo: number
           settlement_id: string | null
           special_instructions: string | null
@@ -969,6 +1024,7 @@ export type Database = {
           vat_kobo: number
         }
         Insert: {
+          activated_at?: string | null
           cancellation_reason?: string | null
           cancelled_reason?: string | null
           created_at?: string
@@ -995,14 +1051,17 @@ export type Database = {
           fulfillment_type: string
           id?: string
           late_at?: string | null
+          loyalty_redeemed?: boolean
+          loyalty_stamps_spent?: number | null
           order_number: string
           payment_id?: string | null
           payment_ref?: string | null
           payment_status?: string
-          loyalty_redeemed?: boolean
-          loyalty_stamps_spent?: number | null
           restaurant_id: string
+          rider_alert_sent_at?: string | null
           rider_id?: string | null
+          scheduled_alert_sent_at?: string | null
+          scheduled_for?: string | null
           service_fee_kobo?: number
           settlement_id?: string | null
           special_instructions?: string | null
@@ -1015,6 +1074,7 @@ export type Database = {
           vat_kobo?: number
         }
         Update: {
+          activated_at?: string | null
           cancellation_reason?: string | null
           cancelled_reason?: string | null
           created_at?: string
@@ -1041,14 +1101,17 @@ export type Database = {
           fulfillment_type?: string
           id?: string
           late_at?: string | null
+          loyalty_redeemed?: boolean
+          loyalty_stamps_spent?: number | null
           order_number?: string
           payment_id?: string | null
           payment_ref?: string | null
           payment_status?: string
-          loyalty_redeemed?: boolean
-          loyalty_stamps_spent?: number | null
           restaurant_id?: string
+          rider_alert_sent_at?: string | null
           rider_id?: string | null
+          scheduled_alert_sent_at?: string | null
+          scheduled_for?: string | null
           service_fee_kobo?: number
           settlement_id?: string | null
           special_instructions?: string | null
@@ -1113,10 +1176,14 @@ export type Database = {
           currency: string
           id: string
           metadata: Json | null
+          monnify_ref: string | null
+          monnify_status: string | null
           order_id: string | null
           paid_at: string | null
-          paystack_ref: string
-          paystack_status: string
+          payment_provider: string
+          paystack_ref: string | null
+          paystack_status: string | null
+          provider_transaction_ref: string | null
           restaurant_id: string
         }
         Insert: {
@@ -1126,10 +1193,14 @@ export type Database = {
           currency?: string
           id?: string
           metadata?: Json | null
+          monnify_ref?: string | null
+          monnify_status?: string | null
           order_id?: string | null
           paid_at?: string | null
-          paystack_ref: string
-          paystack_status: string
+          payment_provider?: string
+          paystack_ref?: string | null
+          paystack_status?: string | null
+          provider_transaction_ref?: string | null
           restaurant_id: string
         }
         Update: {
@@ -1139,10 +1210,14 @@ export type Database = {
           currency?: string
           id?: string
           metadata?: Json | null
+          monnify_ref?: string | null
+          monnify_status?: string | null
           order_id?: string | null
           paid_at?: string | null
-          paystack_ref?: string
-          paystack_status?: string
+          payment_provider?: string
+          paystack_ref?: string | null
+          paystack_status?: string | null
+          provider_transaction_ref?: string | null
           restaurant_id?: string
         }
         Relationships: [
@@ -1222,6 +1297,8 @@ export type Database = {
         Row: {
           admin_alert_email: string | null
           admin_whatsapp_number: string | null
+          auto_payout_enabled: boolean
+          auto_payout_shadow: boolean
           delivery_base_fee_kobo: number
           delivery_commission_pct: number
           delivery_max_fee_kobo: number
@@ -1238,6 +1315,8 @@ export type Database = {
         Insert: {
           admin_alert_email?: string | null
           admin_whatsapp_number?: string | null
+          auto_payout_enabled?: boolean
+          auto_payout_shadow?: boolean
           delivery_base_fee_kobo?: number
           delivery_commission_pct?: number
           delivery_max_fee_kobo?: number
@@ -1254,6 +1333,8 @@ export type Database = {
         Update: {
           admin_alert_email?: string | null
           admin_whatsapp_number?: string | null
+          auto_payout_enabled?: boolean
+          auto_payout_shadow?: boolean
           delivery_base_fee_kobo?: number
           delivery_commission_pct?: number
           delivery_max_fee_kobo?: number
@@ -1314,12 +1395,16 @@ export type Database = {
         Row: {
           accepts_orders: boolean
           address: string | null
+          auto_payout_enabled: boolean
           bank_account_name: string | null
           bank_account_number: string | null
           bank_code: string | null
           banner_url: string | null
           city: string | null
+          closure_message: string | null
+          closure_message_history: string[]
           created_at: string
+          delivery_commission_pct: number | null
           delivery_fee: number
           delivery_radius_km: number | null
           description: string | null
@@ -1328,41 +1413,48 @@ export type Database = {
           id: string
           instagram_url: string | null
           is_active: boolean
+          is_test: boolean
           latitude: number | null
           logistics_default: string
           logo_url: string | null
           longitude: number | null
           max_delivery_radius_km: number | null
           min_order_amount: number | null
+          monnify_bank_verified_at: string | null
           name: string
           notification_email: string | null
           opening_hours: Json | null
           paystack_recipient_code: string | null
           phone: string | null
           primary_color: string | null
+          restaurant_base_fee_kobo: number | null
+          restaurant_max_fee_kobo: number | null
+          restaurant_per_km_rate_kobo: number | null
+          scheduling_settings: Json | null
           slug: string
+          sms_sender_id: string | null
+          sms_sender_requested_at: string | null
+          sms_sender_status: string | null
           state: string | null
           twitter_url: string | null
           updated_at: string
           vat_percentage: number | null
           whatsapp_number: string | null
           youtube_url: string | null
-          closure_message: string | null
-          closure_message_history: string[]
-          is_test: boolean
-          sms_sender_id: string | null
-          sms_sender_status: string | null
-          sms_sender_requested_at: string | null
         }
         Insert: {
           accepts_orders?: boolean
           address?: string | null
+          auto_payout_enabled?: boolean
           bank_account_name?: string | null
           bank_account_number?: string | null
           bank_code?: string | null
           banner_url?: string | null
           city?: string | null
+          closure_message?: string | null
+          closure_message_history?: string[]
           created_at?: string
+          delivery_commission_pct?: number | null
           delivery_fee?: number
           delivery_radius_km?: number | null
           description?: string | null
@@ -1371,41 +1463,48 @@ export type Database = {
           id?: string
           instagram_url?: string | null
           is_active?: boolean
+          is_test?: boolean
           latitude?: number | null
           logistics_default?: string
           logo_url?: string | null
           longitude?: number | null
           max_delivery_radius_km?: number | null
           min_order_amount?: number | null
+          monnify_bank_verified_at?: string | null
           name: string
           notification_email?: string | null
           opening_hours?: Json | null
           paystack_recipient_code?: string | null
           phone?: string | null
           primary_color?: string | null
+          restaurant_base_fee_kobo?: number | null
+          restaurant_max_fee_kobo?: number | null
+          restaurant_per_km_rate_kobo?: number | null
+          scheduling_settings?: Json | null
           slug: string
+          sms_sender_id?: string | null
+          sms_sender_requested_at?: string | null
+          sms_sender_status?: string | null
           state?: string | null
           twitter_url?: string | null
           updated_at?: string
           vat_percentage?: number | null
           whatsapp_number?: string | null
           youtube_url?: string | null
-          closure_message?: string | null
-          closure_message_history?: string[]
-          is_test?: boolean
-          sms_sender_id?: string | null
-          sms_sender_status?: string | null
-          sms_sender_requested_at?: string | null
         }
         Update: {
           accepts_orders?: boolean
           address?: string | null
+          auto_payout_enabled?: boolean
           bank_account_name?: string | null
           bank_account_number?: string | null
           bank_code?: string | null
           banner_url?: string | null
           city?: string | null
+          closure_message?: string | null
+          closure_message_history?: string[]
           created_at?: string
+          delivery_commission_pct?: number | null
           delivery_fee?: number
           delivery_radius_km?: number | null
           description?: string | null
@@ -1414,31 +1513,34 @@ export type Database = {
           id?: string
           instagram_url?: string | null
           is_active?: boolean
+          is_test?: boolean
           latitude?: number | null
           logistics_default?: string
           logo_url?: string | null
           longitude?: number | null
           max_delivery_radius_km?: number | null
           min_order_amount?: number | null
+          monnify_bank_verified_at?: string | null
           name?: string
           notification_email?: string | null
           opening_hours?: Json | null
           paystack_recipient_code?: string | null
           phone?: string | null
           primary_color?: string | null
+          restaurant_base_fee_kobo?: number | null
+          restaurant_max_fee_kobo?: number | null
+          restaurant_per_km_rate_kobo?: number | null
+          scheduling_settings?: Json | null
           slug?: string
+          sms_sender_id?: string | null
+          sms_sender_requested_at?: string | null
+          sms_sender_status?: string | null
           state?: string | null
           twitter_url?: string | null
           updated_at?: string
           vat_percentage?: number | null
           whatsapp_number?: string | null
           youtube_url?: string | null
-          closure_message?: string | null
-          closure_message_history?: string[]
-          is_test?: boolean
-          sms_sender_id?: string | null
-          sms_sender_status?: string | null
-          sms_sender_requested_at?: string | null
         }
         Relationships: []
       }
@@ -1507,6 +1609,7 @@ export type Database = {
         Row: {
           amount_kobo: number
           bank_reference: string | null
+          canonical_net_kobo: number | null
           created_at: string
           delivery_commission_kobo: number
           failure_reason: string | null
@@ -1514,6 +1617,8 @@ export type Database = {
           id: string
           initiated_at: string
           merchant_charge_total_kobo: number
+          monnify_disbursement_reference: string | null
+          monnify_transaction_reference: string | null
           order_count: number
           paid_at: string | null
           paystack_transfer_code: string | null
@@ -1529,6 +1634,7 @@ export type Database = {
         Insert: {
           amount_kobo: number
           bank_reference?: string | null
+          canonical_net_kobo?: number | null
           created_at?: string
           delivery_commission_kobo?: number
           failure_reason?: string | null
@@ -1536,6 +1642,8 @@ export type Database = {
           id?: string
           initiated_at?: string
           merchant_charge_total_kobo?: number
+          monnify_disbursement_reference?: string | null
+          monnify_transaction_reference?: string | null
           order_count?: number
           paid_at?: string | null
           paystack_transfer_code?: string | null
@@ -1551,6 +1659,7 @@ export type Database = {
         Update: {
           amount_kobo?: number
           bank_reference?: string | null
+          canonical_net_kobo?: number | null
           created_at?: string
           delivery_commission_kobo?: number
           failure_reason?: string | null
@@ -1558,6 +1667,8 @@ export type Database = {
           id?: string
           initiated_at?: string
           merchant_charge_total_kobo?: number
+          monnify_disbursement_reference?: string | null
+          monnify_transaction_reference?: string | null
           order_count?: number
           paid_at?: string | null
           paystack_transfer_code?: string | null
@@ -1768,9 +1879,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_scheduled_orders: { Args: never; Returns: undefined }
       debit_wallet_for_settlement: {
         Args: { p_amount_kobo: number; p_restaurant_id: string }
         Returns: undefined
+      }
+      foodo_order_net_kobo: {
+        Args: {
+          p_dc_pct: number
+          p_delivery: number
+          p_dispatch: string
+          p_mc_pct: number
+          p_service: number
+          p_subtotal: number
+          p_total: number
+          p_vat: number
+        }
+        Returns: number
+      }
+      foodo_resolved_dispatch_type: {
+        Args: { p_order_id: string }
+        Returns: string
       }
       get_my_restaurant_id: { Args: never; Returns: string }
       get_my_role: { Args: never; Returns: string }
@@ -1778,7 +1907,30 @@ export type Database = {
         Args: { p_amount_kobo: number; p_restaurant_id: string }
         Returns: undefined
       }
+      loyalty_accrue_for_order: {
+        Args: { p_order_id: string }
+        Returns: undefined
+      }
+      loyalty_balance: {
+        Args: { p_phone: string; p_program_id: string }
+        Returns: number
+      }
+      loyalty_program_participants: {
+        Args: { p_program_id: string }
+        Returns: {
+          balance: number
+          customer_phone: string
+          last_activity: string
+          stamp_count: number
+          total_earned: number
+        }[]
+      }
       mark_late_orders: { Args: never; Returns: undefined }
+      recompute_all_restaurant_wallets: { Args: never; Returns: undefined }
+      recompute_restaurant_wallet: {
+        Args: { p_restaurant_id: string }
+        Returns: undefined
+      }
       redeem_discount: { Args: { p_discount_id: string }; Returns: number }
       release_pending_wallet_balances: { Args: never; Returns: undefined }
       restore_failed_settlement: {

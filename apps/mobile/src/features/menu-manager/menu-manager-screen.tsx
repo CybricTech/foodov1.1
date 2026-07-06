@@ -37,7 +37,7 @@ import {
   View,
 } from "react-native";
 
-import { formatKobo } from "@foodo/utils";
+import { formatKobo, normalizeSchedulingSettings } from "@foodo/utils";
 import type { MenuCategory, MenuItemWithOptions } from "@foodo/database";
 
 import { router } from "expo-router";
@@ -60,6 +60,9 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItemWithOptions[]>([]);
+  // Gates the Made to Order toggle in the item form — it reuses the whole
+  // scheduled-order pipeline, so it's meaningless without pre-orders enabled.
+  const [schedulingEnabled, setSchedulingEnabled] = useState(false);
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [manageCategories, setManageCategories] = useState(false);
@@ -79,18 +82,24 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
       return;
     }
     setLoadError(null);
-    const [{ data: cats, error: catErr }, { data: its, error: itemErr }] = await Promise.all([
-      supabase
-        .from("menu_categories")
-        .select("*")
-        .eq("restaurant_id", restaurantId)
-        .order("display_order", { ascending: true }),
-      supabase
-        .from("menu_items")
-        .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
-        .eq("restaurant_id", restaurantId)
-        .order("display_order", { ascending: true }),
-    ]);
+    const [{ data: cats, error: catErr }, { data: its, error: itemErr }, { data: restaurantRow }] =
+      await Promise.all([
+        supabase
+          .from("menu_categories")
+          .select("*")
+          .eq("restaurant_id", restaurantId)
+          .order("display_order", { ascending: true }),
+        supabase
+          .from("menu_items")
+          .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
+          .eq("restaurant_id", restaurantId)
+          .order("display_order", { ascending: true }),
+        supabase
+          .from("restaurants")
+          .select("scheduling_settings")
+          .eq("id", restaurantId)
+          .single() as unknown as Promise<{ data: Record<string, unknown> | null }>,
+      ]);
     if (catErr || itemErr) {
       setLoadError((catErr ?? itemErr)?.message ?? "Could not load your menu.");
       setLoading(false);
@@ -99,6 +108,9 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
     const loadedCats = (cats ?? []) as MenuCategory[];
     setCategories(loadedCats);
     setItems((its as unknown as MenuItemWithOptions[]) ?? []);
+    setSchedulingEnabled(
+      normalizeSchedulingSettings(restaurantRow?.["scheduling_settings"]).enabled
+    );
     setActiveCategory((prev) => prev ?? loadedCats[0]?.id ?? null);
     setLoading(false);
   }, [restaurantId, supabase]);
@@ -482,6 +494,7 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
           categories={categories}
           item={editingItem}
           defaultCategoryId={activeCategory}
+          schedulingEnabled={schedulingEnabled}
           onClose={() => {
             setShowAddItem(false);
             setEditingItem(null);

@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { SettlementsClient } from "@/components/admin/settlements-client";
 import { getNgnBalanceKobo } from "@/lib/paystack";
+import { resolveDeliveryCommissionPct } from "@foodo/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export default async function AdminSettlementsPage() {
         status,
         dispatch_type,
         created_at,
-        restaurants (name, paystack_recipient_code, monnify_bank_verified_at),
+        restaurants (name, paystack_recipient_code, monnify_bank_verified_at, delivery_commission_pct),
         delivery_assignments (dispatch_type)
       `
       )
@@ -93,7 +94,7 @@ export default async function AdminSettlementsPage() {
         available_balance_kobo,
         total_earned_kobo,
         total_withdrawn_kobo,
-        restaurants (name, slug, paystack_recipient_code, monnify_bank_verified_at, auto_payout_enabled)
+        restaurants (name, slug, paystack_recipient_code, monnify_bank_verified_at, auto_payout_enabled, delivery_commission_pct)
       `
       )
       .order("total_earned_kobo", { ascending: false }),
@@ -132,10 +133,17 @@ export default async function AdminSettlementsPage() {
   //   1. orders.dispatch_type (set by the dispatch route — source of truth)
   //   2. delivery_assignments.dispatch_type (legacy / fallback)
   //   3. null → un-dispatched delivery order (UI shows "Pending")
+  const platformCommissionPct = platformSettings?.delivery_commission_pct ?? 0.10;
+
   const normalizedOrders = (orders ?? []).map((o: Record<string, unknown>) => {
     const assignments = o.delivery_assignments as Array<{ dispatch_type: string }> | null;
     const restaurant = o.restaurants as
-      | { name: string; paystack_recipient_code: string | null; monnify_bank_verified_at: string | null }
+      | {
+          name: string;
+          paystack_recipient_code: string | null;
+          monnify_bank_verified_at: string | null;
+          delivery_commission_pct: number | null;
+        }
       | null;
 
     const dispatch_type =
@@ -158,6 +166,12 @@ export default async function AdminSettlementsPage() {
       status: o.status as string,
       created_at: o.created_at as string,
       restaurants: restaurant ? { name: restaurant.name } : null,
+      // Effective in-house commission for THIS order's merchant (override or
+      // platform default) — every per-order net on this page must use it.
+      delivery_commission_pct: resolveDeliveryCommissionPct(
+        restaurant?.delivery_commission_pct,
+        platformCommissionPct
+      ),
       // True when the merchant is integrated with a payment gateway (legacy
       // Paystack OR Monnify) — used by the Daily P&L to exclude test merchants
       // whose orders never settle to us. Field name preserved to avoid touching
@@ -193,7 +207,7 @@ export default async function AdminSettlementsPage() {
   }
 
   const merchantSummaries = (allWallets ?? []).map((w: Record<string, unknown>) => {
-    const restaurant = w.restaurants as { name: string; slug: string; paystack_recipient_code: string | null; monnify_bank_verified_at: string | null; auto_payout_enabled: boolean | null } | null;
+    const restaurant = w.restaurants as { name: string; slug: string; paystack_recipient_code: string | null; monnify_bank_verified_at: string | null; auto_payout_enabled: boolean | null; delivery_commission_pct: number | null } | null;
     const rid = w.restaurant_id as string;
     const settlementData = restaurantSettlementMap[rid] ?? { totalPaid: 0, totalPending: 0, settlementCount: 0 };
 
@@ -204,6 +218,9 @@ export default async function AdminSettlementsPage() {
       has_bank_account:
         !!restaurant?.paystack_recipient_code || !!restaurant?.monnify_bank_verified_at,
       auto_payout_enabled: !!restaurant?.auto_payout_enabled,
+      // Raw override (null = inherits the platform default) — the directory's
+      // rate editor needs to distinguish "default" from "custom".
+      delivery_commission_pct_override: restaurant?.delivery_commission_pct ?? null,
       pending_balance_kobo: (w.pending_balance_kobo as number) ?? 0,
       available_balance_kobo: (w.available_balance_kobo as number) ?? 0,
       total_earned_kobo: (w.total_earned_kobo as number) ?? 0,

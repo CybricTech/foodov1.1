@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kitchyn · Thermal Printer Feasibility Test (WebUSB / Web Serial)</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; color: #111; }
+  h1 { font-size: 18px; } h2 { font-size: 15px; margin-top: 28px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #888; background: #fff; cursor: pointer; margin: 4px 6px 4px 0; }
+  button.primary { background: #6d28d9; color: #fff; border-color: #6d28d9; }
+  input[type=text] { font: inherit; padding: 8px; border: 1px solid #888; border-radius: 8px; }
+  #log { background: #0b0b0b; color: #d6d6d6; padding: 12px; border-radius: 8px; height: 280px; overflow: auto; white-space: pre-wrap; font: 12px/1.45 ui-monospace, Menlo, monospace; }
+  .ok { color: #4ade80; } .err { color: #f87171; } .warn { color: #fbbf24; } .dim { color: #888; }
+  .row { margin: 10px 0; }
+  #preview { border: 1px solid #ccc; image-rendering: pixelated; background: #fff; max-width: 100%; }
+</style>
+</head>
+<body>
+  <h1>🖨️ Kitchyn — Thermal Printer Feasibility Test</h1>
+  <p class="dim">Desktop Chrome/Edge, over <b>http://localhost</b> or <b>https</b>. Connect the printer (Method A or B) first, then use Method C to print a receipt with a real merchant logo.</p>
+
+  <h2>Method A — WebUSB (raw USB)</h2>
+  <div class="row">
+    <button class="primary" id="usbBtn">1 · Connect printer (WebUSB)</button>
+    <button id="usbPrint" disabled>Print plain test</button>
+  </div>
+
+  <h2>Method B — Web Serial (USB-serial printers)</h2>
+  <div class="row">
+    <button class="primary" id="serBtn">1 · Connect printer (Web Serial)</button>
+    <button id="serPrint" disabled>Print plain test</button>
+  </div>
+
+  <h2>Method C — Print receipt with merchant logo</h2>
+  <div class="row">
+    <input id="logoUrl" type="text" placeholder="Paste merchant logo_url (https://…)" style="width:58%" />
+    <button id="logoPreview">Preview</button>
+    <button class="primary" id="logoPrint">Print receipt with logo</button>
+  </div>
+  <div class="row dim">1-bit preview — exactly what the printer renders (384 px wide):</div>
+  <canvas id="preview" width="384" height="10"></canvas>
+
+  <h2>Log</h2>
+  <div id="log"></div>
+
+<script>
+const logEl = document.getElementById('log');
+function log(msg, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ── ESC/POS receipt (58mm ≈ 32 chars/line). Pass logoBytes to print a logo. ──
+function buildReceipt(logoBytes) {
+  const enc = new TextEncoder();
+  const chunks = [];
+  const raw = (...b) => chunks.push(Uint8Array.from(b));
+  const text = (s) => chunks.push(enc.encode(s));
+  const ESC = 0x1b, GS = 0x1d;
+  const line = () => text("--------------------------------\n");
+
+  raw(ESC, 0x40);                       // init
+  if (logoBytes) {                      // merchant logo, centered
+    raw(ESC, 0x61, 0x01);
+    chunks.push(logoBytes);
+    raw(0x0a);
+  }
+  raw(ESC, 0x61, 0x01); raw(ESC, 0x21, 0x08);   // center + emphasized
+  text("Drizzy Bites\n");
+  raw(ESC, 0x21, 0x00); raw(ESC, 0x61, 0x00);   // normal + left
+  line();
+  text("Order #TC-1042     18 Jun 3:24pm\n");
+  text("Type: DELIVERY\n");
+  line();
+  raw(ESC, 0x21, 0x08); text("DELIVER TO:\n"); raw(ESC, 0x21, 0x00);
+  text("  Kelechukwu Anyanwu\n");
+  text("  0810 439 3018\n");
+  text("  12 Adeola Odeku St, VI, Lagos\n");
+  text("  Note: call on arrival, gate 3\n");
+  line();
+  text("1x Jollof Rice            2,500\n");
+  text("   + Extra chicken          800\n");
+  text("2x Coke                     600\n");
+  line();
+  text("Subtotal                  4,500\n");
+  text("Delivery                  1,200\n");
+  text("VAT                         225\n");
+  line();
+  raw(ESC, 0x21, 0x08); text("TOTAL                 NGN 5,925\n"); raw(ESC, 0x21, 0x00);
+  line();
+  raw(ESC, 0x61, 0x01);                 // center
+  raw(ESC, 0x4d, 0x01);                 // small font (Font B)
+  text("powered by Kitchyn\n");
+  raw(ESC, 0x4d, 0x00);
+  raw(0x0a, 0x0a, 0x0a, 0x0a);          // feed
+  raw(GS, 0x56, 0x00);                  // cut (ignored if no cutter)
+
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}
+
+// ── Logo → 1-bit ESC/POS raster (GS v 0), centered on a 384px-wide canvas ────
+// Returns the raster bytes AND draws the on-screen preview so quality is visible.
+async function logoToRaster(url) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = () => rej(new Error('Could not load image — check the URL.'));
+    img.src = url;
+  });
+
+  const W = 384;                                   // full printable width
+  const scale = Math.min(1, W / img.width);
+  const lw = Math.max(1, Math.round(img.width * scale));
+  const lh = Math.max(1, Math.round(img.height * scale));
+  const H = lh;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(img, Math.floor((W - lw) / 2), 0, lw, lh);   // center horizontally
+
+  let pix;
+  try { pix = ctx.getImageData(0, 0, W, H); }
+  catch (e) { throw new Error('Canvas is CORS-tainted — the logo URL must allow cross-origin reads. Supabase public/render URLs normally do.'); }
+
+  // grayscale (transparent → white)
+  const gray = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    const r = pix.data[i*4], g = pix.data[i*4+1], b = pix.data[i*4+2], a = pix.data[i*4+3];
+    gray[i] = a < 128 ? 255 : (0.299*r + 0.587*g + 0.114*b);
+  }
+  // Floyd–Steinberg dither → 1 = black
+  const mono = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y*W + x;
+      const nv = gray[i] < 128 ? 0 : 255;
+      const err = gray[i] - nv;
+      mono[i] = nv === 0 ? 1 : 0;
+      if (x+1 < W)               gray[i+1]     += err * 7/16;
+      if (y+1 < H) {
+        if (x > 0)               gray[i-1+W]   += err * 3/16;
+                                 gray[i+W]     += err * 5/16;
+        if (x+1 < W)             gray[i+1+W]   += err * 1/16;
+      }
+    }
+  }
+
+  // preview
+  const prev = document.getElementById('preview');
+  prev.width = W; prev.height = H;
+  const pctx = prev.getContext('2d');
+  const out = pctx.createImageData(W, H);
+  for (let i = 0; i < W*H; i++) {
+    const v = mono[i] ? 0 : 255;
+    out.data[i*4] = out.data[i*4+1] = out.data[i*4+2] = v; out.data[i*4+3] = 255;
+  }
+  pctx.putImageData(out, 0, 0);
+
+  // pack into GS v 0
+  const widthBytes = W / 8;                        // 48
+  const data = new Uint8Array(widthBytes * H);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (mono[y*W + x]) data[y*widthBytes + (x >> 3)] |= (0x80 >> (x & 7));
+
+  const header = new Uint8Array([0x1d, 0x76, 0x30, 0x00,
+    widthBytes & 0xff, (widthBytes >> 8) & 0xff, H & 0xff, (H >> 8) & 0xff]);
+  const raster = new Uint8Array(header.length + data.length);
+  raster.set(header, 0); raster.set(data, header.length);
+  log(`✓ Logo prepared: ${W}×${H} px, ${raster.length} bytes.`, 'ok');
+  return raster;
+}
+
+// ── Transport-agnostic send (chunked, works for whichever is connected) ──────
+async function sendBytes(data) {
+  const CHUNK = 4096;
+  if (usbDevice && usbEpOut !== null) {
+    for (let i = 0; i < data.length; i += CHUNK)
+      await usbDevice.transferOut(usbEpOut, data.slice(i, i + CHUNK));
+    return `USB — sent ${data.length} bytes`;
+  }
+  if (serPort) {
+    const w = serPort.writable.getWriter();
+    for (let i = 0; i < data.length; i += CHUNK) await w.write(data.slice(i, i + CHUNK));
+    w.releaseLock();
+    return `Serial — sent ${data.length} bytes`;
+  }
+  throw new Error('No printer connected — use Method A or B to connect first.');
+}
+
+// ── Method A: WebUSB ───────────────────────────────────────────────────────
+let usbDevice = null, usbEpOut = null;
+async function usbConnect() {
+  if (!('usb' in navigator)) { log('✗ WebUSB not available (insecure origin or wrong browser).', 'err'); return; }
+  try {
+    usbDevice = await navigator.usb.requestDevice({ filters: [] });
+    const id = usbDevice.vendorId.toString(16).padStart(4,'0') + ':' + usbDevice.productId.toString(16).padStart(4,'0');
+    log(`✓ Selected ${usbDevice.productName || '(no name)'} — VID:PID ${id}`, 'ok');
+    await usbDevice.open();
+    if (usbDevice.configuration === null) await usbDevice.selectConfiguration(1);
+    for (const iface of usbDevice.configuration.interfaces) {
+      const out = iface.alternates[0].endpoints.find(e => e.direction === 'out' && e.type === 'bulk');
+      if (out && usbEpOut === null) {
+        await usbDevice.claimInterface(iface.interfaceNumber);
+        usbEpOut = out.endpointNumber;
+        log(`✓ Claimed interface ${iface.interfaceNumber}, OUT endpoint ${usbEpOut}.`, 'ok');
+      }
+    }
+    if (usbEpOut === null) { log('✗ No bulk OUT endpoint found.', 'err'); return; }
+    document.getElementById('usbPrint').disabled = false;
+    log('Ready (WebUSB).', 'ok');
+  } catch (e) {
+    log(`✗ ${e.name}: ${e.message}`, 'err');
+    if (/access denied|claim/i.test(e.message)) log('   → Windows owns the printer driver. Use Zadig → WinUSB, then retry.', 'warn');
+  }
+}
+
+// ── Method B: Web Serial ───────────────────────────────────────────────────
+let serPort = null;
+async function serConnect() {
+  if (!('serial' in navigator)) { log('✗ Web Serial not available.', 'err'); return; }
+  try {
+    serPort = await navigator.serial.requestPort();
+    await serPort.open({ baudRate: 9600 });
+    document.getElementById('serPrint').disabled = false;
+    log('✓ Serial port open at 9600. Ready (Web Serial).', 'ok');
+  } catch (e) { log(`✗ ${e.name}: ${e.message}`, 'err'); }
+}
+
+async function printPlain() {
+  try { log(await sendBytes(buildReceipt(null)) + ' — check paper.', 'ok'); }
+  catch (e) { log(`✗ ${e.message}`, 'err'); }
+}
+async function printWithLogo() {
+  try {
+    const url = document.getElementById('logoUrl').value.trim();
+    if (!url) { log('Paste a logo URL first.', 'warn'); return; }
+    const logo = await logoToRaster(url);
+    log(await sendBytes(buildReceipt(logo)) + ' — check paper.', 'ok');
+  } catch (e) { log(`✗ ${e.message}`, 'err'); }
+}
+async function previewOnly() {
+  try {
+    const url = document.getElementById('logoUrl').value.trim();
+    if (!url) { log('Paste a logo URL first.', 'warn'); return; }
+    await logoToRaster(url);
+    log('Preview rendered above (not printed).', 'dim');
+  } catch (e) { log(`✗ ${e.message}`, 'err'); }
+}
+
+document.getElementById('usbBtn').onclick = usbConnect;
+document.getElementById('usbPrint').onclick = printPlain;
+document.getElementById('serBtn').onclick = serConnect;
+document.getElementById('serPrint').onclick = printPlain;
+document.getElementById('logoPreview').onclick = previewOnly;
+document.getElementById('logoPrint').onclick = printWithLogo;
+
+log('Ready. WebUSB: ' + ('usb' in navigator) + ' · Web Serial: ' + ('serial' in navigator), 'dim');
+</script>
+</body>
+</html>

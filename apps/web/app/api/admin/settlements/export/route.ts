@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveDeliveryCommissionPct } from "@foodo/utils";
+import {
+  summarizeSettlement,
+  type RawSettlementOrder,
+} from "@/lib/settlements/build-settlement";
 
 async function requireSuperAdmin() {
   const supabase = await createServerClient();
@@ -63,8 +68,11 @@ export async function GET(request: NextRequest) {
       delivery_fee_kobo,
       service_fee_kobo,
       total_kobo,
-      restaurants (name, bank_account_name, bank_account_number, bank_code)
-    `
+      dispatch_type,
+      fulfillment_type,
+      delivery_assignments (dispatch_type),
+      restaurants (name, bank_account_name, bank_account_number, bank_code, logistics_default, delivery_commission_pct)
+    ` as never
     )
     .is("settlement_id", null)
     .neq("status", "cancelled")
@@ -80,56 +88,28 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No unsettled orders found for this date" }, { status: 404 });
   }
 
-  // Group by restaurant
-  const grouped: Record<
-    string,
-    {
-      name: string;
-      bankAccountName: string;
-      bankAccountNumber: string;
-      bankCode: string;
-      orderCount: number;
-      grossTotal: number;
-      totalDeliveryFee: number;
-      merchantChargeTotal: number;
-    }
-  > = {};
-
-  const merchantChargePct = Number(settings.merchant_charge_pct ?? 0.01);
-  const commissionPct = settings.delivery_commission_pct;
-
-  for (const o of orders) {
-    const rid = o.restaurant_id;
-    const restaurant = o.restaurants as {
+  type ExportOrderRow = RawSettlementOrder & {
+    restaurant_id: string;
+    restaurants: {
       name: string;
       bank_account_name: string | null;
       bank_account_number: string | null;
       bank_code: string | null;
+      logistics_default: string | null;
+      delivery_commission_pct: number | null;
     } | null;
+  };
 
-    if (!grouped[rid]) {
-      grouped[rid] = {
-        name: restaurant?.name ?? "Unknown",
-        bankAccountName: restaurant?.bank_account_name ?? "",
-        bankAccountNumber: restaurant?.bank_account_number ?? "",
-        bankCode: restaurant?.bank_code ?? "",
-        orderCount: 0,
-        grossTotal: 0,
-        totalDeliveryFee: 0,
-        merchantChargeTotal: 0,
-      };
-    }
-
-    const orderTotal = o.total_kobo ?? (
-      (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0) + (o.service_fee_kobo ?? 0)
-    );
-
-    grouped[rid].orderCount++;
-    grouped[rid].grossTotal +=
-      (o.subtotal_kobo ?? 0) + (o.vat_kobo ?? 0) + (o.delivery_fee_kobo ?? 0);
-    grouped[rid].totalDeliveryFee += o.delivery_fee_kobo ?? 0;
-    grouped[rid].merchantChargeTotal += Math.round(orderTotal * merchantChargePct);
+  // Group by restaurant, then compute each group with the SINGLE canonical
+  // settlement formula (dispatch-aware, per-merchant commission rate) — the
+  // exact math the record route and the payout cron use. The CSV must never
+  // disagree with the amount that would actually be paid.
+  const grouped: Record<string, ExportOrderRow[]> = {};
+  for (const o of orders as unknown as ExportOrderRow[]) {
+    (grouped[o.restaurant_id] ??= []).push(o);
   }
+
+  const merchantChargePct = Number(settings.merchant_charge_pct ?? 0.01);
 
   const header = [
     "Restaurant",
@@ -140,23 +120,33 @@ export async function GET(request: NextRequest) {
     "Gross Total (NGN)",
     "Merchant Charge (NGN)",
     "Delivery Commission (NGN)",
+    "Commission Rate",
     "Net Payout (NGN)",
   ].join(",");
 
-  const rows = Object.values(grouped).map((g) => {
-    const deliveryCommission = Math.round(g.totalDeliveryFee * commissionPct);
-    const netPayout = g.grossTotal - g.merchantChargeTotal - deliveryCommission;
+  const rows = Object.values(grouped).map((groupOrders) => {
+    const restaurant = groupOrders[0].restaurants;
+    const deliveryCommissionPct = resolveDeliveryCommissionPct(
+      restaurant?.delivery_commission_pct,
+      settings.delivery_commission_pct
+    );
+    const { computed } = summarizeSettlement(
+      groupOrders,
+      restaurant?.logistics_default ?? null,
+      { merchantChargePct, deliveryCommissionPct }
+    );
 
     return [
-      escapeCSV(g.name),
-      escapeCSV(g.bankAccountName),
-      escapeCSV(g.bankAccountNumber),
-      escapeCSV(g.bankCode),
-      String(g.orderCount),
-      (g.grossTotal / 100).toFixed(2),
-      (g.merchantChargeTotal / 100).toFixed(2),
-      (deliveryCommission / 100).toFixed(2),
-      (netPayout / 100).toFixed(2),
+      escapeCSV(restaurant?.name ?? "Unknown"),
+      escapeCSV(restaurant?.bank_account_name ?? ""),
+      escapeCSV(restaurant?.bank_account_number ?? ""),
+      escapeCSV(restaurant?.bank_code ?? ""),
+      String(computed.orderCount),
+      (computed.grossTotal / 100).toFixed(2),
+      (computed.merchantChargeTotal / 100).toFixed(2),
+      (computed.deliveryCommissionTotal / 100).toFixed(2),
+      `${(deliveryCommissionPct * 100).toFixed(1)}%`,
+      (computed.netPayout / 100).toFixed(2),
     ].join(",");
   });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getPostHogClient } from "@/lib/posthog";
+import { resolveDeliveryCommissionPct } from "@foodo/utils";
 import {
   summarizeSettlement,
   SETTLEMENT_ORDER_COLUMNS,
@@ -85,11 +86,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Logistics default is needed to resolve dispatch_type for any order that
-  // wasn't explicitly dispatched (mirrors the admin/wallet UIs exactly).
+  // Logistics default resolves dispatch_type for any order that wasn't
+  // explicitly dispatched; delivery_commission_pct is the merchant's negotiated
+  // override of the platform rate (mirrors the admin/wallet UIs exactly).
   const { data: restaurantLogistics } = await auth.serviceClient
     .from("restaurants")
-    .select("logistics_default")
+    .select("logistics_default, delivery_commission_pct" as never)
     .eq("id", restaurant_id)
     .single();
 
@@ -114,12 +116,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const logisticsDefault =
-    (restaurantLogistics as { logistics_default: string | null } | null)?.logistics_default ?? null;
+  const restaurantRates = restaurantLogistics as {
+    logistics_default: string | null;
+    delivery_commission_pct: number | null;
+  } | null;
+  const logisticsDefault = restaurantRates?.logistics_default ?? null;
 
   const feeSettings = {
     merchantChargePct: Number(settings.merchant_charge_pct ?? 0.01),
-    deliveryCommissionPct: Number(settings.delivery_commission_pct ?? 0.1),
+    deliveryCommissionPct: resolveDeliveryCommissionPct(
+      restaurantRates?.delivery_commission_pct,
+      settings.delivery_commission_pct
+    ),
   };
 
   // Resolve dispatch_type per order + compute the payout with the SINGLE
@@ -221,6 +229,7 @@ export async function POST(request: NextRequest) {
       gross_total_kobo: grossTotal,
       merchant_charge_total_kobo: merchantChargeTotal,
       delivery_commission_kobo: deliveryCommission,
+      delivery_commission_pct_applied: feeSettings.deliveryCommissionPct,
       net_payout_kobo: netPayout,
     },
   });

@@ -36,7 +36,12 @@ import {
   X,
 } from "lucide-react-native";
 
-import { formatKobo, computeOrderNet, computePendingPayoutBreakdown } from "@foodo/utils";
+import {
+  formatKobo,
+  computeOrderNet,
+  computePendingPayoutBreakdown,
+  resolveDeliveryCommissionPct,
+} from "@foodo/utils";
 import type { PendingPayoutBreakdown } from "@foodo/utils";
 
 import { getSupabase } from "../../lib/supabase";
@@ -186,6 +191,7 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
       { data: setts },
       { data: ords },
       { data: platformSettings },
+      { data: restaurantRates },
       { data: wallet },
       { count: orderCount },
     ] = await Promise.all([
@@ -219,6 +225,11 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
         .select("merchant_charge_pct, delivery_commission_pct")
         .single(),
       supabase
+        .from("restaurants")
+        .select("delivery_commission_pct")
+        .eq("id", restaurantId)
+        .single(),
+      supabase
         .from("restaurant_wallets")
         .select("pending_balance_kobo")
         .eq("restaurant_id", restaurantId)
@@ -245,7 +256,13 @@ export function WalletScreen({ restaurantId }: WalletScreenProps) {
       };
       setFees({
         merchantChargePct: ps.merchant_charge_pct ?? 0.01,
-        deliveryCommissionPct: ps.delivery_commission_pct ?? 0.1,
+        // Merchant-effective rate: this restaurant's negotiated override when
+        // set, else the platform default — mirrors the web wallet exactly.
+        deliveryCommissionPct: resolveDeliveryCommissionPct(
+          (restaurantRates as { delivery_commission_pct: number | null } | null)
+            ?.delivery_commission_pct,
+          ps.delivery_commission_pct
+        ),
       });
     }
   }, [restaurantId, supabase]);

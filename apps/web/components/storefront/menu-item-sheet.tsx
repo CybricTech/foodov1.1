@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X } from "lucide-react";
+import { X, CalendarClock } from "lucide-react";
 import Image from "next/image";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
@@ -225,6 +225,14 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect, sale = n
     .filter((i) => i.id !== item.id && i.is_available && i.category_id === item.category_id)
     .slice(0, 8);
 
+  const itemExt = item as unknown as {
+    is_made_to_order?: boolean;
+    made_to_order_lead_hours?: number | null;
+  };
+  const madeToOrderLeadHours = itemExt.is_made_to_order
+    ? itemExt.made_to_order_lead_hours ?? null
+    : null;
+
   const isSizedItem =
     item.price_kobo === 0 &&
     item.options?.some((o) => o.is_required && o.max_selections === 1);
@@ -341,6 +349,25 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect, sale = n
               </p>
             );
           })()}
+
+          {/* Made to Order — prominent, on-brand callout. A small badge on the
+              grid card isn't enough on its own (easy to miss), so this
+              repeats the notice right where the customer is about to commit
+              to the item, in the restaurant's own brand colour. */}
+          {madeToOrderLeadHours && (
+            <div className="mt-4 flex items-start gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-3.5">
+              <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0">
+                <CalendarClock size={17} className="text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-primary">Made to Order</p>
+                <p className="text-xs text-black-600 mt-0.5 leading-relaxed">
+                  This item needs at least <strong>{madeToOrderLeadHours} hours&rsquo;</strong> notice
+                  — you&rsquo;ll pick a pickup/delivery time for your whole order at checkout.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Options */}
           {item.options?.map((opt) => {

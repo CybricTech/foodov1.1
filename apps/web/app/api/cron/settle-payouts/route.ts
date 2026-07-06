@@ -11,6 +11,7 @@ import {
   createTransferRecipient,
   getNgnBalanceKobo,
 } from "@/lib/paystack";
+import { resolveDeliveryCommissionPct } from "@foodo/utils";
 import { getPostHogClient } from "@/lib/posthog";
 
 export const dynamic = "force-dynamic";
@@ -78,10 +79,7 @@ export async function POST(request: NextRequest) {
 
   const shadow = s.auto_payout_shadow !== false; // default-safe: only real when explicitly false
   const holdHours = Number(s.settlement_hold_hours ?? 24);
-  const feeSettings = {
-    merchantChargePct: Number(s.merchant_charge_pct ?? 0.01),
-    deliveryCommissionPct: Number(s.delivery_commission_pct ?? 0.1),
-  };
+  const merchantChargePct = Number(s.merchant_charge_pct ?? 0.01);
 
   const nowMs = Date.now();
   // Only orders whose own hold window has fully elapsed are eligible. This is
@@ -96,8 +94,8 @@ export async function POST(request: NextRequest) {
   const { data: merchants, error: merchErr } = await supabase
     .from("restaurants")
     .select(
-      "id, name, logistics_default, paystack_recipient_code, bank_code, " +
-        "bank_account_number, bank_account_name" as never
+      "id, name, logistics_default, delivery_commission_pct, paystack_recipient_code, " +
+        "bank_code, bank_account_number, bank_account_name" as never
     )
     .eq("auto_payout_enabled", true as never);
 
@@ -109,6 +107,7 @@ export async function POST(request: NextRequest) {
     id: string;
     name: string | null;
     logistics_default: string | null;
+    delivery_commission_pct: number | null;
     paystack_recipient_code: string | null;
     bank_code: string | null;
     bank_account_number: string | null;
@@ -179,10 +178,17 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Per-merchant fee settings: negotiated commission override, else platform.
       const { computed, orderIds } = summarizeSettlement(
         ordersRaw as unknown as RawSettlementOrder[],
         m.logistics_default,
-        feeSettings
+        {
+          merchantChargePct,
+          deliveryCommissionPct: resolveDeliveryCommissionPct(
+            m.delivery_commission_pct,
+            s.delivery_commission_pct
+          ),
+        }
       );
       const netKobo = computed.netPayout;
 

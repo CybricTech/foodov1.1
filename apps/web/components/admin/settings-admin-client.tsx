@@ -446,7 +446,7 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-black-500 mb-1">Delivery commission (%)</label>
+              <label className="block text-xs font-medium text-black-500 mb-1">Delivery commission — default (%)</label>
               <div className="relative">
                 <input
                   type="number"
@@ -459,6 +459,10 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-black-400">%</span>
               </div>
+              <p className="text-[10px] text-black-400 mt-1">
+                Platform-wide default for in-house (own/3rd-party rider) deliveries. Per-merchant
+                overrides are set on Settlements → Merchants.
+              </p>
             </div>
           </div>
 

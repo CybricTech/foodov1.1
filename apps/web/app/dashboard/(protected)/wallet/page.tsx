@@ -1,6 +1,7 @@
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { redirect } from "next/navigation";
+import { resolveDeliveryCommissionPct } from "@foodo/utils";
 import { WalletClient } from "@/components/dashboard/wallet-client";
 
 export const dynamic = "force-dynamic";
@@ -79,12 +80,15 @@ export default async function WalletPage() {
       .select("merchant_charge_pct, delivery_commission_pct")
       .single(),
 
-    // Logistics default for dispatch_type fallback
+    // Logistics default for dispatch_type fallback + this merchant's negotiated
+    // commission override (null = platform default)
     supabase
       .from("restaurants")
-      .select("logistics_default")
+      .select("logistics_default, delivery_commission_pct" as never)
       .eq("id", session.restaurantId)
-      .single(),
+      .single() as unknown as Promise<{
+        data: { logistics_default: string | null; delivery_commission_pct: number | null } | null;
+      }>,
 
     // Authoritative pending balance — recomputed above over ALL orders.
     serviceClient
@@ -139,7 +143,12 @@ export default async function WalletPage() {
       processedOrderCount={processedOrderCount ?? normalizedOrders.length}
       platformSettings={{
         merchantChargePct: platformSettings?.merchant_charge_pct ?? 0.01,
-        deliveryCommissionPct: platformSettings?.delivery_commission_pct ?? 0.10,
+        // Merchant-effective rate (their override, else the platform default) —
+        // the breakdown the merchant sees must equal what settlement charges.
+        deliveryCommissionPct: resolveDeliveryCommissionPct(
+          restaurant?.delivery_commission_pct,
+          platformSettings?.delivery_commission_pct
+        ),
       }}
     />
   );
