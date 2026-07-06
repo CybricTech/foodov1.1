@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getRequestUser } from "@/lib/supabase/get-request-user";
 import { sendTelegramRiderAlert } from "@/lib/telegram";
+import { resolveDeliveryCommissionPct } from "@foodo/utils";
 
 /**
  * POST /api/dashboard/orders/dispatch
@@ -158,14 +159,23 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (!existingLogistics || existingLogistics.length === 0) {
-      // Delivery commission rate (configurable; default 10%)
-      const { data: settings } = await serviceClient
-        .from("platform_settings")
-        .select("delivery_commission_pct, settlement_hold_hours")
-        .single();
-      const commissionPct = Number(
+      // Delivery commission rate: merchant override, else platform default (10%)
+      const [{ data: settings }, { data: restaurantRate }] = await Promise.all([
+        serviceClient
+          .from("platform_settings")
+          .select("delivery_commission_pct, settlement_hold_hours")
+          .single(),
+        serviceClient
+          .from("restaurants")
+          .select("delivery_commission_pct" as never)
+          .eq("id", order.restaurant_id)
+          .single(),
+      ]);
+      const commissionPct = resolveDeliveryCommissionPct(
+        (restaurantRate as unknown as { delivery_commission_pct?: number | null } | null)
+          ?.delivery_commission_pct,
         (settings as unknown as { delivery_commission_pct?: number } | null)
-          ?.delivery_commission_pct ?? 0.1
+          ?.delivery_commission_pct
       );
       const holdHours = Number(
         (settings as unknown as { settlement_hold_hours?: number } | null)

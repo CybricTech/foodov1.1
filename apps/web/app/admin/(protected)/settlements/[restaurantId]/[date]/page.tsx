@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
+import { resolveDeliveryCommissionPct } from "@foodo/utils";
 import { SettlementDayDetailClient } from "@/components/admin/settlement-day-detail-client";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export default async function SettlementDayDetailPage({ params }: PageProps) {
 
   const restaurantRes = await (supabase
     .from("restaurants")
-    .select("id, name, slug, logistics_default" as never)
+    .select("id, name, slug, logistics_default, delivery_commission_pct" as never)
     .eq("id", restaurantId)
     .single() as unknown as Promise<{
       data: {
@@ -37,6 +38,7 @@ export default async function SettlementDayDetailPage({ params }: PageProps) {
         name: string;
         slug: string;
         logistics_default: string | null;
+        delivery_commission_pct: number | null;
       } | null;
     }>);
   const restaurant = restaurantRes.data;
@@ -135,7 +137,12 @@ export default async function SettlementDayDetailPage({ params }: PageProps) {
         settlements={settlements ?? []}
         platformSettings={{
           merchantChargePct: platformSettings?.merchant_charge_pct ?? 0.01,
-          deliveryCommissionPct: platformSettings?.delivery_commission_pct ?? 0.1,
+          // Merchant-effective rate — must match what the record route will
+          // actually charge when this day is settled.
+          deliveryCommissionPct: resolveDeliveryCommissionPct(
+            restaurant.delivery_commission_pct,
+            platformSettings?.delivery_commission_pct
+          ),
         }}
       />
     </div>

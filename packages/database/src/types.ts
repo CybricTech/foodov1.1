@@ -1404,6 +1404,7 @@ export type Database = {
           closure_message: string | null
           closure_message_history: string[]
           created_at: string
+          delivery_commission_pct: number | null
           delivery_fee: number
           delivery_radius_km: number | null
           description: string | null
@@ -1453,6 +1454,7 @@ export type Database = {
           closure_message?: string | null
           closure_message_history?: string[]
           created_at?: string
+          delivery_commission_pct?: number | null
           delivery_fee?: number
           delivery_radius_km?: number | null
           description?: string | null
@@ -1502,6 +1504,7 @@ export type Database = {
           closure_message?: string | null
           closure_message_history?: string[]
           created_at?: string
+          delivery_commission_pct?: number | null
           delivery_fee?: number
           delivery_radius_km?: number | null
           description?: string | null
