@@ -24,6 +24,7 @@ export function ScheduleOrderSheet({
   openingHours,
   schedulingSettings,
   allowNow,
+  requiredNoticeHours,
   initialMode,
   initialSlot,
   brandColor,
@@ -38,6 +39,10 @@ export function ScheduleOrderSheet({
   /** False when the store is schedule-closed or a Made to Order item forces
    *  scheduling — hides the "Order now" option entirely. */
   allowNow: boolean;
+  /** Set when a Made to Order item is forcing scheduling — shows the reason
+   *  inline so a customer who opens the sheet without reading the trigger
+   *  row still understands why "Order now" isn't offered. */
+  requiredNoticeHours?: number | null;
   initialMode: "now" | "later";
   initialSlot: string | null;
   brandColor?: string;
@@ -97,13 +102,26 @@ export function ScheduleOrderSheet({
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center animate-slide-up">
       <div className="bg-white rounded-t-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[85vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
-          <h2 className="text-xl font-extrabold text-black-900">
-            Schedule {fulfillmentLabel}
-          </h2>
+        <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3 flex-shrink-0">
+          <div>
+            <h2 className="text-xl font-extrabold text-black-900">
+              Schedule {fulfillmentLabel}
+            </h2>
+            {!allowNow && requiredNoticeHours && (
+              <p className="text-xs text-primary font-medium mt-1 leading-relaxed">
+                This order includes a Made to Order item — please pick a time at
+                least {requiredNoticeHours}h from now.
+              </p>
+            )}
+            {!allowNow && !requiredNoticeHours && (
+              <p className="text-xs text-black-400 font-medium mt-1">
+                We&rsquo;re closed right now — pick a time for when we open.
+              </p>
+            )}
+          </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-black-100 text-black-500 hover:bg-black-200 transition-colors cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-black-100 text-black-500 hover:bg-black-200 transition-colors cursor-pointer flex-shrink-0"
             aria-label="Close"
           >
             <X size={16} />

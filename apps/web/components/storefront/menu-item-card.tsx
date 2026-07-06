@@ -7,13 +7,19 @@ import type { MenuItemWithOptions } from "@foodo/database";
 import { transformImage } from "@/lib/images";
 import { ItemPrice, SalePill, type MenuSale } from "./menu-price";
 
-/** "Made to Order" pill — flags items that need real advance notice (088). */
+/**
+ * "Made to Order" pill — flags items that need real advance notice (088).
+ * Uses the restaurant's own brand colour (bg-primary/text-primary resolve to
+ * --brand-color, set per-restaurant in the storefront layout) — this is a
+ * customer-facing storefront element, so it must look native to THIS store's
+ * branding, not a generic platform sticker.
+ */
 export function MadeToOrderBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
         "flex-shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5",
-        "text-[9px] font-extrabold uppercase tracking-wider text-purple-700 bg-purple-100",
+        "text-[9px] font-extrabold uppercase tracking-wider text-primary bg-primary/10",
         className
       )}
     >
@@ -91,8 +97,8 @@ export function MenuItemCard({ item, onSelect, sale = null }: MenuItemCardProps)
           </p>
         )}
         {madeToOrder && !unavailable && itemExt.made_to_order_lead_hours && (
-          <p className="mt-0.5 text-[11px] text-purple-600 font-medium">
-            Order {itemExt.made_to_order_lead_hours}h ahead
+          <p className="mt-0.5 text-[11px] text-primary font-semibold">
+            Requires {itemExt.made_to_order_lead_hours}h notice
           </p>
         )}
         <div className="mt-2 text-sm font-bold">

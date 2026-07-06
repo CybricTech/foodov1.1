@@ -1033,31 +1033,57 @@ export default function CheckoutPage() {
 
           {/* "When?" — a compact row that opens the schedule bottom sheet,
               rather than permanently expanding the card the moment a
-              merchant enables pre-orders. */}
+              merchant enables pre-orders. When a Made to Order item forces
+              scheduling, the row itself is called out (brand-tinted, a
+              "Required" tag, the lead time spelled out) AND a line stays
+              visible underneath at all times — the row label alone
+              ("Pick a time") isn't enough on its own; a customer shouldn't
+              have to open the sheet to learn why "Now" isn't available. */}
           {schedulingEnabled && !madeToOrderBlocked && (
-            <button
-              type="button"
-              onClick={() => setShowScheduleSheet(true)}
-              className="w-full px-4 py-4 border-b border-black-100 flex items-center gap-3 text-left hover:bg-black-50 transition-colors cursor-pointer"
-            >
-              <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <CalendarClock size={16} className="text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-black-400 font-medium">When?</p>
-                <p className="text-sm font-semibold text-black-900 truncate">
-                  {isScheduling && scheduledFor
-                    ? formatLagosSlotRangeLabel(
-                        new Date(scheduledFor),
-                        effectiveSchedulingSettings.slot_granularity_minutes
-                      )
-                    : isScheduling
-                      ? "Pick a time"
-                      : "Order now"}
+            <div className={cn(madeToOrderRequired && "bg-primary/5")}>
+              <button
+                type="button"
+                onClick={() => setShowScheduleSheet(true)}
+                className={cn(
+                  "w-full px-4 py-4 flex items-center gap-3 text-left transition-colors cursor-pointer",
+                  madeToOrderRequired
+                    ? "hover:bg-primary/10"
+                    : "border-b border-black-100 hover:bg-black-50"
+                )}
+              >
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <CalendarClock size={16} className="text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs text-black-400 font-medium">When?</p>
+                    {madeToOrderRequired && !scheduledFor && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/15 px-1.5 py-0.5 rounded-full">
+                        Required
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-semibold text-black-900 truncate">
+                    {isScheduling && scheduledFor
+                      ? formatLagosSlotRangeLabel(
+                          new Date(scheduledFor),
+                          effectiveSchedulingSettings.slot_granularity_minutes
+                        )
+                      : madeToOrderRequired
+                        ? `Pick a time — ${requiredLeadHours}h notice needed`
+                        : isScheduling
+                          ? "Pick a time"
+                          : "Order now"}
+                  </p>
+                </div>
+                <ChevronRight size={16} className="text-black-300 flex-shrink-0" />
+              </button>
+              {madeToOrderRequired && (
+                <p className="px-4 pb-3 -mt-1 text-xs text-primary font-medium border-b border-black-100">
+                  Your cart includes a Made to Order item, so this order must be scheduled.
                 </p>
-              </div>
-              <ChevronRight size={16} className="text-black-300 flex-shrink-0" />
-            </button>
+              )}
+            </div>
           )}
 
           {showScheduleSheet && (
@@ -1066,6 +1092,7 @@ export default function CheckoutPage() {
               openingHours={restExt.opening_hours}
               schedulingSettings={effectiveSchedulingSettings}
               allowNow={!scheduleClosed && !madeToOrderRequired}
+              requiredNoticeHours={madeToOrderRequired ? requiredLeadHours : undefined}
               initialMode={whenMode}
               initialSlot={scheduledFor}
               brandColor={restaurant.primary_color ?? undefined}
@@ -1089,10 +1116,20 @@ export default function CheckoutPage() {
                 <p className="text-sm font-semibold text-black-900">
                   {restaurant.address ?? restaurant.name}
                 </p>
-                {restaurant.estimated_delivery_minutes && (
+                {isScheduling && scheduledFor ? (
                   <p className="text-xs text-black-400 mt-1">
-                    Ready in ~{restaurant.estimated_delivery_minutes} min
+                    Scheduled for{" "}
+                    {formatLagosSlotRangeLabel(
+                      new Date(scheduledFor),
+                      effectiveSchedulingSettings.slot_granularity_minutes
+                    )}
                   </p>
+                ) : (
+                  restaurant.estimated_delivery_minutes && (
+                    <p className="text-xs text-black-400 mt-1">
+                      Ready in ~{restaurant.estimated_delivery_minutes} min
+                    </p>
+                  )
                 )}
               </div>
             </div>
