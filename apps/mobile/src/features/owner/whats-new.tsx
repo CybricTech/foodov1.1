@@ -241,16 +241,19 @@ export function WhatsNew({ userId }: { userId: string }) {
                   </View>
 
                   {current.image_url ? (
+                    // resizeMode "contain" (not "cover") so a tall/portrait
+                    // screenshot is never cropped — the backgroundColor fills
+                    // any letterboxing when the aspect ratio doesn't match.
                     <Image
                       source={{ uri: current.image_url }}
                       style={{
                         width: "100%",
-                        height: 160,
+                        height: 280,
                         borderRadius: 16,
                         marginBottom: 16,
                         backgroundColor: theme.colors.black[100],
                       }}
-                      resizeMode="cover"
+                      resizeMode="contain"
                     />
                   ) : null}
 

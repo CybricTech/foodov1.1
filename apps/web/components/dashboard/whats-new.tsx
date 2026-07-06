@@ -138,7 +138,7 @@ export function WhatsNew({
           style={{ animation: "wnBackdrop 0.45s ease both" }}
         >
           <div
-            className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-md md:mx-4 max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
+            className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-lg md:mx-4 max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
             style={{ animation: "whatsNewIn 0.6s cubic-bezier(0.22,1,0.36,1) both" }}
           >
@@ -213,7 +213,11 @@ export function WhatsNew({
                 <img
                   src={current.image_url}
                   alt=""
-                  className="w-full h-40 object-cover rounded-2xl mb-4 border border-black-100"
+                  // object-contain (not cover) so a tall/portrait screenshot is
+                  // never cropped — the whole image always fits, letterboxed
+                  // on a neutral background when its aspect ratio doesn't fill
+                  // the box exactly.
+                  className="w-full h-64 sm:h-72 object-contain rounded-2xl mb-4 border border-black-100 bg-black-50"
                 />
               )}
 
