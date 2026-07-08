@@ -1393,7 +1393,9 @@ export type Database = {
       }
       restaurants: {
         Row: {
+          accepts_delivery: boolean
           accepts_orders: boolean
+          accepts_pickup: boolean
           address: string | null
           auto_payout_enabled: boolean
           bank_account_name: string | null
@@ -1443,7 +1445,9 @@ export type Database = {
           youtube_url: string | null
         }
         Insert: {
+          accepts_delivery?: boolean
           accepts_orders?: boolean
+          accepts_pickup?: boolean
           address?: string | null
           auto_payout_enabled?: boolean
           bank_account_name?: string | null
@@ -1493,7 +1497,9 @@ export type Database = {
           youtube_url?: string | null
         }
         Update: {
+          accepts_delivery?: boolean
           accepts_orders?: boolean
+          accepts_pickup?: boolean
           address?: string | null
           auto_payout_enabled?: boolean
           bank_account_name?: string | null

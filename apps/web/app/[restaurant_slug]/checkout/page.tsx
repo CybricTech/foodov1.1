@@ -61,7 +61,21 @@ export default function CheckoutPage() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("delivery");
+  // Merchant fulfillment switches (090). ?? true keeps old cached restaurant
+  // records (fetched before the columns existed) offering both methods.
+  const allowsDelivery = restaurant.accepts_delivery ?? true;
+  const allowsPickup = restaurant.accepts_pickup ?? true;
+
+  const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">(
+    allowsDelivery ? "delivery" : "pickup"
+  );
+
+  // Clamp if the merchant's switches changed after mount (or state was
+  // restored) so a disabled method can never stay selected.
+  useEffect(() => {
+    if (fulfillmentType === "delivery" && !allowsDelivery) setFulfillmentType("pickup");
+    if (fulfillmentType === "pickup" && !allowsPickup) setFulfillmentType("delivery");
+  }, [fulfillmentType, allowsDelivery, allowsPickup]);
 
   const [addressInput, setAddressInput] = useState("");
   const [selectedPlaceAddress, setSelectedPlaceAddress] = useState("");
@@ -993,24 +1007,33 @@ export default function CheckoutPage() {
       <div className="px-4 mt-5 space-y-5">
         {/* Order type card */}
         <div className="bg-white rounded-2xl border border-black-100 overflow-hidden">
-          {/* Pickup / Delivery toggle */}
+          {/* Pickup / Delivery toggle — a single static pill when the
+              merchant only offers one method (090) */}
           <div className="p-4 border-b border-black-100">
-            <div className="flex bg-black-100 rounded-xl p-1 gap-1">
-              {(["delivery", "pickup"] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setFulfillmentType(type)}
-                  className={cn(
-                    "flex-1 py-2.5 rounded-lg text-sm font-semibold capitalize transition-colors cursor-pointer",
-                    fulfillmentType === type
-                      ? "bg-white text-black-900 shadow-sm"
-                      : "text-black-400 hover:text-black-600"
-                  )}
-                >
-                  {type === "pickup" ? "Pickup" : "Delivery"}
-                </button>
-              ))}
-            </div>
+            {allowsDelivery && allowsPickup ? (
+              <div className="flex bg-black-100 rounded-xl p-1 gap-1">
+                {(["delivery", "pickup"] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => setFulfillmentType(type)}
+                    className={cn(
+                      "flex-1 py-2.5 rounded-lg text-sm font-semibold capitalize transition-colors cursor-pointer",
+                      fulfillmentType === type
+                        ? "bg-white text-black-900 shadow-sm"
+                        : "text-black-400 hover:text-black-600"
+                    )}
+                  >
+                    {type === "pickup" ? "Pickup" : "Delivery"}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex bg-black-100 rounded-xl p-1">
+                <div className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-center bg-white text-black-900 shadow-sm">
+                  {allowsPickup ? "Pickup only" : "Delivery only"}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Made to Order (088) but pre-orders are off — a merchant

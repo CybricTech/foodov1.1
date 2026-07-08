@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
   // Verify restaurant exists and accepts orders
   const { data: restaurant, error: restError } = await supabase
     .from("restaurants")
-    .select("id, name, accepts_orders, min_order_amount, delivery_fee, is_test")
+    .select("id, name, accepts_orders, accepts_delivery, accepts_pickup, min_order_amount, delivery_fee, is_test")
     .eq("id", data.restaurantId)
     .eq("is_active", true)
     .single();
@@ -124,6 +124,22 @@ export async function POST(request: NextRequest) {
   if (!restaurant.accepts_orders) {
     return NextResponse.json(
       { error: "This restaurant is currently closed" },
+      { status: 409 }
+    );
+  }
+
+  // Merchant fulfillment switches (090). The checkout UI hides a disabled
+  // method, but the restaurant record it renders from is cached up to 5 min —
+  // this is the authoritative check.
+  if (data.fulfillmentType === "delivery" && restaurant.accepts_delivery === false) {
+    return NextResponse.json(
+      { error: "This restaurant only offers pickup" },
+      { status: 409 }
+    );
+  }
+  if (data.fulfillmentType === "pickup" && restaurant.accepts_pickup === false) {
+    return NextResponse.json(
+      { error: "This restaurant only offers delivery" },
       { status: 409 }
     );
   }
