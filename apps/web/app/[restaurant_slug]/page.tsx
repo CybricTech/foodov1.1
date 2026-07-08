@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Star, Clock, ShoppingBag } from "lucide-react";
+import { Star, Clock, ShoppingBag, Store, Bike } from "lucide-react";
 import {
   getCachedRestaurant,
   getCachedReviews,
@@ -57,10 +57,17 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
         Date.parse(b.created_at) - Date.parse(a.created_at)
     );
 
+  // Merchant fulfillment switches (090). ?? true keeps cached pre-090 records
+  // behaving as before (both methods on).
+  const allowsDelivery = restaurant.accepts_delivery ?? true;
+  const allowsPickup = restaurant.accepts_pickup ?? true;
+  const singleMethod = !allowsDelivery || !allowsPickup;
+
   const hasInfoChips =
     ratingSummary.count > 0 ||
-    !!restaurant.estimated_delivery_minutes ||
-    !!restaurant.min_order_amount;
+    (!!restaurant.estimated_delivery_minutes && allowsDelivery) ||
+    !!restaurant.min_order_amount ||
+    singleMethod;
 
   return (
     <>
@@ -145,10 +152,16 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
                   <span className="text-white/60">({ratingSummary.count})</span>
                 </span>
               )}
-              {restaurant.estimated_delivery_minutes && (
+              {restaurant.estimated_delivery_minutes && allowsDelivery && (
                 <span className="inline-flex items-center gap-1 bg-white/15 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1.5 rounded-full border border-white/20">
                   <Clock size={10} />
                   {restaurant.estimated_delivery_minutes} min
+                </span>
+              )}
+              {singleMethod && (
+                <span className="inline-flex items-center gap-1 bg-white/15 backdrop-blur-sm text-white text-xs font-semibold px-2.5 py-1.5 rounded-full border border-white/20">
+                  {allowsPickup ? <Store size={10} /> : <Bike size={10} />}
+                  {allowsPickup ? "Pickup only" : "Delivery only"}
                 </span>
               )}
               {restaurant.min_order_amount && (

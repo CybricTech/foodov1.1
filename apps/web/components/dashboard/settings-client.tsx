@@ -491,6 +491,9 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   );
   const [logisticsDefault, setLogisticsDefault] = useState(r.logistics_default);
   const [acceptsOrders, setAcceptsOrders] = useState(r.accepts_orders);
+  const [acceptsDelivery, setAcceptsDelivery] = useState(r.accepts_delivery ?? true);
+  const [acceptsPickup, setAcceptsPickup] = useState(r.accepts_pickup ?? true);
+  const [fulfillmentHint, setFulfillmentHint] = useState("");
   const [closureMessage, setClosureMessage] = useState(r.closure_message ?? "");
   const [openingHours, setOpeningHours] = useState<OpeningHours>(
     r.opening_hours ?? DEFAULT_HOURS
@@ -637,6 +640,8 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         vat_percentage: vatPercentage ? parseFloat(vatPercentage) : null,
         logistics_default: logisticsDefault,
         accepts_orders: acceptsOrders,
+        accepts_delivery: acceptsDelivery,
+        accepts_pickup: acceptsPickup,
         closure_message: closureMessage || null,
         opening_hours: openingHours,
         scheduling_settings: schedulingSettings,
@@ -1004,6 +1009,66 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                 <option value="third_party">Third-Party (Kwik etc.)</option>
               </select>
             </Field>
+          </Section>
+
+          {/* Fulfillment methods */}
+          <Section title="Fulfillment methods">
+            <p className="text-xs text-black-400 -mt-1 mb-1">
+              Choose how customers can receive orders. At least one method must stay on.
+            </p>
+            {(
+              [
+                {
+                  key: "delivery" as const,
+                  title: "Delivery",
+                  sub: "Customers can order for delivery",
+                  value: acceptsDelivery,
+                },
+                {
+                  key: "pickup" as const,
+                  title: "Pickup",
+                  sub: "Customers can collect orders themselves",
+                  value: acceptsPickup,
+                },
+              ]
+            ).map(({ key, title, sub, value }) => (
+              <div key={key} className="flex items-center justify-between py-3 border-b border-black-100 last:border-b-0">
+                <div>
+                  <p className="text-sm font-medium text-black-900">{title}</p>
+                  <p className="text-xs text-black-400">{sub}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const other = key === "delivery" ? acceptsPickup : acceptsDelivery;
+                    if (value && !other) {
+                      setFulfillmentHint("At least one method must stay on");
+                      return;
+                    }
+                    setFulfillmentHint("");
+                    if (key === "delivery") setAcceptsDelivery(!value);
+                    else setAcceptsPickup(!value);
+                  }}
+                  aria-label={value ? `${title} is on — tap to turn off` : `${title} is off — tap to turn on`}
+                  aria-checked={value}
+                  role="switch"
+                  className={cn(
+                    "relative w-12 h-6 rounded-full transition-colors flex-shrink-0",
+                    value ? "bg-purple-500" : "bg-black-200"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform",
+                      value ? "left-7" : "left-1"
+                    )}
+                  />
+                </button>
+              </div>
+            ))}
+            {fulfillmentHint && (
+              <p className="text-xs text-cinnabar-500 mt-1">{fulfillmentHint}</p>
+            )}
           </Section>
 
           {/* Close store */}

@@ -43,6 +43,7 @@ import {
   MapPin,
   Lock,
   ImagePlus,
+  Bike,
 } from "lucide-react-native";
 
 import { router } from "expo-router";
@@ -103,6 +104,9 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
   const [vatPercentage, setVatPercentage] = useState("");
   const [logisticsDefault, setLogisticsDefault] = useState("platform_rider");
   const [acceptsOrders, setAcceptsOrders] = useState(true);
+  const [acceptsDelivery, setAcceptsDelivery] = useState(true);
+  const [acceptsPickup, setAcceptsPickup] = useState(true);
+  const [fulfillmentHint, setFulfillmentHint] = useState("");
   const [closureMessage, setClosureMessage] = useState("");
   const [openingHours, setOpeningHours] = useState<OpeningHours>(DEFAULT_HOURS);
 
@@ -187,6 +191,8 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
     setVatPercentage(row.vat_percentage != null ? String(row.vat_percentage) : "");
     setLogisticsDefault(row.logistics_default ?? "platform_rider");
     setAcceptsOrders(row.accepts_orders);
+    setAcceptsDelivery(row.accepts_delivery ?? true);
+    setAcceptsPickup(row.accepts_pickup ?? true);
     setClosureMessage(row.closure_message ?? "");
     setOpeningHours((row.opening_hours as OpeningHours | null) ?? DEFAULT_HOURS);
     setNotificationEmail(row.notification_email ?? "");
@@ -285,6 +291,8 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         vat_percentage: vatPercentage ? parseFloat(vatPercentage) : null,
         logistics_default: logisticsDefault,
         accepts_orders: acceptsOrders,
+        accepts_delivery: acceptsDelivery,
+        accepts_pickup: acceptsPickup,
         closure_message: closureMessage || null,
         opening_hours: openingHours,
         instagram_url: instagramUrl || null,
@@ -609,6 +617,53 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
               ))}
             </View>
           </Field>
+        </Section>
+
+        {/* Fulfillment methods */}
+        <Section
+          title="Fulfillment methods"
+          icon={<Bike size={18} color={theme.colors.brand} strokeWidth={2.25} />}
+          subtitle="Choose how customers can receive orders. At least one method must stay on."
+        >
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleTitle}>Delivery</Text>
+              <Text style={styles.toggleSub}>Customers can order for delivery</Text>
+            </View>
+            <Switch
+              value={acceptsDelivery}
+              onValueChange={(v) => {
+                if (!v && !acceptsPickup) {
+                  setFulfillmentHint("At least one method must stay on");
+                  return;
+                }
+                setFulfillmentHint("");
+                setAcceptsDelivery(v);
+              }}
+              trackColor={{ false: theme.colors.black[200], true: theme.colors.brand }}
+              thumbColor={theme.colors.white}
+            />
+          </View>
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleTitle}>Pickup</Text>
+              <Text style={styles.toggleSub}>Customers can collect orders themselves</Text>
+            </View>
+            <Switch
+              value={acceptsPickup}
+              onValueChange={(v) => {
+                if (!v && !acceptsDelivery) {
+                  setFulfillmentHint("At least one method must stay on");
+                  return;
+                }
+                setFulfillmentHint("");
+                setAcceptsPickup(v);
+              }}
+              trackColor={{ false: theme.colors.black[200], true: theme.colors.brand }}
+              thumbColor={theme.colors.white}
+            />
+          </View>
+          {fulfillmentHint ? <ErrorText>{fulfillmentHint}</ErrorText> : null}
         </Section>
 
         {/* Close store */}
