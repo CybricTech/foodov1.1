@@ -81,9 +81,8 @@ export async function sendTelegramRiderAlert(
   // tap-to-copy in Telegram) and pastes straight into Bolt's “Note to driver”
   // when booking the ride manually. Reads as instructions to the driver.
   const driverNote =
-    `Collect order #${esc(orderNumber)} from ${esc(restaurant?.name)}.\n` +
-    `Deliver to: ${esc(order?.customer_name)} (${esc(order?.customer_phone)})\n` +
-    `Address: ${esc(order?.delivery_address)}`;
+    `Please pick up order #${esc(orderNumber)} from ${esc(restaurant?.name)} and deliver to ${esc(order?.delivery_address)}. ` +
+    `Call the receiver, ${esc(order?.customer_name)}, on ${esc(order?.customer_phone)} when you arrive.`;
 
   const text =
     `🔔 <b>New Rider Request</b>\n` +

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check, Navigation, Gift, CalendarClock, ChevronRight } from "lucide-react";
+import { ArrowLeft, Store, ShoppingBag, MapPin, Loader2, Ticket, X, Check, Navigation, Gift, CalendarClock, ChevronRight, Lock } from "lucide-react";
 import { z } from "zod";
 import posthog from "posthog-js";
 import { useCartStore } from "@/lib/stores/cart";
@@ -1318,9 +1318,15 @@ export default function CheckoutPage() {
                     </p>
                   )}
                 {selectedLat !== null && deliveryFeeKobo !== null && (
-                  <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                    <Check size={12} /> Delivering to your selected location
-                  </p>
+                  <>
+                    <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                      <Check size={12} /> Delivering to your selected location
+                    </p>
+                    <p className="text-xs text-black-400 mt-1 flex items-center gap-1">
+                      <Lock size={12} /> Riders deliver only to this address — it can&apos;t be
+                      changed once your rider is booked.
+                    </p>
+                  </>
                 )}
                 {fieldErrors.deliveryAddress && (
                   <p className="text-xs text-cinnabar-500 mt-1">{fieldErrors.deliveryAddress}</p>
