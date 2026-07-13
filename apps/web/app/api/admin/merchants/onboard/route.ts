@@ -105,17 +105,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await serviceClient.from("user_profiles").insert({
-    id: authUser.user.id,
-    role: "merchant_owner",
-    restaurant_id: restaurant.id,
-    email,
-    is_active: true,
-    full_name: null,
-    phone: null,
-    avatar_url: null,
-    vehicle_type: null,
-  });
+  const { error: profileError } = await serviceClient
+    .from("user_profiles")
+    .insert({
+      id: authUser.user.id,
+      role: "merchant_owner",
+      restaurant_id: restaurant.id,
+      email,
+      is_active: true,
+      full_name: null,
+      phone: null,
+      avatar_url: null,
+      vehicle_type: null,
+    });
+
+  if (profileError) {
+    // Roll back the auth user and restaurant so we never leave a half-onboarded
+    // merchant: an owner who can authenticate but has no profile fails the
+    // dashboard's role/restaurant lookup and bounces straight back to login,
+    // while the restaurant row lingers orphaned.
+    await serviceClient.auth.admin.deleteUser(authUser.user.id);
+    await serviceClient.from("restaurants").delete().eq("id", restaurant.id);
+    return NextResponse.json({ error: profileError.message }, { status: 500 });
+  }
 
   // Log audit
   await serviceClient.from("audit_logs").insert({

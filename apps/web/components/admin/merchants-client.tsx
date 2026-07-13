@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@foodo/ui";
 import { Store, ExternalLink, MapPin, KeyRound } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
@@ -19,6 +19,16 @@ interface MerchantsClientProps {
 export function MerchantsClient({ initialRestaurants }: MerchantsClientProps) {
   const [restaurants, setRestaurants] = useState<RestaurantWithLocation[]>(initialRestaurants);
   const [showOnboard, setShowOnboard] = useState(false);
+
+  // The parent is a force-dynamic server component and the admin layout's
+  // RouterAutoRefresh re-fetches it (on navigation, tab focus, and every 20s).
+  // useState only seeds from the first render, so without this the list would
+  // ignore every refresh and drift from the database — new/deleted/renamed
+  // merchants wouldn't appear until a full remount. Re-sync to the server data,
+  // which is the source of truth, whenever a fresh payload arrives.
+  useEffect(() => {
+    setRestaurants(initialRestaurants);
+  }, [initialRestaurants]);
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Restaurant | null>(null);
   const [deleting, setDeleting] = useState(false);
