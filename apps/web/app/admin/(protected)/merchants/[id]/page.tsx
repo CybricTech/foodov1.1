@@ -189,14 +189,22 @@ export default async function MerchantDetailPage({
             <span className="text-sm text-black-400">&middot; Since {sinceDate}</span>
           </div>
         </div>
-        <Link
-          href={`/${restaurant.slug}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-purple-500 hover:text-purple-400 border border-purple-200 hover:border-purple-400 px-3 py-1.5 rounded-xl transition-colors"
-        >
-          View storefront &rarr;
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href={`/admin/merchants/${restaurant.id}/qr-flyer`}
+            className="text-sm text-purple-500 hover:text-purple-400 border border-purple-200 hover:border-purple-400 px-3 py-1.5 rounded-xl transition-colors"
+          >
+            QR flyer
+          </Link>
+          <Link
+            href={`/${restaurant.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-purple-500 hover:text-purple-400 border border-purple-200 hover:border-purple-400 px-3 py-1.5 rounded-xl transition-colors"
+          >
+            View storefront &rarr;
+          </Link>
+        </div>
       </div>
 
       {/* SMS sender ID management */}
