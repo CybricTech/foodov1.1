@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,6 +18,12 @@ import { LocationSection } from "@/components/storefront/location-section";
 import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
 
 export const revalidate = 60;
+
+/** Clamp a stored focal-point value (0-100) to a safe CSS percentage, defaulting to center. */
+function clampPct(value: number | null | undefined): number {
+  if (value == null || Number.isNaN(value)) return 50;
+  return Math.min(100, Math.max(0, value));
+}
 
 interface StorefrontPageProps {
   params: { restaurant_slug: string };
@@ -74,14 +81,28 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
       <ActiveOrderBanner />
     <div className="min-h-screen bg-white">
       {/* ── Hero ── */}
-      <section className="relative w-full h-[72vh] min-h-[480px] max-h-[720px]">
+      <section
+        className="relative w-full h-[72vh] min-h-[480px] max-h-[720px]"
+        style={
+          {
+            "--hero-pos-mobile": `${clampPct(restaurant.banner_focal_x_mobile)}% ${clampPct(restaurant.banner_focal_y_mobile)}%`,
+            "--hero-pos-desktop": `${clampPct(restaurant.banner_focal_x)}% ${clampPct(restaurant.banner_focal_y)}%`,
+          } as CSSProperties
+        }
+      >
         {/* Background */}
         {restaurant.banner_url ? (
           <Image
-            src={transformImage(restaurant.banner_url, { width: 720, height: 900, quality: 75 })}
+            // The banner is already client-compressed to a 2000px max edge on
+            // upload (compressImage), so it's served as-is rather than
+            // through transformImage's fixed-box "cover" crop — that crop is
+            // anchored to the *source photo's* center, which would fight the
+            // merchant's chosen focal point (093) before object-position ever
+            // gets a say.
+            src={restaurant.banner_url}
             alt={restaurant.name}
             fill
-            className="object-cover"
+            className="object-cover storefront-hero-img"
             sizes="100vw"
             priority
             unoptimized

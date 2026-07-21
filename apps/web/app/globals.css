@@ -73,6 +73,21 @@ img {
   display: none;
 }
 
+/*
+  Storefront hero banner focal point (093). The merchant-chosen anchor
+  differs from the tall mobile crop to the wide desktop crop, so it's set as
+  two CSS vars (inline, per-restaurant) and swapped at the same breakpoint
+  the rest of the app treats as "desktop" (Tailwind's md).
+*/
+.storefront-hero-img {
+  object-position: var(--hero-pos-mobile, 50% 50%);
+}
+@media (min-width: 768px) {
+  .storefront-hero-img {
+    object-position: var(--hero-pos-desktop, 50% 50%);
+  }
+}
+
 /* Bottom sheet + backdrop animations */
 @keyframes slide-up {
   from { transform: translateY(100%); }

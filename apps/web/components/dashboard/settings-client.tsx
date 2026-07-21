@@ -6,6 +6,7 @@ import { compressImage } from "@/lib/images";
 import { cn } from "@foodo/ui";
 import { ImagePlus, UserPlus, Trash2, KeyRound, Eye, EyeOff, ExternalLink, Plus, X } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
+import { FocalPointPicker, type FocalPoint } from "./focal-point-picker";
 import {
   normalizeSchedulingSettings,
   SCHEDULING_DEFAULTS,
@@ -586,6 +587,17 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   const [bannerError, setBannerError] = useState("");
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
+  // Hero focal point (093) — separate anchor for the tall mobile crop vs.
+  // the wide desktop crop. Defaults mirror the DB column defaults (center).
+  const [mobileFocal, setMobileFocal] = useState<FocalPoint>({
+    x: r.banner_focal_x_mobile ?? 50,
+    y: r.banner_focal_y_mobile ?? 50,
+  });
+  const [desktopFocal, setDesktopFocal] = useState<FocalPoint>({
+    x: r.banner_focal_x ?? 50,
+    y: r.banner_focal_y ?? 50,
+  });
+
   async function handleBannerUpload(file: File) {
     if (file.size > 5 * 1024 * 1024) {
       setBannerError("File too large — max 5 MB");
@@ -615,15 +627,25 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
 
     const { data: urlData } = supabase.storage.from("menu-images").getPublicUrl(path);
 
+    // A new photo makes the old focal point meaningless, so it resets to
+    // center on both breakpoints along with the URL.
     const { error: dbError } = await supabase
       .from("restaurants")
-      .update({ banner_url: urlData.publicUrl })
+      .update({
+        banner_url: urlData.publicUrl,
+        banner_focal_x: 50,
+        banner_focal_y: 50,
+        banner_focal_x_mobile: 50,
+        banner_focal_y_mobile: 50,
+      })
       .eq("id", r.id);
 
     if (dbError) {
       setBannerError(dbError.message);
     } else {
       setBannerUrl(urlData.publicUrl);
+      setMobileFocal({ x: 50, y: 50 });
+      setDesktopFocal({ x: 50, y: 50 });
     }
     setBannerUploading(false);
   }
@@ -670,6 +692,10 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
         notification_email: notificationEmail || null,
         logo_url: logoUrl || null,
         banner_url: bannerUrl || null,
+        banner_focal_x: desktopFocal.x,
+        banner_focal_y: desktopFocal.y,
+        banner_focal_x_mobile: mobileFocal.x,
+        banner_focal_y_mobile: mobileFocal.y,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       .eq("id", r.id);
@@ -837,11 +863,13 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
 
               {bannerUrl ? (
                 <div className="space-y-3">
-                  <div className="relative w-full aspect-[3/1] rounded-xl overflow-hidden border border-black-100 bg-black-100">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={bannerUrl} alt="Hero banner preview" className="w-full h-full object-cover" />
-                  </div>
-                  <p className="text-xs text-black-400">Preview — this is how it appears as the storefront hero</p>
+                  <FocalPointPicker
+                    imageUrl={bannerUrl}
+                    mobileValue={mobileFocal}
+                    desktopValue={desktopFocal}
+                    onMobileChange={setMobileFocal}
+                    onDesktopChange={setDesktopFocal}
+                  />
                   <div className="flex gap-2">
                     <button
                       type="button"

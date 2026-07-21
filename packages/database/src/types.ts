@@ -1408,6 +1408,10 @@ export type Database = {
           bank_account_number: string | null
           bank_code: string | null
           banner_url: string | null
+          banner_focal_x: number
+          banner_focal_y: number
+          banner_focal_x_mobile: number
+          banner_focal_y_mobile: number
           city: string | null
           closure_message: string | null
           closure_message_history: string[]
@@ -1460,6 +1464,10 @@ export type Database = {
           bank_account_number?: string | null
           bank_code?: string | null
           banner_url?: string | null
+          banner_focal_x?: number
+          banner_focal_y?: number
+          banner_focal_x_mobile?: number
+          banner_focal_y_mobile?: number
           city?: string | null
           closure_message?: string | null
           closure_message_history?: string[]
@@ -1512,6 +1520,10 @@ export type Database = {
           bank_account_number?: string | null
           bank_code?: string | null
           banner_url?: string | null
+          banner_focal_x?: number
+          banner_focal_y?: number
+          banner_focal_x_mobile?: number
+          banner_focal_y_mobile?: number
           city?: string | null
           closure_message?: string | null
           closure_message_history?: string[]
