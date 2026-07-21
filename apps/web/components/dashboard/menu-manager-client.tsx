@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
+  GripVertical,
   Minus,
   Upload,
   Download,
@@ -91,6 +92,49 @@ export function MenuManagerClient({
       )
     );
     setReorderBusy(false);
+  }
+
+  // ── Category drag-and-drop reordering ─────────────────────────────────────
+  // Sidebar categories can be dragged into a new position. display_order is
+  // normalized to the array index on drop (same idiom as moveFeatured), and
+  // the storefront shows categories in this order too (getMenuCategories).
+  const [dragCatId, setDragCatId] = useState<string | null>(null);
+  // Insertion point: 0..categories.length ("before index N"; length = at end).
+  const [catDropIdx, setCatDropIdx] = useState<number | null>(null);
+
+  function handleCatDragOver(e: React.DragEvent<HTMLDivElement>, idx: number) {
+    if (!dragCatId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    setCatDropIdx(before ? idx : idx + 1);
+  }
+
+  async function handleCatDrop() {
+    const dropIdx = catDropIdx;
+    const from = categories.findIndex((c) => c.id === dragCatId);
+    setDragCatId(null);
+    setCatDropIdx(null);
+    if (dropIdx === null || from < 0 || reorderBusy) return;
+
+    const ordered = [...categories];
+    const [moved] = ordered.splice(from, 1);
+    const insertAt = from < dropIdx ? dropIdx - 1 : dropIdx;
+    if (insertAt === from) return; // dropped back where it was
+    ordered.splice(insertAt, 0, moved);
+
+    // Optimistic: renumber locally, persist, revert on any failure.
+    const prev = categories;
+    setCategories(ordered.map((c, i) => ({ ...c, display_order: i })));
+    setReorderBusy(true);
+    const results = await Promise.all(
+      ordered.map((c, i) =>
+        supabase.from("menu_categories").update({ display_order: i }).eq("id", c.id)
+      )
+    );
+    setReorderBusy(false);
+    if (results.some((r) => r.error)) setCategories(prev);
   }
 
   function handleExport() {
@@ -352,17 +396,35 @@ export function MenuManagerClient({
         {/* Category sidebar */}
         <div className="w-44 flex-shrink-0 border-r border-black-100 bg-white md:rounded-l-2xl md:border md:border-r-0 overflow-hidden">
           <div className="py-2">
-            {categories.map((cat) => {
+            {categories.map((cat, idx) => {
               const count = items.filter((i) => i.category_id === cat.id).length;
               const isActive = activeCategory === cat.id;
               return (
                 <div
                   key={cat.id}
+                  draggable={editingCategoryId !== cat.id}
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    setDragCatId(cat.id);
+                  }}
+                  onDragEnd={() => {
+                    setDragCatId(null);
+                    setCatDropIdx(null);
+                  }}
+                  onDragOver={(e) => handleCatDragOver(e, idx)}
+                  onDrop={handleCatDrop}
                   className={cn(
                     "group relative flex items-center border-l-2 transition-all duration-200",
                     isActive
                       ? "border-purple-500 bg-purple-50"
-                      : "border-transparent hover:bg-black-50"
+                      : "border-transparent hover:bg-black-50",
+                    dragCatId === cat.id && "opacity-40",
+                    // Drop indicator line at the insertion point.
+                    dragCatId && catDropIdx === idx && "border-t-2 border-t-purple-500",
+                    dragCatId &&
+                      catDropIdx === categories.length &&
+                      idx === categories.length - 1 &&
+                      "border-b-2 border-b-purple-500"
                   )}
                 >
                   {editingCategoryId === cat.id ? (
@@ -378,6 +440,13 @@ export function MenuManagerClient({
                     </div>
                   ) : (
                     <>
+                      <span
+                        className="opacity-0 group-hover:opacity-100 pl-1.5 -mr-1.5 flex-shrink-0 text-black-300 cursor-grab active:cursor-grabbing transition-opacity duration-150"
+                        title="Drag to reorder"
+                        aria-hidden="true"
+                      >
+                        <GripVertical size={12} />
+                      </span>
                       <button
                         onClick={() => setActiveCategory(cat.id)}
                         onDoubleClick={() => setEditingCategoryId(cat.id)}
