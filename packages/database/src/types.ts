@@ -826,6 +826,8 @@ export type Database = {
           price_kobo: number
           restaurant_id: string
           show_new_badge: boolean
+          stock_quantity: number | null
+          track_inventory: boolean
           updated_at: string
         }
         Insert: {
@@ -847,6 +849,8 @@ export type Database = {
           price_kobo?: number
           restaurant_id: string
           show_new_badge?: boolean
+          stock_quantity?: number | null
+          track_inventory?: boolean
           updated_at?: string
         }
         Update: {
@@ -868,6 +872,8 @@ export type Database = {
           price_kobo?: number
           restaurant_id?: string
           show_new_badge?: boolean
+          stock_quantity?: number | null
+          track_inventory?: boolean
           updated_at?: string
         }
         Relationships: [

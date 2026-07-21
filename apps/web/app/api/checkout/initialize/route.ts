@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
 
   const { data: menuItems } = await supabase
     .from("menu_items")
-    .select("id, price_kobo, is_available, is_made_to_order, made_to_order_lead_hours")
+    .select("id, price_kobo, is_available, is_made_to_order, made_to_order_lead_hours, track_inventory, stock_quantity")
     .in("id", menuItemIds);
 
   // ── Made to Order (088) ─────────────────────────────────────────────────────
@@ -248,6 +248,12 @@ export async function POST(request: NextRequest) {
   const menuItemAvailableMap = new Map(
     (menuItems ?? []).map((m) => [m.id, m.is_available])
   );
+  // Stock-tracked items (migration 091): how many units are left per item.
+  const menuItemStockMap = new Map(
+    (menuItems ?? [])
+      .filter((m) => m.track_inventory)
+      .map((m) => [m.id, m.stock_quantity ?? 0])
+  );
 
   // Validate every submitted item still exists AND is switched on. Carts persist
   // in localStorage indefinitely, so a customer can reach checkout with an item a
@@ -271,6 +277,46 @@ export async function POST(request: NextRequest) {
           unavailable.length > 1 ? "these items" : "this item"
         } and try again.`,
         unavailableItemIds: unavailable.map((u) => u.menuItemId),
+      },
+      { status: 409 }
+    );
+  }
+
+  // Stock check for tracked items (migration 091). The requested quantity may
+  // exceed what's left even when the item isn't fully sold out yet, so this is
+  // a separate gate from the availability one above. Stock is only decremented
+  // after payment succeeds (order_items insert trigger), so a small oversell
+  // window between initialize and payment is accepted.
+  // Aggregate requested quantity per item across all cart lines first — the
+  // same menu_item_id can appear on several lines (same product, different
+  // modifiers), and stock is a single per-item pool. Checking each line
+  // independently would let two 3-unit lines both pass against 5 units in
+  // stock and then oversell, defeating this gate. Sum, then compare once.
+  const requestedByItem = new Map<string, { name: string; qty: number }>();
+  for (const item of data.items) {
+    const prev = requestedByItem.get(item.menuItemId);
+    requestedByItem.set(item.menuItemId, {
+      name: item.name,
+      qty: (prev?.qty ?? 0) + item.quantity,
+    });
+  }
+  const lowStock: { menuItemId: string; name: string; left: number }[] = [];
+  for (const [menuItemId, { name, qty }] of requestedByItem) {
+    const left = menuItemStockMap.get(menuItemId);
+    if (left !== undefined && left < qty) {
+      lowStock.push({ menuItemId, name, left });
+    }
+  }
+  if (lowStock.length > 0) {
+    const names = lowStock
+      .map((s) => (s.left === 0 ? s.name : `${s.name} (only ${s.left} left)`))
+      .join(", ");
+    return NextResponse.json(
+      {
+        error: `Insufficient stock: ${names}. Please adjust your cart and try again.`,
+        unavailableItemIds: lowStock
+          .filter((s) => s.left === 0)
+          .map((s) => s.menuItemId),
       },
       { status: 409 }
     );

@@ -12,6 +12,7 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
+  Minus,
   Upload,
   Download,
   AlertCircle,
@@ -131,6 +132,29 @@ export function MenuManagerClient({
         i.id === itemId ? { ...i, is_available: !current } : i
       )
     );
+  }
+
+  // Quick stock adjustment for inventory-tracked items (migration 091).
+  // Optimistic like toggleAvailable; clamped at 0. Restocking here makes a
+  // sold-out item purchasable again without touching the availability switch.
+  async function adjustStock(itemId: string, delta: number) {
+    const item = items.find((i) => i.id === itemId);
+    if (!item || !item.track_inventory) return;
+    const next = Math.max(0, (item.stock_quantity ?? 0) + delta);
+    setItems((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, stock_quantity: next } : i))
+    );
+    const { error } = await supabase
+      .from("menu_items")
+      .update({ stock_quantity: next })
+      .eq("id", itemId);
+    if (error) {
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId ? { ...i, stock_quantity: item.stock_quantity } : i
+        )
+      );
+    }
   }
 
   async function deleteItem(itemId: string) {
@@ -315,6 +339,7 @@ export function MenuManagerClient({
           categories={categories}
           activeCategory={activeCategory}
           onToggle={toggleAvailable}
+          onAdjustStock={adjustStock}
           onEdit={setEditingItem}
           onDelete={deleteItem}
           onAddItem={() => setShowAddItem(true)}
@@ -408,6 +433,7 @@ export function MenuManagerClient({
             categories={categories}
             activeCategory={activeCategory}
             onToggle={toggleAvailable}
+            onAdjustStock={adjustStock}
             onEdit={setEditingItem}
             onDelete={deleteItem}
             onAddItem={() => setShowAddItem(true)}
@@ -496,6 +522,7 @@ interface ItemsPanelProps {
   categories: MenuCategory[];
   activeCategory: string | null;
   onToggle: (itemId: string, current: boolean) => void;
+  onAdjustStock: (itemId: string, delta: number) => void;
   onEdit: (item: MenuItemWithOptions) => void;
   onDelete: (itemId: string) => void;
   onAddItem: () => void;
@@ -507,6 +534,7 @@ function ItemsPanel({
   categories,
   activeCategory,
   onToggle,
+  onAdjustStock,
   onEdit,
   onDelete,
   onAddItem,
@@ -603,6 +631,40 @@ function ItemsPanel({
                     ? "Multiple sizes"
                     : formatKobo(item.price_kobo)}
                 </p>
+                {/* Stock control — only for inventory-tracked items (091). */}
+                {item.track_inventory && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <button
+                      onClick={() => onAdjustStock(item.id, -1)}
+                      disabled={(item.stock_quantity ?? 0) <= 0}
+                      className="w-6 h-6 flex items-center justify-center rounded-md bg-black-100 text-black-500 hover:bg-black-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                      title="Decrease stock"
+                      aria-label={`Decrease stock for ${item.name}`}
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span
+                      className={cn(
+                        "text-[11px] font-semibold px-1.5 py-0.5 rounded-full",
+                        (item.stock_quantity ?? 0) === 0
+                          ? "text-cinnabar-600 bg-cinnabar-50"
+                          : "text-black-500 bg-black-100"
+                      )}
+                    >
+                      {(item.stock_quantity ?? 0) === 0
+                        ? "Sold out"
+                        : `${item.stock_quantity} in stock`}
+                    </span>
+                    <button
+                      onClick={() => onAdjustStock(item.id, 1)}
+                      className="w-6 h-6 flex items-center justify-center rounded-md bg-black-100 text-black-500 hover:bg-black-200 transition-colors cursor-pointer"
+                      title="Increase stock"
+                      aria-label={`Increase stock for ${item.name}`}
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
@@ -917,6 +979,14 @@ function ItemFormModal({
     itemRaw?.made_to_order_lead_hours != null ? String(itemRaw.made_to_order_lead_hours) : "24"
   );
 
+  // Inventory tracking (091): opt-in per item. Purchases decrement the stock
+  // count automatically and the item sells out at 0 — independent of the
+  // availability switch. Blank quantity = start at 0 (sold out until restocked).
+  const [trackInventory, setTrackInventory] = useState(item?.track_inventory ?? false);
+  const [stockQuantity, setStockQuantity] = useState(
+    item?.stock_quantity != null ? String(item.stock_quantity) : ""
+  );
+
   const [draftOptions, setDraftOptions] = useState<DraftOption[]>(
     (item?.options ?? [])
       .filter((o) => o.id !== existingSizeGroup?.id)
@@ -1003,6 +1073,13 @@ function ItemFormModal({
         return;
       }
     }
+    if (trackInventory && stockQuantity.trim()) {
+      const qty = parseInt(stockQuantity, 10);
+      if (!Number.isFinite(qty) || qty < 0) {
+        setError("Stock quantity must be a whole number, 0 or more");
+        return;
+      }
+    }
     setSaving(true);
     setError("");
 
@@ -1011,7 +1088,11 @@ function ItemFormModal({
 
       if (imageFile) {
         const compressed = await compressImage(imageFile);
-        const path = `${restaurantId}/${Date.now()}-${compressed.name}`;
+        // Build the key from a UUID, never the raw filename — user filenames
+        // (e.g. macOS screenshots with narrow no-break spaces) contain characters
+        // Supabase Storage rejects with "Invalid key".
+        const ext = compressed.name.split(".").pop()?.toLowerCase() || "webp";
+        const path = `${restaurantId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("menu-images")
           .upload(path, compressed, { upsert: true });
@@ -1038,6 +1119,10 @@ function ItemFormModal({
         is_made_to_order: addonOnly ? false : isMadeToOrder,
         made_to_order_lead_hours:
           !addonOnly && isMadeToOrder ? parseInt(madeToOrderLeadHours, 10) : null,
+        track_inventory: trackInventory,
+        stock_quantity: trackInventory
+          ? Math.max(0, parseInt(stockQuantity, 10) || 0)
+          : null,
       };
 
       let itemId: string;
@@ -1412,6 +1497,66 @@ function ItemFormModal({
                   />
                   <span className="text-sm text-black-500">hours ahead, minimum</span>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Track stock (091) — opt-in inventory. Each paid order decrements
+              the count; at 0 the item sells out automatically. The on/off
+              availability switch stays independent. */}
+          <div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div className={cn(
+                "relative w-10 h-5 rounded-full transition-colors duration-200 flex-shrink-0",
+                trackInventory ? "bg-purple-500" : "bg-black-200"
+              )}>
+                <input
+                  type="checkbox"
+                  checked={trackInventory}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setTrackInventory(on);
+                    // Seed a sensible starting count so flipping this on doesn't
+                    // silently sell the item out (blank ⇒ 0 ⇒ sold out). Matches
+                    // the Made to Order default idiom; only fills an empty field.
+                    if (on && !stockQuantity.trim()) setStockQuantity("10");
+                  }}
+                  className="sr-only"
+                />
+                <span className={cn(
+                  "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200",
+                  trackInventory ? "translate-x-[18px]" : "translate-x-0"
+                )} />
+              </div>
+              <div>
+                <span className="text-sm font-medium text-black-900">Track stock</span>
+                <p className="text-xs text-black-400">
+                  Count down as customers buy — sells out automatically at 0
+                </p>
+              </div>
+            </label>
+            {trackInventory && (
+              <div className="mt-2.5 pl-[52px]">
+                <label className="block text-xs font-medium text-black-600 mb-1.5">
+                  Quantity in stock
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    value={stockQuantity}
+                    onChange={(e) => setStockQuantity(e.target.value)}
+                    className="w-24 px-3 py-2 rounded-xl border border-black-200 text-sm focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-colors"
+                    placeholder="e.g. 10"
+                  />
+                  <span className="text-sm text-black-500">units available</span>
+                </div>
+                <p className="text-[11px] text-black-400 mt-1">
+                  The units you have right now. At 0 it shows as sold out — the
+                  availability switch still works separately.
+                </p>
               </div>
             )}
           </div>

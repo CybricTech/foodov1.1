@@ -129,10 +129,22 @@ export const getCachedMenuAvailability = cache((restaurantId: string) =>
     async () => {
       const { data } = await createServiceClient()
         .from("menu_items")
-        .select("category_id, is_available")
+        .select("category_id, is_available, track_inventory, stock_quantity")
         .eq("restaurant_id", restaurantId)
         .eq("is_addon_only", false);
-      return (data ?? []) as { category_id: string | null; is_available: boolean }[];
+      // Effective availability (migration 091): sold-out stock-tracked items
+      // count as unavailable for the "restocking" note.
+      return ((data ?? []) as {
+        category_id: string | null;
+        is_available: boolean;
+        track_inventory: boolean;
+        stock_quantity: number | null;
+      }[]).map((row) => ({
+        category_id: row.category_id,
+        is_available:
+          row.is_available &&
+          (!row.track_inventory || (row.stock_quantity ?? 0) > 0),
+      }));
     },
     ["menu-availability", restaurantId],
     { tags: [menuTag(restaurantId)], revalidate: 30 }

@@ -20,7 +20,7 @@ export default async function FrontlineMenuPage() {
       .order("display_order", { ascending: true }),
     supabase
       .from("menu_items")
-      .select("id, name, description, price_kobo, image_url, is_available, is_featured, category_id")
+      .select("id, name, description, price_kobo, image_url, is_available, is_featured, category_id, track_inventory, stock_quantity")
       .eq("restaurant_id", restaurantId)
       .order("display_order", { ascending: true }),
   ]);

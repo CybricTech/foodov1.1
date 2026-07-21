@@ -135,6 +135,14 @@ export function ItemFormModal({
     itemRaw?.made_to_order_lead_hours != null ? String(itemRaw.made_to_order_lead_hours) : "24"
   );
 
+  // Inventory tracking (091): opt-in per item, mirrors web. Purchases
+  // decrement the count automatically; the item sells out at 0 — independent
+  // of the availability switch. Blank quantity = start at 0.
+  const [trackInventory, setTrackInventory] = useState(item?.track_inventory ?? false);
+  const [stockQuantity, setStockQuantity] = useState(
+    item?.stock_quantity != null ? String(item.stock_quantity) : ""
+  );
+
   const [draftOptions, setDraftOptions] = useState<DraftOption[]>(
     (item?.options ?? [])
       .filter((o) => o.id !== existingSizeGroup?.id)
@@ -223,6 +231,13 @@ export function ItemFormModal({
         return;
       }
     }
+    if (trackInventory && stockQuantity.trim()) {
+      const qty = parseInt(stockQuantity, 10);
+      if (!Number.isFinite(qty) || qty < 0) {
+        setError("Stock quantity must be a whole number, 0 or more");
+        return;
+      }
+    }
 
     setSaving(true);
     setError("");
@@ -248,6 +263,10 @@ export function ItemFormModal({
         prep_time_minutes: prepMinutes.trim() ? parseInt(prepMinutes, 10) || null : null,
         is_made_to_order: isMadeToOrder,
         made_to_order_lead_hours: isMadeToOrder ? parseInt(madeToOrderLeadHours, 10) : null,
+        track_inventory: trackInventory,
+        stock_quantity: trackInventory
+          ? Math.max(0, parseInt(stockQuantity, 10) || 0)
+          : null,
       };
 
       let itemId: string;
@@ -538,6 +557,31 @@ export function ItemFormModal({
                     style={[styles.input, { width: 72 }]}
                   />
                   <Text style={styles.photoSub}>hours ahead, minimum</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Track stock (091) — opt-in inventory. Each paid order decrements
+                the count; at 0 the item sells out automatically. The on/off
+                availability switch stays independent. */}
+            <View style={{ gap: 6 }}>
+              <ToggleRow
+                value={trackInventory}
+                onValueChange={setTrackInventory}
+                title="Track stock"
+                subtitle="Count down as customers buy — sells out automatically at 0"
+              />
+              {trackInventory && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <TextInput
+                    value={stockQuantity}
+                    onChangeText={setStockQuantity}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.black[400]}
+                    style={[styles.input, { width: 72 }]}
+                  />
+                  <Text style={styles.photoSub}>units available</Text>
                 </View>
               )}
             </View>

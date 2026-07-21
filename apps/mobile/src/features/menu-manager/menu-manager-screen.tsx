@@ -175,6 +175,28 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
     [supabase]
   );
 
+  // ── Quick stock adjustment for inventory-tracked items (091, web parity) ─────
+  async function adjustStock(itemId: string, delta: number) {
+    if (!supabase) return;
+    const item = items.find((i) => i.id === itemId);
+    if (!item || !item.track_inventory) return;
+    const next = Math.max(0, (item.stock_quantity ?? 0) + delta);
+    setItems((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, stock_quantity: next } : i))
+    );
+    const { error } = await supabase
+      .from("menu_items")
+      .update({ stock_quantity: next })
+      .eq("id", itemId);
+    if (error) {
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId ? { ...i, stock_quantity: item.stock_quantity } : i
+        )
+      );
+    }
+  }
+
   function deleteItem(itemId: string) {
     Alert.alert("Delete item", "Delete this menu item?", [
       { text: "Cancel", style: "cancel" },
@@ -469,6 +491,46 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
               <Text style={styles.itemPrice}>
                 {item.price_kobo === 0 ? "Multiple sizes" : formatKobo(item.price_kobo)}
               </Text>
+              {/* Stock control — only for inventory-tracked items (091). */}
+              {item.track_inventory && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                  <Pressable
+                    onPress={() => adjustStock(item.id, -1)}
+                    disabled={(item.stock_quantity ?? 0) <= 0}
+                    hitSlop={4}
+                    style={[
+                      styles.stockBtn,
+                      (item.stock_quantity ?? 0) <= 0 && { opacity: 0.4 },
+                    ]}
+                  >
+                    <Text style={styles.stockBtnText}>−</Text>
+                  </Pressable>
+                  <View
+                    style={[
+                      styles.stockBadge,
+                      (item.stock_quantity ?? 0) === 0 && styles.stockBadgeOut,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.stockBadgeText,
+                        (item.stock_quantity ?? 0) === 0 && styles.stockBadgeOutText,
+                      ]}
+                    >
+                      {(item.stock_quantity ?? 0) === 0
+                        ? "Sold out"
+                        : `${item.stock_quantity} in stock`}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => adjustStock(item.id, 1)}
+                    hitSlop={4}
+                    style={styles.stockBtn}
+                  >
+                    <Text style={styles.stockBtnText}>＋</Text>
+                  </Pressable>
+                </View>
+              )}
             </View>
             <Switch
               value={item.is_available}
@@ -645,6 +707,24 @@ const styles = {
   },
   itemName: { fontSize: 14, fontWeight: "700" as const, color: theme.colors.black[900], flexShrink: 1 },
   itemPrice: { fontSize: 12, color: theme.colors.black[500], marginTop: 2, fontWeight: "500" as const },
+  stockBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: theme.colors.black[100],
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  stockBtnText: { fontSize: 12, fontWeight: "700" as const, color: theme.colors.black[500] },
+  stockBadge: {
+    backgroundColor: theme.colors.black[100],
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  stockBadgeOut: { backgroundColor: theme.colors.cinnabar[100] },
+  stockBadgeText: { fontSize: 11, fontWeight: "700" as const, color: theme.colors.black[500] },
+  stockBadgeOutText: { color: theme.colors.cinnabar[500] },
   offBadge: {
     backgroundColor: theme.colors.black[100],
     borderRadius: 999,

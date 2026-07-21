@@ -58,7 +58,11 @@ export async function getMenuItems(
     .order("display_order", { ascending: true });
 
   if (!options?.includeUnavailable) {
-    query = query.eq("is_available", true);
+    // Effective availability (migration 091): manual switch on AND (not
+    // stock-tracked OR still in stock).
+    query = query
+      .eq("is_available", true)
+      .or("track_inventory.eq.false,stock_quantity.gt.0");
   }
 
   const { data, error } = await query;

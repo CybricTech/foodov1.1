@@ -9,6 +9,8 @@ import {
   UtensilsCrossed,
   Star,
   X,
+  Plus,
+  Minus,
 } from "lucide-react";
 import type { MenuCategory } from "@foodo/database";
 
@@ -25,6 +27,8 @@ interface MenuItem {
   is_available: boolean;
   is_featured: boolean;
   category_id: string | null;
+  track_inventory: boolean;
+  stock_quantity: number | null;
 }
 
 interface FrontlineMenuClientProps {
@@ -67,6 +71,27 @@ export function FrontlineMenuClient({
       );
     }
     setToggling(null);
+  }
+
+  // Quick stock adjustment for inventory-tracked items (migration 091).
+  async function adjustStock(itemId: string, delta: number) {
+    const item = items.find((i) => i.id === itemId);
+    if (!item || !item.track_inventory) return;
+    const next = Math.max(0, (item.stock_quantity ?? 0) + delta);
+    setItems((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, stock_quantity: next } : i))
+    );
+    const { error } = await supabase
+      .from("menu_items")
+      .update({ stock_quantity: next })
+      .eq("id", itemId);
+    if (error) {
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId ? { ...i, stock_quantity: item.stock_quantity } : i
+        )
+      );
+    }
   }
 
   const filteredItems = useMemo(() => {
@@ -256,6 +281,43 @@ export function FrontlineMenuClient({
                               {categoryName}
                             </span>
                           </>
+                        )}
+                        {/* Stock control for inventory-tracked items (091) */}
+                        {item.track_inventory && (
+                          <span className="flex items-center gap-1">
+                            <span className="text-black-200 text-xs">
+                              &middot;
+                            </span>
+                            <button
+                              onClick={() => adjustStock(item.id, -1)}
+                              disabled={(item.stock_quantity ?? 0) <= 0}
+                              className="w-6 h-6 flex items-center justify-center rounded-md bg-black-100 text-black-500 hover:bg-black-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                              title="Decrease stock"
+                              aria-label={`Decrease stock for ${item.name}`}
+                            >
+                              <Minus size={12} />
+                            </button>
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold px-1.5 py-0.5 rounded-full",
+                                (item.stock_quantity ?? 0) === 0
+                                  ? "text-cinnabar-600 bg-cinnabar-50"
+                                  : "text-black-500 bg-black-100"
+                              )}
+                            >
+                              {(item.stock_quantity ?? 0) === 0
+                                ? "Sold out"
+                                : `${item.stock_quantity} in stock`}
+                            </span>
+                            <button
+                              onClick={() => adjustStock(item.id, 1)}
+                              className="w-6 h-6 flex items-center justify-center rounded-md bg-black-100 text-black-500 hover:bg-black-200 transition-colors cursor-pointer"
+                              title="Increase stock"
+                              aria-label={`Increase stock for ${item.name}`}
+                            >
+                              <Plus size={12} />
+                            </button>
+                          </span>
                         )}
                       </div>
                     </div>
