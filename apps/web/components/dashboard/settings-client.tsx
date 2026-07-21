@@ -501,6 +501,23 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
   const [schedulingSettings, setSchedulingSettings] = useState<SchedulingSettings>(
     normalizeSchedulingSettings(r.scheduling_settings)
   );
+  // Draft text for the scheduling number fields — kept separate from
+  // schedulingSettings so the field can go blank/mid-edit while typing.
+  // Clamping into schedulingSettings only happens on blur; clamping on every
+  // keystroke fought the user (clearing the field snapped straight back to
+  // the fallback default, so it looked like deleting didn't work).
+  const [bookingWindowDraft, setBookingWindowDraft] = useState(
+    String(schedulingSettings.booking_horizon_hours)
+  );
+  const [earliestBookingDraft, setEarliestBookingDraft] = useState(
+    String(schedulingSettings.min_lead_minutes)
+  );
+  const [alertBeforeDraft, setAlertBeforeDraft] = useState(
+    String(schedulingSettings.alert_lead_minutes)
+  );
+  const [selfCancelDraft, setSelfCancelDraft] = useState(
+    String(schedulingSettings.self_cancel_cutoff_minutes)
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -1233,15 +1250,16 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                   <Field label="Booking window (hours)" hint="How far ahead customers can book">
                     <input
                       type="number"
+                      inputMode="numeric"
                       min={1}
                       max={720}
-                      value={schedulingSettings.booking_horizon_hours}
-                      onChange={(e) =>
-                        setSchedulingSettings((s) => ({
-                          ...s,
-                          booking_horizon_hours: clampInt(e.target.value, 1, 720, SCHEDULING_DEFAULTS.booking_horizon_hours),
-                        }))
-                      }
+                      value={bookingWindowDraft}
+                      onChange={(e) => setBookingWindowDraft(e.target.value)}
+                      onBlur={() => {
+                        const clamped = clampInt(bookingWindowDraft, 1, 720, SCHEDULING_DEFAULTS.booking_horizon_hours);
+                        setBookingWindowDraft(String(clamped));
+                        setSchedulingSettings((s) => ({ ...s, booking_horizon_hours: clamped }));
+                      }}
                       className={inputCls}
                     />
                   </Field>
@@ -1266,15 +1284,16 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                   <Field label="Earliest booking (minutes)" hint="Minimum lead time from now">
                     <input
                       type="number"
+                      inputMode="numeric"
                       min={0}
                       max={1440}
-                      value={schedulingSettings.min_lead_minutes}
-                      onChange={(e) =>
-                        setSchedulingSettings((s) => ({
-                          ...s,
-                          min_lead_minutes: clampInt(e.target.value, 0, 1440, SCHEDULING_DEFAULTS.min_lead_minutes),
-                        }))
-                      }
+                      value={earliestBookingDraft}
+                      onChange={(e) => setEarliestBookingDraft(e.target.value)}
+                      onBlur={() => {
+                        const clamped = clampInt(earliestBookingDraft, 0, 1440, SCHEDULING_DEFAULTS.min_lead_minutes);
+                        setEarliestBookingDraft(String(clamped));
+                        setSchedulingSettings((s) => ({ ...s, min_lead_minutes: clamped }));
+                      }}
                       className={inputCls}
                     />
                   </Field>
@@ -1299,30 +1318,32 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
                   <Field label="Alert me before (minutes)" hint="Push notification lead time">
                     <input
                       type="number"
+                      inputMode="numeric"
                       min={1}
                       max={1440}
-                      value={schedulingSettings.alert_lead_minutes}
-                      onChange={(e) =>
-                        setSchedulingSettings((s) => ({
-                          ...s,
-                          alert_lead_minutes: clampInt(e.target.value, 1, 1440, SCHEDULING_DEFAULTS.alert_lead_minutes),
-                        }))
-                      }
+                      value={alertBeforeDraft}
+                      onChange={(e) => setAlertBeforeDraft(e.target.value)}
+                      onBlur={() => {
+                        const clamped = clampInt(alertBeforeDraft, 1, 1440, SCHEDULING_DEFAULTS.alert_lead_minutes);
+                        setAlertBeforeDraft(String(clamped));
+                        setSchedulingSettings((s) => ({ ...s, alert_lead_minutes: clamped }));
+                      }}
                       className={inputCls}
                     />
                   </Field>
                   <Field label="Customer self-cancel cutoff (minutes)" hint="Before the slot">
                     <input
                       type="number"
+                      inputMode="numeric"
                       min={0}
                       max={1440}
-                      value={schedulingSettings.self_cancel_cutoff_minutes}
-                      onChange={(e) =>
-                        setSchedulingSettings((s) => ({
-                          ...s,
-                          self_cancel_cutoff_minutes: clampInt(e.target.value, 0, 1440, SCHEDULING_DEFAULTS.self_cancel_cutoff_minutes),
-                        }))
-                      }
+                      value={selfCancelDraft}
+                      onChange={(e) => setSelfCancelDraft(e.target.value)}
+                      onBlur={() => {
+                        const clamped = clampInt(selfCancelDraft, 0, 1440, SCHEDULING_DEFAULTS.self_cancel_cutoff_minutes);
+                        setSelfCancelDraft(String(clamped));
+                        setSchedulingSettings((s) => ({ ...s, self_cancel_cutoff_minutes: clamped }));
+                      }}
                       className={inputCls}
                     />
                   </Field>
