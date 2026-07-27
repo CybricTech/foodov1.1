@@ -12,11 +12,20 @@ export default async function SettingsPage() {
   const supabase = await createServerClient();
   const { restaurantId } = session;
 
-  const { data: restaurant } = await supabase
-    .from("restaurants")
-    .select("*")
-    .eq("id", restaurantId)
-    .single();
+  const [{ data: restaurant }, { data: agreement }] = await Promise.all([
+    supabase
+      .from("restaurants")
+      .select("*")
+      .eq("id", restaurantId)
+      .single(),
+    supabase
+      .from("merchant_agreements")
+      .select("*")
+      .eq("restaurant_id", restaurantId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
-  return <SettingsClient restaurant={restaurant!} />;
+  return <SettingsClient restaurant={restaurant!} agreement={agreement ?? null} />;
 }

@@ -9,6 +9,7 @@ import { ConnectionBanner } from "@/components/dashboard/connection-banner";
 import { RouterAutoRefresh } from "@/components/shared/router-auto-refresh";
 import { getPostHogClient } from "@/lib/posthog";
 import { WhatsNew } from "@/components/dashboard/whats-new";
+import { AgreementReminderBanner } from "@/components/dashboard/agreement-reminder-banner";
 
 export async function generateMetadata(): Promise<Metadata> {
   const session = await getDashboardUser();
@@ -64,7 +65,7 @@ export default async function DashboardLayout({
   // the merchant happens to be on (not only the home screen). The home header
   // still renders the reopen button (autoOpen off there to avoid a double popup).
   const supabase = await createServerClient();
-  const [{ data: changelogEntries }, { data: profile }] = await Promise.all([
+  const [{ data: changelogEntries }, { data: profile }, { data: pendingAgreement }] = await Promise.all([
     supabase
       .from("changelog_entries")
       .select("id, title, body, tag, image_url, version_label, published_at")
@@ -76,6 +77,14 @@ export default async function DashboardLayout({
       .from("user_profiles")
       .select("last_seen_changelog_at")
       .eq("id", session.userId)
+      .maybeSingle(),
+    supabase
+      .from("merchant_agreements")
+      .select("id")
+      .eq("restaurant_id", session.restaurantId)
+      .eq("status", "sent")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ]);
 
@@ -89,7 +98,10 @@ export default async function DashboardLayout({
           userName={session.fullName || session.email}
           role={session.role}
         />
-        <main className="md:ml-60 min-h-screen pb-20 md:pb-0">{children}</main>
+        <main className="md:ml-60 min-h-screen pb-20 md:pb-0">
+          {pendingAgreement && <AgreementReminderBanner />}
+          {children}
+        </main>
       </div>
       <WhatsNew
         userId={session.userId}

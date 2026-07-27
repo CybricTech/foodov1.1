@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/server";
-import { MerchantDetailClient } from "@/components/admin/merchant-detail-client";
+import { MerchantDetailClient, type AgreementRow } from "@/components/admin/merchant-detail-client";
 import { MerchantSmsSenderCard } from "@/components/admin/merchant-sms-sender-card";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export default async function MerchantDetailPage({
     { data: customers },
     { data: recentOrders },
     { data: walletTransactions },
+    { data: agreement },
     { data: recentSettlements },
   ] = await Promise.all([
     supabase
@@ -91,6 +93,14 @@ export default async function MerchantDetailPage({
       .eq("restaurant_id", id)
       .order("created_at", { ascending: false })
       .limit(20),
+
+    supabase
+      .from("merchant_agreements")
+      .select("*")
+      .eq("restaurant_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
 
     supabase
       .from("settlements")
@@ -218,6 +228,7 @@ export default async function MerchantDetailPage({
       />
 
       {/* Tabbed Content */}
+      <Suspense>
       <MerchantDetailClient
         restaurant={{
           id: restaurant.id,
@@ -268,7 +279,9 @@ export default async function MerchantDetailPage({
         recentSettlements={recentSettlements ?? []}
         customers={safeCustomers}
         topItemsList={topItemsList}
+        agreement={(agreement as unknown as AgreementRow) ?? null}
       />
+      </Suspense>
     </div>
   );
 }

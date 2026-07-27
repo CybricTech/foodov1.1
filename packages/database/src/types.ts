@@ -706,6 +706,84 @@ export type Database = {
           },
         ]
       }
+      // NOTE: hand-appended for migration 097 (regenerate with
+      // `npm run generate-types -w @foodo/database` after the migration is
+      // applied to the remote project).
+      merchant_agreements: {
+        Row: {
+          countersigned_at: string | null
+          created_at: string
+          created_by: string | null
+          docuseal_submission_id: number | null
+          fee_terms: Json
+          final_pdf_path: string | null
+          id: string
+          kitchyn_signer_email: string | null
+          legal_name: string | null
+          merchant_signer_email: string | null
+          merchant_signed_at: string | null
+          rc_number: string | null
+          restaurant_id: string
+          status: string
+          template_version: string
+          unsigned_pdf_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          countersigned_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          docuseal_submission_id?: number | null
+          fee_terms?: Json
+          final_pdf_path?: string | null
+          id?: string
+          kitchyn_signer_email?: string | null
+          legal_name?: string | null
+          merchant_signer_email?: string | null
+          merchant_signed_at?: string | null
+          rc_number?: string | null
+          restaurant_id: string
+          status?: string
+          template_version?: string
+          unsigned_pdf_path?: string | null
+          updated_at?: string
+        }
+        Update: {
+          countersigned_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          docuseal_submission_id?: number | null
+          fee_terms?: Json
+          final_pdf_path?: string | null
+          id?: string
+          kitchyn_signer_email?: string | null
+          legal_name?: string | null
+          merchant_signer_email?: string | null
+          merchant_signed_at?: string | null
+          rc_number?: string | null
+          restaurant_id?: string
+          status?: string
+          template_version?: string
+          unsigned_pdf_path?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_agreements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "merchant_agreements_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       menu_item_option_choices: {
         Row: {
           id: string
@@ -1907,6 +1985,89 @@ export type Database = {
       debit_wallet_for_settlement: {
         Args: { p_amount_kobo: number; p_restaurant_id: string }
         Returns: undefined
+      }
+      // NOTE: hand-appended for migration 098 (regenerate after applying).
+      finance_daily: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          day: string
+          delivery_margin_kobo: number
+          foodo_net_kobo: number
+          gateway_fees_kobo: number
+          gmv_kobo: number
+          merchant_charge_kobo: number
+          net_revenue_kobo: number
+          order_count: number
+          pending_platform_deliveries: number
+          service_fees_kobo: number
+        }[]
+      }
+      finance_order_economics: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          created_at: string
+          delivery_cost_kobo: number
+          delivery_fee_kobo: number
+          delivery_margin_kobo: number
+          discount_kobo: number
+          dispatch_type: string
+          foodo_net_kobo: number
+          fulfillment_type: string
+          gateway_fee_kobo: number
+          merchant_charge_kobo: number
+          order_id: string
+          order_total_kobo: number
+          own_commission_kobo: number
+          payment_status: string
+          platform_delivery_margin_kobo: number
+          platform_delivery_pending: boolean
+          restaurant_id: string
+          restaurant_name: string
+          service_fee_kobo: number
+          status: string
+          subtotal_kobo: number
+          vat_kobo: number
+          wat_date: string
+        }[]
+      }
+      finance_per_merchant: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          delivery_margin_kobo: number
+          foodo_net_kobo: number
+          gateway_fees_kobo: number
+          gmv_kobo: number
+          merchant_charge_kobo: number
+          net_revenue_kobo: number
+          order_count: number
+          restaurant_id: string
+          restaurant_name: string
+          service_fees_kobo: number
+        }[]
+      }
+      finance_summary: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          avg_order_value_kobo: number
+          delivery_fees_realised_kobo: number
+          delivery_margin_kobo: number
+          discounts_kobo: number
+          foodo_net_kobo: number
+          gateway_fees_kobo: number
+          gmv_kobo: number
+          merchant_charge_kobo: number
+          net_revenue_kobo: number
+          order_count: number
+          own_commission_kobo: number
+          pending_platform_deliveries: number
+          platform_delivery_margin_kobo: number
+          refund_count: number
+          refunds_kobo: number
+          rider_costs_kobo: number
+          service_fees_kobo: number
+          take_rate: number
+          vat_collected_kobo: number
+        }[]
       }
       foodo_order_net_kobo: {
         Args: {
