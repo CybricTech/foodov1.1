@@ -17,6 +17,97 @@ import {
 // Nigerian bank list fetched from Paystack (cached in component state)
 type PaystackBank = { id: number; name: string; code: string };
 
+export type MerchantAgreementRow = {
+  id: string;
+  status: string;
+  legal_name: string | null;
+  merchant_signed_at: string | null;
+  countersigned_at: string | null;
+  final_pdf_path: string | null;
+  created_at: string;
+};
+
+const AGREEMENT_STATUS_META: Record<string, { label: string; className: string }> = {
+  draft: { label: "Preparing", className: "bg-black-100 text-black-500" },
+  sent: { label: "Awaiting your signature", className: "bg-purple-100 text-purple-600" },
+  merchant_signed: { label: "Awaiting Kitchyn countersignature", className: "bg-dixie-100 text-dixie-600" },
+  completed: { label: "Signed", className: "bg-viridian-100 text-viridian-600" },
+  declined: { label: "Declined", className: "bg-cinnabar-100 text-cinnabar-600" },
+  expired: { label: "Expired — contact Kitchyn", className: "bg-black-100 text-black-400" },
+  voided: { label: "Voided — contact Kitchyn", className: "bg-black-100 text-black-400" },
+};
+
+function AgreementSection({ agreement }: { agreement: MerchantAgreementRow | null }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleReviewAndSign() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/merchant/agreement");
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load signing link");
+      } else if (data.sign_url) {
+        window.open(data.sign_url, "_blank", "noopener,noreferrer");
+      } else {
+        setError("Signing link isn't ready yet — try again shortly.");
+      }
+    } catch {
+      setError("Network error");
+    }
+    setLoading(false);
+  }
+
+  if (!agreement) {
+    return (
+      <Section title="Merchant agreement">
+        <p className="text-sm text-black-400">
+          Kitchyn hasn&rsquo;t sent your Merchant Agreement yet — you&rsquo;ll see it here as soon as it&rsquo;s ready to sign.
+        </p>
+      </Section>
+    );
+  }
+
+  const meta = AGREEMENT_STATUS_META[agreement.status] ?? AGREEMENT_STATUS_META.draft;
+
+  return (
+    <Section title="Merchant agreement">
+      <div className="space-y-3">
+        <span className={cn("inline-flex px-2 py-0.5 rounded-full text-xs font-medium", meta.className)}>
+          {meta.label}
+        </span>
+
+        {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+
+        <div className="flex flex-wrap gap-2">
+          {agreement.status === "sent" && (
+            <button
+              type="button"
+              onClick={handleReviewAndSign}
+              disabled={loading}
+              className="text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl transition-colors disabled:opacity-40"
+            >
+              {loading ? "Loading…" : "Review & sign"}
+            </button>
+          )}
+          {agreement.status === "completed" && agreement.final_pdf_path && (
+            <a
+              href="/api/merchant/agreement/file"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold text-purple-500 hover:underline"
+            >
+              View signed agreement
+            </a>
+          )}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 function BankAccountSection({ restaurantId, initialData }: {
   restaurantId: string;
   initialData: {
@@ -464,7 +555,13 @@ type RestaurantExtended = Restaurant & {
   scheduling_settings?: unknown;
 };
 
-export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
+export function SettingsClient({
+  restaurant,
+  agreement,
+}: {
+  restaurant: Restaurant;
+  agreement: MerchantAgreementRow | null;
+}) {
   const supabase = createBrowserClient();
   const r = restaurant as RestaurantExtended;
 
@@ -1398,6 +1495,9 @@ export function SettingsClient({ restaurant }: { restaurant: Restaurant }) {
               monnify_bank_verified_at: (r as RestaurantExtended & { monnify_bank_verified_at?: string | null }).monnify_bank_verified_at ?? null,
             }}
           />
+
+          {/* Merchant agreement */}
+          <AgreementSection agreement={agreement} />
 
           {/* Delivery pricing */}
           <RestaurantDeliveryPricingSection

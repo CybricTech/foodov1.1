@@ -20,6 +20,8 @@ import {
   Sparkles,
   Stamp,
   CalendarClock,
+  Wallet,
+  FileSignature,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +34,8 @@ export const NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/riders",       label: "Riders",        icon: Bike,            exact: false },
   { href: "/admin/analytics",    label: "Analytics",     icon: TrendingUp,      exact: false },
   { href: "/admin/settlements",  label: "Settlements",   icon: Banknote,        exact: false },
+  { href: "/admin/finance",      label: "Finance",       icon: Wallet,          exact: false },
+  { href: "/admin/agreements",   label: "Agreements",    icon: FileSignature,   exact: false },
   { href: "/admin/disputes",     label: "Disputes",      icon: Scale,           exact: false },
   { href: "/admin/late-orders",  label: "Late Orders",   icon: AlertTriangle,   exact: false },
   { href: "/admin/scheduled-orders", label: "Scheduled Orders", icon: CalendarClock, exact: false },
@@ -52,6 +56,8 @@ const MOBILE_PINNED: AdminNavItem[] = NAV_ITEMS.filter((i) =>
 export const MOBILE_MORE_ITEMS: AdminNavItem[] = NAV_ITEMS.filter((i) =>
   [
     "/admin/analytics",
+    "/admin/finance",
+    "/admin/agreements",
     "/admin/disputes",
     "/admin/late-orders",
     "/admin/scheduled-orders",

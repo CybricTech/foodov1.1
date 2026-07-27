@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { MerchantOrdersClient } from "@/components/admin/merchant-orders-client";
@@ -82,6 +83,36 @@ type Wallet = {
   total_withdrawn_kobo: number;
 } | null;
 
+export type AgreementFeeTerms = {
+  legal_status?: string;
+  commission_pct?: number | null;
+  subscription_fee_ngn?: number | null;
+  free_period_start?: string | null;
+  free_period_end?: string | null;
+  delivery_modes?: string | null;
+  inhouse_commission_pct?: number | null;
+  settlement_cycle_days?: number | null;
+  bank_name?: string | null;
+  bank_account_name?: string | null;
+  bank_account_number?: string | null;
+  prep_time_minutes?: number | null;
+  effective_date?: string | null;
+};
+
+export type AgreementRow = {
+  id: string;
+  restaurant_id: string;
+  status: string;
+  template_version: string;
+  legal_name: string | null;
+  rc_number: string | null;
+  fee_terms: AgreementFeeTerms;
+  merchant_signed_at: string | null;
+  countersigned_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type KpiData = {
   gmvThisMonth: number;
   gmvLastMonth: number;
@@ -107,6 +138,7 @@ export type MerchantDetailClientProps = {
   recentSettlements: Settlement[];
   customers: Customer[];
   topItemsList: [string, number][];
+  agreement: AgreementRow | null;
 };
 
 /* ------------------------------------------------------------------ */
@@ -118,6 +150,7 @@ const TABS = [
   { key: "orders", label: "Orders" },
   { key: "customers", label: "Customers" },
   { key: "financials", label: "Financials" },
+  { key: "agreement", label: "Agreement" },
   { key: "settings", label: "Settings" },
 ] as const;
 
@@ -136,8 +169,13 @@ export function MerchantDetailClient({
   recentSettlements,
   customers,
   topItemsList,
+  agreement,
 }: MerchantDetailClientProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    (TABS.some((t) => t.key === initialTab) ? (initialTab as TabKey) : "overview")
+  );
 
   return (
     <div className="space-y-6">
@@ -178,6 +216,9 @@ export function MerchantDetailClient({
           walletTransactions={walletTransactions}
           recentSettlements={recentSettlements}
         />
+      )}
+      {activeTab === "agreement" && (
+        <AgreementTab restaurant={restaurant} initialAgreement={agreement} />
       )}
       {activeTab === "settings" && (
         <SettingsTab restaurant={restaurant} />
@@ -1452,6 +1493,369 @@ function InfoRow({
         {value}
         {warn && " !"}
       </p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Agreement Tab                                                      */
+/* ------------------------------------------------------------------ */
+
+const AGREEMENT_STATUS_META: Record<string, { label: string; className: string }> = {
+  draft: { label: "Draft", className: "bg-black-100 text-black-500" },
+  sent: { label: "Awaiting merchant", className: "bg-purple-100 text-purple-600" },
+  merchant_signed: { label: "Awaiting countersign", className: "bg-dixie-100 text-dixie-600" },
+  completed: { label: "Completed", className: "bg-viridian-100 text-viridian-600" },
+  declined: { label: "Declined", className: "bg-cinnabar-100 text-cinnabar-600" },
+  expired: { label: "Expired", className: "bg-black-100 text-black-400" },
+  voided: { label: "Voided", className: "bg-black-100 text-black-400" },
+};
+
+const CAN_REGENERATE = new Set(["voided", "declined", "expired"]);
+
+function AgreementTab({
+  restaurant,
+  initialAgreement,
+}: {
+  restaurant: Restaurant;
+  initialAgreement: AgreementRow | null;
+}) {
+  const [agreement, setAgreement] = useState<AgreementRow | null>(initialAgreement);
+  const [signLinks, setSignLinks] = useState<{ merchant: string | null; kitchyn: string | null }>({
+    merchant: null,
+    kitchyn: null,
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    if (!agreement) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/agreements/${agreement.id}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to refresh status");
+      } else {
+        setAgreement(data.agreement);
+        setSignLinks({ merchant: data.merchant_sign_url ?? null, kitchyn: data.kitchyn_sign_url ?? null });
+      }
+    } catch {
+      setError("Network error");
+    }
+    setBusy(false);
+  }, [agreement]);
+
+  async function handleVoid() {
+    if (!agreement) return;
+    if (!confirm("Void this agreement? The merchant will no longer be able to sign it.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/agreements/${agreement.id}/void`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to void agreement");
+      } else {
+        setAgreement(data.agreement);
+      }
+    } catch {
+      setError("Network error");
+    }
+    setBusy(false);
+  }
+
+  async function handleCountersign() {
+    await refresh();
+    if (signLinks.kitchyn) {
+      window.open(signLinks.kitchyn, "_blank", "noopener,noreferrer");
+    } else {
+      setError("Countersign link not available yet — try Refresh in a moment.");
+    }
+  }
+
+  if (!agreement || CAN_REGENERATE.has(agreement.status)) {
+    return (
+      <div className="space-y-4">
+        {agreement && (
+          <div className={cn("rounded-2xl px-4 py-3 text-sm", AGREEMENT_STATUS_META[agreement.status]?.className)}>
+            Previous agreement is {AGREEMENT_STATUS_META[agreement.status]?.label.toLowerCase()}. Generating a new
+            one below will replace it.
+          </div>
+        )}
+        <GenerateAgreementForm
+          restaurant={restaurant}
+          onGenerated={(a) => setAgreement(a)}
+        />
+      </div>
+    );
+  }
+
+  const meta = AGREEMENT_STATUS_META[agreement.status] ?? AGREEMENT_STATUS_META.draft;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-black-200 px-5 py-4 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <span className={cn("inline-flex px-2 py-0.5 rounded-full text-xs font-medium", meta.className)}>
+              {meta.label}
+            </span>
+            <p className="text-xs text-black-400 mt-1">
+              Template {agreement.template_version} &middot; created{" "}
+              {new Date(agreement.created_at).toLocaleDateString("en-NG")}
+            </p>
+          </div>
+          <button
+            onClick={refresh}
+            disabled={busy}
+            className="text-xs font-medium text-black-500 border border-black-200 rounded-lg px-3 py-1.5 hover:bg-black-50 disabled:opacity-40"
+          >
+            {busy ? "Refreshing…" : "Refresh status"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <InfoRow label="Legal name" value={agreement.legal_name ?? "—"} />
+          <InfoRow label="RC/BN number" value={agreement.rc_number ?? "—"} />
+          <InfoRow
+            label="Merchant signed"
+            value={agreement.merchant_signed_at ? new Date(agreement.merchant_signed_at).toLocaleString("en-NG") : "Not yet"}
+            muted={!agreement.merchant_signed_at}
+          />
+          <InfoRow
+            label="Countersigned"
+            value={agreement.countersigned_at ? new Date(agreement.countersigned_at).toLocaleString("en-NG") : "Not yet"}
+            muted={!agreement.countersigned_at}
+          />
+        </div>
+
+        {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          {agreement.status === "merchant_signed" && (
+            <button
+              onClick={handleCountersign}
+              disabled={busy}
+              className="text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl transition-colors disabled:opacity-40"
+            >
+              Countersign in DocuSeal
+            </button>
+          )}
+          {agreement.status === "completed" && (
+            <a
+              href={`/api/admin/agreements/${agreement.id}/file`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold bg-viridian-600 hover:bg-viridian-500 text-white px-4 py-2 rounded-xl transition-colors"
+            >
+              View signed PDF
+            </a>
+          )}
+          {agreement.status !== "completed" && (
+            <button
+              onClick={handleVoid}
+              disabled={busy}
+              className="text-sm font-medium text-cinnabar-500 border border-cinnabar-200 hover:bg-cinnabar-50 px-4 py-2 rounded-xl transition-colors disabled:opacity-40"
+            >
+              Void agreement
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GenerateAgreementForm({
+  restaurant,
+  onGenerated,
+}: {
+  restaurant: Restaurant;
+  onGenerated: (agreement: AgreementRow) => void;
+}) {
+  const [legalName, setLegalName] = useState(restaurant.name);
+  const [rcNumber, setRcNumber] = useState("");
+  const [legalStatus, setLegalStatus] = useState("incorporated_company");
+  const [commissionPct, setCommissionPct] = useState("10");
+  const [subscriptionFee, setSubscriptionFee] = useState("0");
+  const [freePeriodStart, setFreePeriodStart] = useState("");
+  const [freePeriodEnd, setFreePeriodEnd] = useState("");
+  const [deliveryModes, setDeliveryModes] = useState("platform");
+  const [inhouseCommissionPct, setInhouseCommissionPct] = useState("");
+  const [settlementCycleDays, setSettlementCycleDays] = useState("7");
+  const [prepTimeMinutes, setPrepTimeMinutes] = useState("35");
+  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/agreements/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          restaurant_id: restaurant.id,
+          legal_name: legalName,
+          rc_number: rcNumber || null,
+          fee_terms: {
+            legal_status: legalStatus,
+            commission_pct: commissionPct ? Number(commissionPct) : null,
+            subscription_fee_ngn: subscriptionFee ? Number(subscriptionFee) : null,
+            free_period_start: freePeriodStart || null,
+            free_period_end: freePeriodEnd || null,
+            delivery_modes: deliveryModes,
+            inhouse_commission_pct: inhouseCommissionPct ? Number(inhouseCommissionPct) : null,
+            settlement_cycle_days: settlementCycleDays ? Number(settlementCycleDays) : null,
+            bank_name: null,
+            bank_account_name: restaurant.bank_account_name,
+            bank_account_number: restaurant.bank_account_number,
+            prep_time_minutes: prepTimeMinutes ? Number(prepTimeMinutes) : null,
+            effective_date: effectiveDate || null,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to generate agreement");
+      } else {
+        onGenerated(data.agreement);
+      }
+    } catch {
+      setError("Network error");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-black-200 px-5 py-5 space-y-4">
+      <h3 className="text-sm font-bold text-black-900">Generate agreement</h3>
+      <p className="text-xs text-black-400">
+        Creates a DocuSeal submission from the sealed Merchant Agreement template and emails the merchant to sign.
+      </p>
+
+      <div className="grid grid-cols-2 gap-4">
+        <AgreementField label="Legal name">
+          <input
+            value={legalName}
+            onChange={(e) => setLegalName(e.target.value)}
+            required
+            className={agreementInputCls}
+          />
+        </AgreementField>
+        <AgreementField label="RC/BN number">
+          <input value={rcNumber} onChange={(e) => setRcNumber(e.target.value)} className={agreementInputCls} />
+        </AgreementField>
+        <AgreementField label="Legal status">
+          <select value={legalStatus} onChange={(e) => setLegalStatus(e.target.value)} className={agreementInputCls}>
+            <option value="incorporated_company">Incorporated company</option>
+            <option value="business_name">Business name</option>
+            <option value="individual">Individual</option>
+          </select>
+        </AgreementField>
+        <AgreementField label="Commission (%)">
+          <input
+            type="number"
+            step="0.1"
+            value={commissionPct}
+            onChange={(e) => setCommissionPct(e.target.value)}
+            className={agreementInputCls}
+          />
+        </AgreementField>
+        <AgreementField label="Subscription fee (₦)">
+          <input
+            type="number"
+            value={subscriptionFee}
+            onChange={(e) => setSubscriptionFee(e.target.value)}
+            className={agreementInputCls}
+          />
+        </AgreementField>
+        <AgreementField label="Settlement cycle (days)">
+          <input
+            type="number"
+            value={settlementCycleDays}
+            onChange={(e) => setSettlementCycleDays(e.target.value)}
+            className={agreementInputCls}
+          />
+        </AgreementField>
+        <AgreementField label="Free period start">
+          <input
+            type="date"
+            value={freePeriodStart}
+            onChange={(e) => setFreePeriodStart(e.target.value)}
+            className={agreementInputCls}
+          />
+        </AgreementField>
+        <AgreementField label="Free period end">
+          <input
+            type="date"
+            value={freePeriodEnd}
+            onChange={(e) => setFreePeriodEnd(e.target.value)}
+            className={agreementInputCls}
+          />
+        </AgreementField>
+        <AgreementField label="Delivery modes">
+          <select value={deliveryModes} onChange={(e) => setDeliveryModes(e.target.value)} className={agreementInputCls}>
+            <option value="platform">Platform riders</option>
+            <option value="in_house">In-house riders</option>
+            <option value="both">Both</option>
+          </select>
+        </AgreementField>
+        <AgreementField label="In-house commission (%)" hint="Only if delivery includes in-house">
+          <input
+            type="number"
+            step="0.1"
+            value={inhouseCommissionPct}
+            onChange={(e) => setInhouseCommissionPct(e.target.value)}
+            className={agreementInputCls}
+          />
+        </AgreementField>
+        <AgreementField label="Prep time (minutes)">
+          <input
+            type="number"
+            value={prepTimeMinutes}
+            onChange={(e) => setPrepTimeMinutes(e.target.value)}
+            className={agreementInputCls}
+          />
+        </AgreementField>
+        <AgreementField label="Effective date">
+          <input
+            type="date"
+            value={effectiveDate}
+            onChange={(e) => setEffectiveDate(e.target.value)}
+            className={agreementInputCls}
+          />
+        </AgreementField>
+      </div>
+
+      {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white px-5 py-2.5 rounded-xl transition-colors disabled:opacity-40"
+      >
+        {saving ? "Sending…" : "Generate & send to merchant"}
+      </button>
+    </form>
+  );
+}
+
+const agreementInputCls =
+  "w-full text-sm border border-black-200 rounded-lg px-3 py-2 text-black-700 focus:outline-none focus:border-purple-400 bg-white";
+
+function AgreementField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-black-500 mb-1">
+        {label}
+        {hint && <span className="text-black-300 font-normal"> &middot; {hint}</span>}
+      </label>
+      {children}
     </div>
   );
 }
