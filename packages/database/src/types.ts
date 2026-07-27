@@ -706,84 +706,6 @@ export type Database = {
           },
         ]
       }
-      // NOTE: hand-appended for migration 097 (regenerate with
-      // `npm run generate-types -w @foodo/database` after the migration is
-      // applied to the remote project).
-      merchant_agreements: {
-        Row: {
-          countersigned_at: string | null
-          created_at: string
-          created_by: string | null
-          docuseal_submission_id: number | null
-          fee_terms: Json
-          final_pdf_path: string | null
-          id: string
-          kitchyn_signer_email: string | null
-          legal_name: string | null
-          merchant_signer_email: string | null
-          merchant_signed_at: string | null
-          rc_number: string | null
-          restaurant_id: string
-          status: string
-          template_version: string
-          unsigned_pdf_path: string | null
-          updated_at: string
-        }
-        Insert: {
-          countersigned_at?: string | null
-          created_at?: string
-          created_by?: string | null
-          docuseal_submission_id?: number | null
-          fee_terms?: Json
-          final_pdf_path?: string | null
-          id?: string
-          kitchyn_signer_email?: string | null
-          legal_name?: string | null
-          merchant_signer_email?: string | null
-          merchant_signed_at?: string | null
-          rc_number?: string | null
-          restaurant_id: string
-          status?: string
-          template_version?: string
-          unsigned_pdf_path?: string | null
-          updated_at?: string
-        }
-        Update: {
-          countersigned_at?: string | null
-          created_at?: string | null
-          created_by?: string | null
-          docuseal_submission_id?: number | null
-          fee_terms?: Json
-          final_pdf_path?: string | null
-          id?: string
-          kitchyn_signer_email?: string | null
-          legal_name?: string | null
-          merchant_signer_email?: string | null
-          merchant_signed_at?: string | null
-          rc_number?: string | null
-          restaurant_id?: string
-          status?: string
-          template_version?: string
-          unsigned_pdf_path?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "merchant_agreements_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "merchant_agreements_restaurant_id_fkey"
-            columns: ["restaurant_id"]
-            isOneToOne: false
-            referencedRelation: "restaurants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       menu_item_option_choices: {
         Row: {
           id: string
@@ -964,6 +886,81 @@ export type Database = {
           },
           {
             foreignKeyName: "menu_items_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      merchant_agreements: {
+        Row: {
+          countersigned_at: string | null
+          created_at: string
+          created_by: string | null
+          docuseal_submission_id: number | null
+          fee_terms: Json
+          final_pdf_path: string | null
+          id: string
+          kitchyn_signer_email: string | null
+          legal_name: string | null
+          merchant_signed_at: string | null
+          merchant_signer_email: string | null
+          rc_number: string | null
+          restaurant_id: string
+          status: string
+          template_version: string
+          unsigned_pdf_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          countersigned_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          docuseal_submission_id?: number | null
+          fee_terms?: Json
+          final_pdf_path?: string | null
+          id?: string
+          kitchyn_signer_email?: string | null
+          legal_name?: string | null
+          merchant_signed_at?: string | null
+          merchant_signer_email?: string | null
+          rc_number?: string | null
+          restaurant_id: string
+          status?: string
+          template_version?: string
+          unsigned_pdf_path?: string | null
+          updated_at?: string
+        }
+        Update: {
+          countersigned_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          docuseal_submission_id?: number | null
+          fee_terms?: Json
+          final_pdf_path?: string | null
+          id?: string
+          kitchyn_signer_email?: string | null
+          legal_name?: string | null
+          merchant_signed_at?: string | null
+          merchant_signer_email?: string | null
+          rc_number?: string | null
+          restaurant_id?: string
+          status?: string
+          template_version?: string
+          unsigned_pdf_path?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_agreements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "merchant_agreements_restaurant_id_fkey"
             columns: ["restaurant_id"]
             isOneToOne: false
             referencedRelation: "restaurants"
@@ -1986,7 +1983,7 @@ export type Database = {
         Args: { p_amount_kobo: number; p_restaurant_id: string }
         Returns: undefined
       }
-      // NOTE: hand-appended for migration 098 (regenerate after applying).
+      finance_assert_admin: { Args: never; Returns: undefined }
       finance_daily: {
         Args: { p_from: string; p_to: string }
         Returns: {
