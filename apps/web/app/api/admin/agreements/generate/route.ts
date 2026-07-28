@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
 const FeeTermsSchema = z.object({
   legal_status: z.string().optional(),
   commission_pct: z.number().nullable().optional(),
-  subscription_fee_ngn: z.number().nullable().optional(),
+  // Number once agreed, or free text such as "TBD" before then.
+  subscription_fee_ngn: z.union([z.number(), z.string()]).nullable().optional(),
   free_period_start: z.string().nullable().optional(),
   free_period_end: z.string().nullable().optional(),
   delivery_modes: z.string().nullable().optional(),
