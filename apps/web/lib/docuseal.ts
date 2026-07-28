@@ -25,6 +25,7 @@
 /** DocuSeal template field names (must match the template built in DocuSeal). */
 export const TEMPLATE_FIELD_MAP = {
   merchant_legal_name: "merchant_legal_name",
+  legal_status: "legal_status",
   rc_number: "rc_number",
   commission_pct: "commission_pct",
   subscription_fee: "subscription_fee",
@@ -39,6 +40,29 @@ export const TEMPLATE_FIELD_MAP = {
   prep_time_minutes: "prep_time_minutes",
   effective_date: "effective_date",
 } as const;
+
+/**
+ * Our enum values rendered as Schedule 1 words them, so the executed agreement
+ * reads "Incorporated company" / "Platform Delivery" rather than leaking the
+ * internal `incorporated_company` / `platform` slugs into a legal document.
+ * Unknown values fall through unchanged rather than silently blanking.
+ */
+const LEGAL_STATUS_LABELS: Record<string, string> = {
+  incorporated_company: "Incorporated company",
+  business_name: "Registered business name",
+  individual: "Individual",
+};
+
+const DELIVERY_MODE_LABELS: Record<string, string> = {
+  platform: "Platform Delivery",
+  in_house: "In-House Delivery",
+  both: "Both",
+};
+
+function label(map: Record<string, string>, value: string | null | undefined): string | null {
+  if (!value) return null;
+  return map[value] ?? value;
+}
 
 /** Schedule 1 fee terms snapshot, stored on merchant_agreements.fee_terms. */
 export interface AgreementFeeTerms {
@@ -156,22 +180,34 @@ export async function createSubmission(params: {
 
   const { legalName, rcNumber, feeTerms, merchantEmail, merchantName, kitchynEmail, externalId } = params;
 
-  // Prefill values for the MERCHANT party's fields (editable in the form).
-  // Names must match the DocuSeal template fields (see TEMPLATE_FIELD_MAP).
-  const field = (name: string, value: string | number | null | undefined) => ({
-    name,
-    default_value: value == null ? "" : String(value),
-    readonly: false,
-  });
+  // Prefill values for the MERCHANT party's fields. Names must match the
+  // DocuSeal template fields (see TEMPLATE_FIELD_MAP).
+  //
+  // A populated value is locked (readonly): these are the terms Kitchyn agreed
+  // at onboarding, so the merchant's choice is to sign or decline — not to
+  // quietly rewrite the commission and sign the altered deal. Every commercial
+  // term always carries a value (the admin form defaults them), so in practice
+  // the whole Schedule 1 economic set ships locked.
+  //
+  // A blank value stays editable on purpose: it's a detail only the merchant
+  // holds (RC/BN number, bank name, account details when none are on file yet).
+  // Locking an empty box would strand the signer with no way to complete it.
+  const field = (name: string, value: string | number | null | undefined) => {
+    const filled = value == null ? "" : String(value).trim();
+    return { name, default_value: filled, readonly: filled !== "" };
+  };
 
   const merchantFields = [
     field(TEMPLATE_FIELD_MAP.merchant_legal_name, legalName),
+    // Locked in from the admin's selection: it drives clause 1.4, under which a
+    // merchant that is NOT an incorporated company is personally liable.
+    field(TEMPLATE_FIELD_MAP.legal_status, label(LEGAL_STATUS_LABELS, feeTerms.legal_status)),
     field(TEMPLATE_FIELD_MAP.rc_number, rcNumber),
     field(TEMPLATE_FIELD_MAP.commission_pct, feeTerms.commission_pct),
     field(TEMPLATE_FIELD_MAP.subscription_fee, feeTerms.subscription_fee_ngn),
     field(TEMPLATE_FIELD_MAP.free_period_start, feeTerms.free_period_start),
     field(TEMPLATE_FIELD_MAP.free_period_end, feeTerms.free_period_end),
-    field(TEMPLATE_FIELD_MAP.delivery_modes, feeTerms.delivery_modes),
+    field(TEMPLATE_FIELD_MAP.delivery_modes, label(DELIVERY_MODE_LABELS, feeTerms.delivery_modes)),
     field(TEMPLATE_FIELD_MAP.inhouse_commission_pct, feeTerms.inhouse_commission_pct),
     field(TEMPLATE_FIELD_MAP.settlement_cycle_days, feeTerms.settlement_cycle_days),
     field(TEMPLATE_FIELD_MAP.bank_name, feeTerms.bank_name),
