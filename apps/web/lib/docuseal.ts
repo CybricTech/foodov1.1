@@ -44,7 +44,7 @@ export const TEMPLATE_FIELD_MAP = {
 export interface AgreementFeeTerms {
   legal_status?: string; // incorporated_company | business_name | individual
   commission_pct?: number | null;
-  subscription_fee_ngn?: number | null;
+  subscription_fee_ngn?: number | string | null; // number once agreed, else "TBD"
   free_period_start?: string | null; // YYYY-MM-DD
   free_period_end?: string | null; // YYYY-MM-DD
   delivery_modes?: string | null; // platform | in_house | both

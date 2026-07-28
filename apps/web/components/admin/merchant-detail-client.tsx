@@ -1678,15 +1678,26 @@ function GenerateAgreementForm({
   const [legalName, setLegalName] = useState(restaurant.name);
   const [rcNumber, setRcNumber] = useState("");
   const [legalStatus, setLegalStatus] = useState("incorporated_company");
-  const [commissionPct, setCommissionPct] = useState("10");
-  const [subscriptionFee, setSubscriptionFee] = useState("0");
-  const [freePeriodStart, setFreePeriodStart] = useState("");
-  const [freePeriodEnd, setFreePeriodEnd] = useState("");
+  // Standard Kitchyn commercial terms. These defaults are deliberately kept in
+  // step with the Merchant Agreement's own wording and with platform_settings,
+  // so a generated Schedule 1 never contradicts the clauses above it:
+  //   commission 1%            → platform_settings.merchant_charge_pct (0.01)
+  //   in-house commission 10%  → clause 6.8(b) "ten percent (10%)" +
+  //                              platform_settings.delivery_commission_pct (0.10)
+  //   settlement 7 Business Days → clause 7.4's stated fallback. Operations
+  //     actually release funds after settlement_hold_hours (24h), so this is
+  //     the contractual outer bound we commit to, not the target.
+  //   free period 3 months     → the "Free Period" definition in clause 1.1
+  const today = new Date();
+  const [commissionPct, setCommissionPct] = useState("1");
+  const [subscriptionFee, setSubscriptionFee] = useState("TBD");
+  const [freePeriodStart, setFreePeriodStart] = useState(toDateInput(today));
+  const [freePeriodEnd, setFreePeriodEnd] = useState(toDateInput(addMonths(today, 3)));
   const [deliveryModes, setDeliveryModes] = useState("platform");
-  const [inhouseCommissionPct, setInhouseCommissionPct] = useState("");
+  const [inhouseCommissionPct, setInhouseCommissionPct] = useState("10");
   const [settlementCycleDays, setSettlementCycleDays] = useState("7");
-  const [prepTimeMinutes, setPrepTimeMinutes] = useState("35");
-  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  const [prepTimeMinutes, setPrepTimeMinutes] = useState("20");
+  const [effectiveDate, setEffectiveDate] = useState(toDateInput(today));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1705,7 +1716,13 @@ function GenerateAgreementForm({
           fee_terms: {
             legal_status: legalStatus,
             commission_pct: commissionPct ? Number(commissionPct) : null,
-            subscription_fee_ngn: subscriptionFee ? Number(subscriptionFee) : null,
+            // Kept as a string when it isn't numeric (e.g. the "TBD" default),
+            // so the agreement can be issued before the fee is agreed.
+            subscription_fee_ngn: subscriptionFee
+              ? Number.isFinite(Number(subscriptionFee))
+                ? Number(subscriptionFee)
+                : subscriptionFee
+              : null,
             free_period_start: freePeriodStart || null,
             free_period_end: freePeriodEnd || null,
             delivery_modes: deliveryModes,
@@ -1766,15 +1783,15 @@ function GenerateAgreementForm({
             className={agreementInputCls}
           />
         </AgreementField>
-        <AgreementField label="Subscription fee (₦)">
+        <AgreementField label="Subscription fee (₦)" hint={'Amount, or "TBD"'}>
           <input
-            type="number"
+            type="text"
             value={subscriptionFee}
             onChange={(e) => setSubscriptionFee(e.target.value)}
             className={agreementInputCls}
           />
         </AgreementField>
-        <AgreementField label="Settlement cycle (days)">
+        <AgreementField label="Settlement cycle (Business Days)" hint="Clause 7.4">
           <input
             type="number"
             value={settlementCycleDays}
@@ -1847,6 +1864,19 @@ function GenerateAgreementForm({
 
 const agreementInputCls =
   "w-full text-sm border border-black-200 rounded-lg px-3 py-2 text-black-700 focus:outline-none focus:border-purple-400 bg-white";
+
+/** YYYY-MM-DD in local time — `toISOString()` would shift the day in WAT. */
+function toDateInput(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function addMonths(d: Date, months: number): Date {
+  const out = new Date(d);
+  out.setMonth(out.getMonth() + months);
+  return out;
+}
 
 function AgreementField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
