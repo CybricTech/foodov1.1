@@ -7,6 +7,8 @@ import {
   formatKobo,
   isPendingScheduledOrder,
   formatLagosSlotLabel,
+  laneForPolicy,
+  type DispatchPolicy,
   type OpeningHours,
   type SchedulingSettings,
 } from "@foodo/utils";
@@ -195,12 +197,15 @@ interface FrontlineOrdersClientProps {
    *  reschedule picker. */
   schedulingSettings: SchedulingSettings;
   openingHours: OpeningHours | null;
+  /** Migration 101 — decides whether the "who delivers?" modal opens at all. */
+  dispatchPolicy: DispatchPolicy;
 }
 
 export function FrontlineOrdersClient({
   restaurantId,
   initialOrders,
   initialCompletedTotal,
+  dispatchPolicy,
   schedulingSettings,
   openingHours,
 }: FrontlineOrdersClientProps) {
@@ -477,9 +482,18 @@ export function FrontlineOrdersClient({
   );
 
   const openDispatchModal = useCallback((order: OrderRow) => {
-    setDispatchModal({ order, step: "select", selectedType: null });
+    // Only a hybrid merchant is asked. For the other two the lane is already
+    // decided, so skip straight to confirming the one option they have — and
+    // for 'platform' the rider may well have been requested on the timer
+    // already, in which case the API just tells us it's in hand.
+    const fixed = laneForPolicy(dispatchPolicy);
+    setDispatchModal(
+      fixed
+        ? { order, step: "confirm", selectedType: fixed as "platform_rider" | "own_rider" }
+        : { order, step: "select", selectedType: null }
+    );
     setDispatchError(null);
-  }, []);
+  }, [dispatchPolicy]);
 
   const handleDispatchConfirm = useCallback(async () => {
     if (!dispatchModal?.selectedType) return;
@@ -507,10 +521,20 @@ export function FrontlineOrdersClient({
         throw new Error((data as { error?: string }).error || "Failed to dispatch order");
       }
 
-      const newStatus = dispatchModal.selectedType === "platform_rider" ? "assigned_to_rider" : "in_transit";
+      // The platform lane no longer moves orders.status — the rider runs on its
+      // own track (migration 101) and the food stays "ready" until collected.
+      const newStatus =
+        dispatchModal.selectedType === "own_rider" ? "in_transit" : "ready_for_pickup";
       setOrders((prev) =>
         prev.map((o) =>
-          o.id === dispatchModal.order.id ? { ...o, status: newStatus as OrderRow["status"] } : o
+          o.id === dispatchModal.order.id
+            ? {
+                ...o,
+                status: newStatus as OrderRow["status"],
+                dispatch_state:
+                  dispatchModal.selectedType === "platform_rider" ? "requested" : "not_required",
+              }
+            : o
         )
       );
       setDispatchModal(null);
@@ -1225,15 +1249,17 @@ function FrontlineOrderCard({
 
           {column === "in_transit" && (
             <>
-              {order.status === "ready_for_pickup" && order.fulfillment_type === "delivery" && (
-                <button
-                  onClick={() => onDispatchReady?.(order)}
-                  disabled={loading}
-                  className="flex-1 bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
-                >
-                  Assign Rider
-                </button>
-              )}
+              {order.status === "ready_for_pickup" &&
+                order.fulfillment_type === "delivery" &&
+                !order.rider_requested_at && (
+                  <button
+                    onClick={() => onDispatchReady?.(order)}
+                    disabled={loading}
+                    className="flex-1 bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors duration-150 cursor-pointer"
+                  >
+                    Assign Rider
+                  </button>
+                )}
               {order.status === "ready_for_pickup" && order.fulfillment_type === "pickup" && (
                 <button
                   onClick={() => onUpdateStatus(order.id, "delivered")}
@@ -1253,7 +1279,9 @@ function FrontlineOrderCard({
                 </button>
               )}
               {(order.status === "assigned_to_rider" ||
-                (order.status === "in_transit" && order.dispatch_type === "platform_rider")) && (
+                (order.dispatch_type === "platform_rider" &&
+                  ["ready_for_pickup", "in_transit"].includes(order.status) &&
+                  Boolean(order.rider_requested_at))) && (
                 <span className="flex-1 text-center text-xs text-purple-600 font-semibold py-2 bg-purple-50 rounded-lg">
                   Kitchyn rider handling
                 </span>

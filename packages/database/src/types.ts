@@ -97,6 +97,150 @@ export type Database = {
         }
         Relationships: []
       }
+      bolt_auth_tokens: {
+        Row: {
+          access_token: string
+          expires_at: string
+          id: string
+          refreshed_at: string
+        }
+        Insert: {
+          access_token: string
+          expires_at: string
+          id?: string
+          refreshed_at?: string
+        }
+        Update: {
+          access_token?: string
+          expires_at?: string
+          id?: string
+          refreshed_at?: string
+        }
+        Relationships: []
+      }
+      bolt_rides: {
+        Row: {
+          attempt: number
+          bolt_ride_id: number | null
+          booked_at: string | null
+          cancelled_at: string | null
+          completed_at: string | null
+          created_at: string
+          currency_code: string | null
+          driver_assigned_at: string | null
+          driver_lat: number | null
+          driver_lng: number | null
+          driver_name: string | null
+          driver_phone: string | null
+          dropoff_lat: number | null
+          dropoff_lng: number | null
+          environment: string
+          estimate_kobo: number | null
+          eta_seconds: number | null
+          fare_breakdown: Json | null
+          fare_kobo: number | null
+          id: string
+          invoice_url: string | null
+          last_error: string | null
+          last_error_code: string | null
+          location_updated_at: string | null
+          note_to_driver: string | null
+          order_id: string
+          picked_up_at: string | null
+          pickup_lat: number | null
+          pickup_lng: number | null
+          restaurant_id: string
+          state: string
+          updated_at: string
+          vehicle_category: string | null
+        }
+        Insert: {
+          attempt?: number
+          bolt_ride_id?: number | null
+          booked_at?: string | null
+          cancelled_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+          currency_code?: string | null
+          driver_assigned_at?: string | null
+          driver_lat?: number | null
+          driver_lng?: number | null
+          driver_name?: string | null
+          driver_phone?: string | null
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
+          environment?: string
+          estimate_kobo?: number | null
+          eta_seconds?: number | null
+          fare_breakdown?: Json | null
+          fare_kobo?: number | null
+          id?: string
+          invoice_url?: string | null
+          last_error?: string | null
+          last_error_code?: string | null
+          location_updated_at?: string | null
+          note_to_driver?: string | null
+          order_id: string
+          picked_up_at?: string | null
+          pickup_lat?: number | null
+          pickup_lng?: number | null
+          restaurant_id: string
+          state?: string
+          updated_at?: string
+          vehicle_category?: string | null
+        }
+        Update: {
+          attempt?: number
+          bolt_ride_id?: number | null
+          booked_at?: string | null
+          cancelled_at?: string | null
+          completed_at?: string | null
+          created_at?: string
+          currency_code?: string | null
+          driver_assigned_at?: string | null
+          driver_lat?: number | null
+          driver_lng?: number | null
+          driver_name?: string | null
+          driver_phone?: string | null
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
+          environment?: string
+          estimate_kobo?: number | null
+          eta_seconds?: number | null
+          fare_breakdown?: Json | null
+          fare_kobo?: number | null
+          id?: string
+          invoice_url?: string | null
+          last_error?: string | null
+          last_error_code?: string | null
+          location_updated_at?: string | null
+          note_to_driver?: string | null
+          order_id?: string
+          picked_up_at?: string | null
+          pickup_lat?: number | null
+          pickup_lng?: number | null
+          restaurant_id?: string
+          state?: string
+          updated_at?: string
+          vehicle_category?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bolt_rides_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bolt_rides_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       changelog_entries: {
         Row: {
           body: string
@@ -706,84 +850,6 @@ export type Database = {
           },
         ]
       }
-      // NOTE: hand-appended for migration 097 (regenerate with
-      // `npm run generate-types -w @foodo/database` after the migration is
-      // applied to the remote project).
-      merchant_agreements: {
-        Row: {
-          countersigned_at: string | null
-          created_at: string
-          created_by: string | null
-          docuseal_submission_id: number | null
-          fee_terms: Json
-          final_pdf_path: string | null
-          id: string
-          kitchyn_signer_email: string | null
-          legal_name: string | null
-          merchant_signer_email: string | null
-          merchant_signed_at: string | null
-          rc_number: string | null
-          restaurant_id: string
-          status: string
-          template_version: string
-          unsigned_pdf_path: string | null
-          updated_at: string
-        }
-        Insert: {
-          countersigned_at?: string | null
-          created_at?: string
-          created_by?: string | null
-          docuseal_submission_id?: number | null
-          fee_terms?: Json
-          final_pdf_path?: string | null
-          id?: string
-          kitchyn_signer_email?: string | null
-          legal_name?: string | null
-          merchant_signer_email?: string | null
-          merchant_signed_at?: string | null
-          rc_number?: string | null
-          restaurant_id: string
-          status?: string
-          template_version?: string
-          unsigned_pdf_path?: string | null
-          updated_at?: string
-        }
-        Update: {
-          countersigned_at?: string | null
-          created_at?: string | null
-          created_by?: string | null
-          docuseal_submission_id?: number | null
-          fee_terms?: Json
-          final_pdf_path?: string | null
-          id?: string
-          kitchyn_signer_email?: string | null
-          legal_name?: string | null
-          merchant_signer_email?: string | null
-          merchant_signed_at?: string | null
-          rc_number?: string | null
-          restaurant_id?: string
-          status?: string
-          template_version?: string
-          unsigned_pdf_path?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "merchant_agreements_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "merchant_agreements_restaurant_id_fkey"
-            columns: ["restaurant_id"]
-            isOneToOne: false
-            referencedRelation: "restaurants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       menu_item_option_choices: {
         Row: {
           id: string
@@ -971,6 +1037,81 @@ export type Database = {
           },
         ]
       }
+      merchant_agreements: {
+        Row: {
+          countersigned_at: string | null
+          created_at: string
+          created_by: string | null
+          docuseal_submission_id: number | null
+          fee_terms: Json
+          final_pdf_path: string | null
+          id: string
+          kitchyn_signer_email: string | null
+          legal_name: string | null
+          merchant_signed_at: string | null
+          merchant_signer_email: string | null
+          rc_number: string | null
+          restaurant_id: string
+          status: string
+          template_version: string
+          unsigned_pdf_path: string | null
+          updated_at: string
+        }
+        Insert: {
+          countersigned_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          docuseal_submission_id?: number | null
+          fee_terms?: Json
+          final_pdf_path?: string | null
+          id?: string
+          kitchyn_signer_email?: string | null
+          legal_name?: string | null
+          merchant_signed_at?: string | null
+          merchant_signer_email?: string | null
+          rc_number?: string | null
+          restaurant_id: string
+          status?: string
+          template_version?: string
+          unsigned_pdf_path?: string | null
+          updated_at?: string
+        }
+        Update: {
+          countersigned_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          docuseal_submission_id?: number | null
+          fee_terms?: Json
+          final_pdf_path?: string | null
+          id?: string
+          kitchyn_signer_email?: string | null
+          legal_name?: string | null
+          merchant_signed_at?: string | null
+          merchant_signer_email?: string | null
+          rc_number?: string | null
+          restaurant_id?: string
+          status?: string
+          template_version?: string
+          unsigned_pdf_path?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_agreements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "merchant_agreements_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monnify_auth_tokens: {
         Row: {
           access_token: string
@@ -1059,6 +1200,9 @@ export type Database = {
       orders: {
         Row: {
           activated_at: string | null
+          bolt_autobook_stopped_at: string | null
+          bolt_autobook_stopped_by: string | null
+          bolt_booking_claimed_at: string | null
           cancellation_reason: string | null
           cancelled_reason: string | null
           created_at: string
@@ -1069,6 +1213,7 @@ export type Database = {
           delivered_at: string | null
           delivery_address: string | null
           delivery_cost_kobo: number | null
+          delivery_cost_source: string | null
           delivery_distance_km: number | null
           delivery_fee: number
           delivery_fee_kobo: number
@@ -1080,6 +1225,7 @@ export type Database = {
           discount_code: string | null
           discount_id: string | null
           discount_kobo: number
+          dispatch_state: string | null
           dispatch_type: string | null
           estimated_delivery_at: string | null
           fulfillment_type: string
@@ -1094,6 +1240,9 @@ export type Database = {
           restaurant_id: string
           rider_alert_sent_at: string | null
           rider_id: string | null
+          rider_request_due_at: string | null
+          rider_request_source: string | null
+          rider_requested_at: string | null
           scheduled_alert_sent_at: string | null
           scheduled_for: string | null
           service_fee_kobo: number
@@ -1109,6 +1258,9 @@ export type Database = {
         }
         Insert: {
           activated_at?: string | null
+          bolt_autobook_stopped_at?: string | null
+          bolt_autobook_stopped_by?: string | null
+          bolt_booking_claimed_at?: string | null
           cancellation_reason?: string | null
           cancelled_reason?: string | null
           created_at?: string
@@ -1119,6 +1271,7 @@ export type Database = {
           delivered_at?: string | null
           delivery_address?: string | null
           delivery_cost_kobo?: number | null
+          delivery_cost_source?: string | null
           delivery_distance_km?: number | null
           delivery_fee?: number
           delivery_fee_kobo?: number
@@ -1130,6 +1283,7 @@ export type Database = {
           discount_code?: string | null
           discount_id?: string | null
           discount_kobo?: number
+          dispatch_state?: string | null
           dispatch_type?: string | null
           estimated_delivery_at?: string | null
           fulfillment_type: string
@@ -1144,6 +1298,9 @@ export type Database = {
           restaurant_id: string
           rider_alert_sent_at?: string | null
           rider_id?: string | null
+          rider_request_due_at?: string | null
+          rider_request_source?: string | null
+          rider_requested_at?: string | null
           scheduled_alert_sent_at?: string | null
           scheduled_for?: string | null
           service_fee_kobo?: number
@@ -1159,6 +1316,9 @@ export type Database = {
         }
         Update: {
           activated_at?: string | null
+          bolt_autobook_stopped_at?: string | null
+          bolt_autobook_stopped_by?: string | null
+          bolt_booking_claimed_at?: string | null
           cancellation_reason?: string | null
           cancelled_reason?: string | null
           created_at?: string
@@ -1169,6 +1329,7 @@ export type Database = {
           delivered_at?: string | null
           delivery_address?: string | null
           delivery_cost_kobo?: number | null
+          delivery_cost_source?: string | null
           delivery_distance_km?: number | null
           delivery_fee?: number
           delivery_fee_kobo?: number
@@ -1180,6 +1341,7 @@ export type Database = {
           discount_code?: string | null
           discount_id?: string | null
           discount_kobo?: number
+          dispatch_state?: string | null
           dispatch_type?: string | null
           estimated_delivery_at?: string | null
           fulfillment_type?: string
@@ -1194,6 +1356,9 @@ export type Database = {
           restaurant_id?: string
           rider_alert_sent_at?: string | null
           rider_id?: string | null
+          rider_request_due_at?: string | null
+          rider_request_source?: string | null
+          rider_requested_at?: string | null
           scheduled_alert_sent_at?: string | null
           scheduled_for?: string | null
           service_fee_kobo?: number
@@ -1383,6 +1548,9 @@ export type Database = {
           admin_whatsapp_number: string | null
           auto_payout_enabled: boolean
           auto_payout_shadow: boolean
+          bolt_booking_enabled: boolean
+          bolt_booking_shadow: boolean
+          bolt_environment: string
           delivery_base_fee_kobo: number
           delivery_commission_pct: number
           delivery_max_fee_kobo: number
@@ -1390,9 +1558,11 @@ export type Database = {
           delivery_per_km_rate_kobo: number
           id: string
           merchant_charge_pct: number
+          rider_request_lead_minutes: number
           service_charge_fixed_kobo: number
           service_charge_pct: number
           settlement_hold_hours: number
+          timed_rider_request_enabled: boolean
           updated_at: string
           updated_by: string | null
         }
@@ -1401,6 +1571,9 @@ export type Database = {
           admin_whatsapp_number?: string | null
           auto_payout_enabled?: boolean
           auto_payout_shadow?: boolean
+          bolt_booking_enabled?: boolean
+          bolt_booking_shadow?: boolean
+          bolt_environment?: string
           delivery_base_fee_kobo?: number
           delivery_commission_pct?: number
           delivery_max_fee_kobo?: number
@@ -1408,9 +1581,11 @@ export type Database = {
           delivery_per_km_rate_kobo?: number
           id?: string
           merchant_charge_pct?: number
+          rider_request_lead_minutes?: number
           service_charge_fixed_kobo?: number
           service_charge_pct?: number
           settlement_hold_hours?: number
+          timed_rider_request_enabled?: boolean
           updated_at?: string
           updated_by?: string | null
         }
@@ -1419,6 +1594,9 @@ export type Database = {
           admin_whatsapp_number?: string | null
           auto_payout_enabled?: boolean
           auto_payout_shadow?: boolean
+          bolt_booking_enabled?: boolean
+          bolt_booking_shadow?: boolean
+          bolt_environment?: string
           delivery_base_fee_kobo?: number
           delivery_commission_pct?: number
           delivery_max_fee_kobo?: number
@@ -1426,9 +1604,11 @@ export type Database = {
           delivery_per_km_rate_kobo?: number
           id?: string
           merchant_charge_pct?: number
+          rider_request_lead_minutes?: number
           service_charge_fixed_kobo?: number
           service_charge_pct?: number
           settlement_hold_hours?: number
+          timed_rider_request_enabled?: boolean
           updated_at?: string
           updated_by?: string | null
         }
@@ -1485,11 +1665,11 @@ export type Database = {
           bank_account_name: string | null
           bank_account_number: string | null
           bank_code: string | null
-          banner_url: string | null
           banner_focal_x: number
-          banner_focal_y: number
           banner_focal_x_mobile: number
+          banner_focal_y: number
           banner_focal_y_mobile: number
+          banner_url: string | null
           city: string | null
           closure_message: string | null
           closure_message_history: string[]
@@ -1505,6 +1685,10 @@ export type Database = {
           is_active: boolean
           is_test: boolean
           latitude: number | null
+          location_verified_at: string | null
+          dispatch_policy: string
+          dispatch_policy_locked_at: string | null
+          dispatch_policy_locked_by: string | null
           logistics_default: string
           logo_url: string | null
           longitude: number | null
@@ -1516,10 +1700,12 @@ export type Database = {
           opening_hours: Json | null
           paystack_recipient_code: string | null
           phone: string | null
+          place_id: string | null
           primary_color: string | null
           restaurant_base_fee_kobo: number | null
           restaurant_max_fee_kobo: number | null
           restaurant_per_km_rate_kobo: number | null
+          rider_request_lead_minutes: number | null
           scheduling_settings: Json | null
           slug: string
           sms_sender_id: string | null
@@ -1541,11 +1727,11 @@ export type Database = {
           bank_account_name?: string | null
           bank_account_number?: string | null
           bank_code?: string | null
-          banner_url?: string | null
           banner_focal_x?: number
-          banner_focal_y?: number
           banner_focal_x_mobile?: number
+          banner_focal_y?: number
           banner_focal_y_mobile?: number
+          banner_url?: string | null
           city?: string | null
           closure_message?: string | null
           closure_message_history?: string[]
@@ -1561,6 +1747,10 @@ export type Database = {
           is_active?: boolean
           is_test?: boolean
           latitude?: number | null
+          location_verified_at?: string | null
+          dispatch_policy?: string
+          dispatch_policy_locked_at?: string | null
+          dispatch_policy_locked_by?: string | null
           logistics_default?: string
           logo_url?: string | null
           longitude?: number | null
@@ -1572,10 +1762,12 @@ export type Database = {
           opening_hours?: Json | null
           paystack_recipient_code?: string | null
           phone?: string | null
+          place_id?: string | null
           primary_color?: string | null
           restaurant_base_fee_kobo?: number | null
           restaurant_max_fee_kobo?: number | null
           restaurant_per_km_rate_kobo?: number | null
+          rider_request_lead_minutes?: number | null
           scheduling_settings?: Json | null
           slug: string
           sms_sender_id?: string | null
@@ -1597,11 +1789,11 @@ export type Database = {
           bank_account_name?: string | null
           bank_account_number?: string | null
           bank_code?: string | null
-          banner_url?: string | null
           banner_focal_x?: number
-          banner_focal_y?: number
           banner_focal_x_mobile?: number
+          banner_focal_y?: number
           banner_focal_y_mobile?: number
+          banner_url?: string | null
           city?: string | null
           closure_message?: string | null
           closure_message_history?: string[]
@@ -1617,6 +1809,10 @@ export type Database = {
           is_active?: boolean
           is_test?: boolean
           latitude?: number | null
+          location_verified_at?: string | null
+          dispatch_policy?: string
+          dispatch_policy_locked_at?: string | null
+          dispatch_policy_locked_by?: string | null
           logistics_default?: string
           logo_url?: string | null
           longitude?: number | null
@@ -1628,10 +1824,12 @@ export type Database = {
           opening_hours?: Json | null
           paystack_recipient_code?: string | null
           phone?: string | null
+          place_id?: string | null
           primary_color?: string | null
           restaurant_base_fee_kobo?: number | null
           restaurant_max_fee_kobo?: number | null
           restaurant_per_km_rate_kobo?: number | null
+          rider_request_lead_minutes?: number | null
           scheduling_settings?: Json | null
           slug?: string
           sms_sender_id?: string | null
@@ -1986,7 +2184,7 @@ export type Database = {
         Args: { p_amount_kobo: number; p_restaurant_id: string }
         Returns: undefined
       }
-      // NOTE: hand-appended for migration 098 (regenerate after applying).
+      finance_assert_admin: { Args: never; Returns: undefined }
       finance_daily: {
         Args: { p_from: string; p_to: string }
         Returns: {
@@ -2264,3 +2462,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

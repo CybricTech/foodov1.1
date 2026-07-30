@@ -6,6 +6,8 @@ import {
   formatKobo,
   getOrderQueueBucket,
   formatLagosSlotLabel,
+  policyShowsDispatchPicker,
+  type DispatchPolicy,
   type OpeningHours,
   type SchedulingSettings,
 } from "@foodo/utils";
@@ -64,6 +66,20 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
   }>;
 };
 
+/**
+ * What the merchant is told about the Kitchyn rider, keyed on the order's
+ * rider-side state (migration 101). Shown alongside their own cooking actions,
+ * not instead of them.
+ */
+const RIDER_PROGRESS_LABELS: Record<string, string> = {
+  requested: "Getting you a Kitchyn rider",
+  booked: "Finding a Kitchyn rider",
+  driver_assigned: "Kitchyn rider on the way to you",
+  picked_up: "Kitchyn rider has the order",
+  delivered: "Delivered by Kitchyn rider",
+  failed: "Trouble finding a rider — we're on it",
+};
+
 /** Platform fallback when no item carries a prep time (matches the checkout webhook). */
 const DEFAULT_PREP_MINUTES = 20;
 
@@ -87,6 +103,15 @@ interface OrderQueueClientProps {
    *  reschedule picker. */
   schedulingSettings: SchedulingSettings;
   openingHours: OpeningHours | null;
+  /**
+   * How this merchant's deliveries are handled (migration 101). Decides whether
+   * the "who delivers this?" picker appears at all:
+   *   platform  never — a Kitchyn rider is requested automatically before the
+   *             food is ready, so there is nothing to ask
+   *   in_house  never — their own rider always takes it
+   *   hybrid    always — they choose per order
+   */
+  dispatchPolicy: DispatchPolicy;
 }
 
 function formatTimeAgo(dateStr: string | null): string {
@@ -114,6 +139,7 @@ export function OrderQueueClient({
   initialCompletedTotal,
   schedulingSettings,
   openingHours,
+  dispatchPolicy,
 }: OrderQueueClientProps) {
   const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
   // Refresh scheduled-slot countdowns every 30s.
@@ -283,12 +309,23 @@ export function OrderQueueClient({
   async function dispatchOrder(orderId: string, dispatchType: "platform_rider" | "own_rider") {
     setActionLoading(orderId);
     setActionError(null);
-    const expectedStatus = dispatchType === "platform_rider" ? "assigned_to_rider" : "in_transit";
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId ? { ...o, status: expectedStatus as OrderRow["status"] } : o
-      )
-    );
+    // The platform lane no longer moves orders.status — the rider is tracked
+    // separately (migration 101), and the food stays "ready" until a rider
+    // actually collects it. Only the in-house lane is a real status change.
+    const expectedStatus = dispatchType === "own_rider" ? "in_transit" : null;
+    if (expectedStatus) {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId ? { ...o, status: expectedStatus as OrderRow["status"] } : o
+        )
+      );
+    } else {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId ? { ...o, dispatch_state: "requested" } : o
+        )
+      );
+    }
     try {
       const res = await fetch("/api/dashboard/orders/dispatch", {
         method: "POST",
@@ -609,6 +646,7 @@ export function OrderQueueClient({
                       onDeclineScheduled={declineScheduled}
                       schedulingSettings={schedulingSettings}
                       openingHours={openingHours}
+                      dispatchPolicy={dispatchPolicy}
                       slotCount={order.scheduled_for ? slotCounts.get(order.scheduled_for) ?? 1 : 0}
                       loading={actionLoading === order.id}
                     />
@@ -631,6 +669,7 @@ export function OrderQueueClient({
                 onDeclineScheduled={declineScheduled}
                 schedulingSettings={schedulingSettings}
                 openingHours={openingHours}
+                dispatchPolicy={dispatchPolicy}
                 slotCount={order.scheduled_for ? slotCounts.get(order.scheduled_for) ?? 1 : 0}
                 loading={actionLoading === order.id}
               />
@@ -655,12 +694,14 @@ function OrderCard({
   onDeclineScheduled,
   schedulingSettings,
   openingHours,
+  dispatchPolicy,
   slotCount,
   loading,
 }: {
   order: OrderRow;
   onUpdateStatus: (id: string, status: string, estimatedReadyMinutes?: number) => void;
   onDispatch: (orderId: string, dispatchType: "platform_rider" | "own_rider") => void;
+  dispatchPolicy: DispatchPolicy;
   onCancel: (id: string, reason: string) => void;
   onActivateNow: (id: string) => void;
   onReschedule: (id: string, newSlotIso: string) => void;
@@ -688,9 +729,15 @@ function OrderCard({
 
   // Once a Foodo platform rider has the order, completion is handled exclusively
   // from the admin riders page. The merchant sees a status pill, not an action.
+  // A Kitchyn rider is on this one, so the merchant sees a status, not a button.
+  // Keyed off the rider request rather than orders.status, because since
+  // migration 101 the request can land while the food is still cooking — the
+  // status check is retained for orders dispatched before then.
   const platformRiderHandling =
     order.dispatch_type === "platform_rider" &&
-    (order.status === "assigned_to_rider" || order.status === "in_transit");
+    (Boolean(order.rider_requested_at) ||
+      order.status === "assigned_to_rider" ||
+      order.status === "in_transit");
 
   const nextStatus: Record<string, string | null> = {
     pending:           "confirmed",
@@ -712,7 +759,25 @@ function OrderCard({
     in_transit:        "Mark Delivered",
   };
 
-  let next = platformRiderHandling ? null : nextStatus[order.status];
+  // The rider being on their way does NOT mean the merchant is finished. Under
+  // time-driven requests a Kitchyn rider is sought up to a lead time before the
+  // food is ready, so the merchant must keep Mark Ready while it cooks; only
+  // once the food is out of their hands do they have nothing left to do. Taking
+  // the button away at request time is precisely the lock-out migration 101
+  // exists to remove.
+  const platformRiderLocksActions =
+    platformRiderHandling &&
+    ["ready_for_pickup", "assigned_to_rider", "in_transit"].includes(order.status);
+
+  let next = platformRiderLocksActions ? null : nextStatus[order.status];
+
+  // "Customer Collected" is the pickup wording. An in-house merchant hitting
+  // this on a DELIVERY order is handing the food to their own rider, which is a
+  // different sentence for the same transition.
+  const resolvedActionLabel =
+    order.status === "ready_for_pickup" && order.fulfillment_type === "delivery"
+      ? "Hand to Rider"
+      : actionLabel[order.status];
   // Pickup orders are never "in transit" — collecting completes them, so
   // "Customer Collected" goes straight from ready_for_pickup to delivered.
   if (order.status === "ready_for_pickup" && order.fulfillment_type === "pickup") {
@@ -720,10 +785,14 @@ function OrderCard({
   }
   const canCancel = ["pending", "confirmed"].includes(order.status);
 
-  // Show delivery method picker instead of the normal action button for delivery
-  // orders that are ready — merchant decides who handles the last mile.
+  // The picker only exists for HYBRID merchants (migration 101). A platform
+  // merchant's rider is requested automatically before the food is ready, and an
+  // in-house merchant always uses their own — asking either of them "who
+  // delivers this?" is a question with one answer they never chose.
   const needsDeliveryChoice =
-    order.status === "ready_for_pickup" && order.fulfillment_type === "delivery";
+    order.status === "ready_for_pickup" &&
+    order.fulfillment_type === "delivery" &&
+    policyShowsDispatchPicker(dispatchPolicy);
 
   return (
     <div className="bg-white rounded-2xl border border-black-100 overflow-hidden shadow-card">
@@ -1063,9 +1132,14 @@ function OrderCard({
               <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-purple-50 border border-purple-100 text-purple-700">
                 <Radio size={14} className="flex-shrink-0" />
                 <div className="flex-1">
-                  <p className="text-xs font-bold leading-tight">Kitchyn rider handling delivery</p>
+                  <p className="text-xs font-bold leading-tight">
+                    {RIDER_PROGRESS_LABELS[order.dispatch_state ?? ""] ??
+                      "Kitchyn rider handling delivery"}
+                  </p>
                   <p className="text-[11px] text-purple-500 mt-0.5 leading-snug">
-                    Order will be marked delivered as soon as customer collects order.
+                    {platformRiderLocksActions
+                      ? "We'll mark this delivered once the customer has it."
+                      : "Carry on cooking — we're getting a rider to you for when it's ready."}
                   </p>
                 </div>
               </div>
@@ -1073,7 +1147,7 @@ function OrderCard({
           )}
 
           {/* ── Normal action buttons (non-delivery-choice states) ── */}
-          {!isScheduled && !platformRiderHandling && !needsDeliveryChoice && (next || canCancel) && !showCancel && (
+          {!isScheduled && !platformRiderLocksActions && !needsDeliveryChoice && (next || canCancel) && !showCancel && (
             <div className="px-4 py-3 flex gap-2">
               {next && (
                 <button
@@ -1091,7 +1165,7 @@ function OrderCard({
                   disabled={loading}
                   className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors duration-150 cursor-pointer"
                 >
-                  {loading ? "Updating…" : actionLabel[order.status]}
+                  {loading ? "Updating…" : resolvedActionLabel}
                 </button>
               )}
               {canCancel && (
@@ -1159,7 +1233,7 @@ function OrderCard({
                   disabled={loading}
                   className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors duration-150 cursor-pointer"
                 >
-                  {loading ? "Confirming…" : actionLabel[order.status] ?? "Confirm Order"}
+                  {loading ? "Confirming…" : resolvedActionLabel ?? "Confirm Order"}
                 </button>
                 <button
                   onClick={() => setShowConfirm(false)}

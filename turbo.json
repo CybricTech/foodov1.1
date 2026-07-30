@@ -3,9 +3,19 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "build/**"],
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*"
+      ],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**",
+        "build/**"
+      ],
       "env": [
         "NEXT_PUBLIC_SUPABASE_URL",
         "NEXT_PUBLIC_SUPABASE_ANON_KEY",
@@ -27,6 +37,10 @@
         "NEXT_PUBLIC_APP_ENV",
         "SENTRY_AUTH_TOKEN",
         "SENTRY_WEBHOOK_SECRET",
+        "BOLT_CLIENT_ID",
+        "BOLT_CLIENT_SECRET",
+        "BOLT_SANDBOX_UUID",
+        "BOLT_WEBHOOK_TOKEN",
         "DOCUSEAL_API_URL",
         "DOCUSEAL_API_TOKEN",
         "DOCUSEAL_TEMPLATE_ID",
@@ -41,13 +55,23 @@
       "cache": false
     },
     "lint": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "type-check": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "clean": {
       "cache": false
+    },
+    "test": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": []
     }
   }
 }

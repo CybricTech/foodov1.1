@@ -14,6 +14,7 @@ import { CategoryTabs } from "@/components/storefront/category-tabs";
 import { MenuSections } from "@/components/storefront/menu-sections";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { getActiveMenuSale } from "@/lib/discounts";
+import { getStorefrontShareMetadata } from "@/lib/storefront-metadata";
 
 export const revalidate = 60;
 
@@ -24,9 +25,12 @@ interface MenuPageProps {
 export async function generateMetadata({ params }: MenuPageProps) {
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) return {};
+  const title = `Menu — ${restaurant.name}`;
+  const description = restaurant.description ?? `Order from ${restaurant.name}`;
   return {
-    title: `Menu — ${restaurant.name}`,
-    description: restaurant.description ?? `Order from ${restaurant.name}`,
+    title,
+    description,
+    ...getStorefrontShareMetadata(restaurant, { title, description }),
   };
 }
 

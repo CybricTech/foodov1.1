@@ -9,7 +9,7 @@ export default async function AdminSettingsPage() {
   const { data: settings } = await supabase
     .from("platform_settings")
     .select(
-      "service_charge_pct, service_charge_fixed_kobo, merchant_charge_pct, settlement_hold_hours, delivery_base_fee_kobo, delivery_per_km_rate_kobo, delivery_max_radius_km, delivery_max_fee_kobo, delivery_commission_pct, admin_whatsapp_number, admin_alert_email"
+      "service_charge_pct, service_charge_fixed_kobo, merchant_charge_pct, settlement_hold_hours, delivery_base_fee_kobo, delivery_per_km_rate_kobo, delivery_max_radius_km, delivery_max_fee_kobo, delivery_commission_pct, admin_whatsapp_number, admin_alert_email, bolt_booking_enabled, bolt_booking_shadow, bolt_environment, timed_rider_request_enabled, rider_request_lead_minutes"
     )
     .single();
 

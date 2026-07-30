@@ -16,6 +16,7 @@ import { getActiveMenuSale } from "@/lib/discounts";
 import { ReviewsSection } from "@/components/storefront/reviews-section";
 import { LocationSection } from "@/components/storefront/location-section";
 import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
+import { getStorefrontShareMetadata } from "@/lib/storefront-metadata";
 
 export const revalidate = 60;
 
@@ -32,9 +33,12 @@ interface StorefrontPageProps {
 export async function generateMetadata({ params }: StorefrontPageProps) {
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) return {};
+  const title = restaurant.name;
+  const description = restaurant.description ?? `Order from ${restaurant.name}`;
   return {
-    title: restaurant.name,
-    description: restaurant.description ?? `Order from ${restaurant.name}`,
+    title,
+    description,
+    ...getStorefrontShareMetadata(restaurant, { title, description }),
   };
 }
 
