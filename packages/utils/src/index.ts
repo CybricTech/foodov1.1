@@ -8,3 +8,4 @@ export * from "./loyalty";
 export * from "./opening-hours";
 export * from "./schedule-slots";
 export * from "./order-buckets";
+export * from "./dispatch-policy";

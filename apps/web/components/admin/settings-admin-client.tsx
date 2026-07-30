@@ -14,6 +14,12 @@ type PlatformSettings = {
   delivery_commission_pct?: number | null;
   admin_whatsapp_number?: string | null;
   admin_alert_email?: string | null;
+  // Dispatch (migrations 095 / 101)
+  bolt_booking_enabled?: boolean | null;
+  bolt_booking_shadow?: boolean | null;
+  bolt_environment?: string | null;
+  timed_rider_request_enabled?: boolean | null;
+  rider_request_lead_minutes?: number | null;
 } | null;
 
 interface SettingsAdminClientProps {
@@ -25,15 +31,20 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
-  async function sendTestOrder() {
+  async function sendTestOrder(fulfillment: "pickup" | "delivery" = "pickup") {
     setTestLoading(true);
     setTestResult(null);
     try {
-      const res = await fetch("/api/admin/test-order", { method: "POST" });
+      const res = await fetch("/api/admin/test-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fulfillment }),
+      });
       const data = await res.json();
       setTestResult(
         res.ok
-          ? `✅ Sent order ${data.orderNumber} to ${data.restaurant}`
+          ? `✅ Sent ${fulfillment} order ${data.orderNumber} to ${data.restaurant}` +
+            (data.warning ? `\n⚠️ ${data.warning}` : "")
           : `❌ ${data.error ?? "Failed to send test order"}`
       );
     } catch (e) {
@@ -99,6 +110,49 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
   const [savingEmail, setSavingEmail] = useState(false);
   const [emailSaved, setEmailSaved] = useState(false);
   const [emailError, setEmailError] = useState("");
+
+  // ── Dispatch ──────────────────────────────────────────────────────────────
+  const [timedRequests, setTimedRequests] = useState(
+    settings?.timed_rider_request_enabled ?? false
+  );
+  const [leadMinutes, setLeadMinutes] = useState(
+    String(settings?.rider_request_lead_minutes ?? 10)
+  );
+  const [boltEnabled, setBoltEnabled] = useState(settings?.bolt_booking_enabled ?? false);
+  const [boltShadow, setBoltShadow] = useState(settings?.bolt_booking_shadow ?? true);
+  const [boltEnv, setBoltEnv] = useState(settings?.bolt_environment ?? "sandbox");
+  const [savingDispatch, setSavingDispatch] = useState(false);
+  const [dispatchSaved, setDispatchSaved] = useState(false);
+  const [dispatchError, setDispatchError] = useState("");
+
+  async function saveDispatchSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingDispatch(true);
+    setDispatchError("");
+    try {
+      const res = await fetch("/api/admin/platform-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          timed_rider_request_enabled: timedRequests,
+          rider_request_lead_minutes: parseInt(leadMinutes, 10),
+          bolt_booking_enabled: boltEnabled,
+          bolt_booking_shadow: boltShadow,
+          bolt_environment: boltEnv,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDispatchError(data.error ?? "Failed to save");
+      } else {
+        setDispatchSaved(true);
+        setTimeout(() => setDispatchSaved(false), 3000);
+      }
+    } catch {
+      setDispatchError("Network error");
+    }
+    setSavingDispatch(false);
+  }
 
   // Live formula preview at 3km, 7km, 15km
   function previewFee(km: number): string {
@@ -485,6 +539,131 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
         </form>
       </div>
 
+      {/* ── Dispatch ────────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-black-200">
+          <h2 className="font-bold text-black-900 text-sm">Dispatch</h2>
+          <p className="text-xs text-black-400 mt-0.5">
+            Two independent things. <strong>When</strong> we go looking for a
+            rider is the timer below. <strong>How</strong> we ask — our system
+            booking the Bolt ride itself, or a note in the Telegram group for
+            someone to book by hand — is the automated-booking switch. Merchants
+            can&apos;t tell the difference either way, so the switch is safe to
+            flip mid-service.
+          </p>
+        </div>
+        <form onSubmit={saveDispatchSettings} className="px-4 py-4 space-y-4">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={timedRequests}
+              onChange={(e) => setTimedRequests(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-purple-500 cursor-pointer"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-black-900">
+                Request riders on a timer
+              </span>
+              <span className="block text-xs text-black-400 mt-0.5 leading-relaxed">
+                For merchants set to &ldquo;Kitchyn delivers&rdquo;, go and get a
+                rider shortly before the food is ready instead of waiting for the
+                merchant to mark it ready. Off = riders are requested exactly as
+                they were before — this is the kill switch.
+              </span>
+            </span>
+          </label>
+
+          <div>
+            <label className="block text-xs font-semibold text-black-500 mb-1">
+              Lead time (minutes before food is ready)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="120"
+              value={leadMinutes}
+              onChange={(e) => setLeadMinutes(e.target.value)}
+              className="w-32 border border-black-200 rounded-xl px-3 py-2 text-sm"
+            />
+            <p className="text-[11px] text-black-400 mt-1">
+              Platform default. Individual merchants can override it — a store far
+              from where riders wait needs longer.
+            </p>
+          </div>
+
+          <hr className="border-black-100" />
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={boltEnabled}
+              onChange={(e) => setBoltEnabled(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-purple-500 cursor-pointer"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-black-900">
+                Automated Bolt booking
+              </span>
+              <span className="block text-xs text-black-400 mt-0.5 leading-relaxed">
+                On = we book the ride through Bolt&apos;s API. Off = the request
+                goes to the Telegram group and a person books it, exactly as
+                today.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={boltShadow}
+              onChange={(e) => setBoltShadow(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-purple-500 cursor-pointer"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-black-900">
+                Shadow mode
+              </span>
+              <span className="block text-xs text-black-400 mt-0.5 leading-relaxed">
+                Work out and record what we <em>would</em> book, and book nothing.
+                No money moves. The Telegram note still goes out, so deliveries
+                keep happening.
+              </span>
+            </span>
+          </label>
+
+          <div>
+            <label className="block text-xs font-semibold text-black-500 mb-1">
+              Bolt environment
+            </label>
+            <select
+              value={boltEnv}
+              onChange={(e) => setBoltEnv(e.target.value)}
+              className="border border-black-200 rounded-xl px-3 py-2 text-sm bg-white"
+            >
+              <option value="sandbox">Sandbox (fake rides, no cost)</option>
+              <option value="production">Production (real rides, real money)</option>
+            </select>
+          </div>
+
+          {boltEnabled && !boltShadow && boltEnv === "production" && (
+            <p className="text-xs font-semibold text-cinnabar-700 bg-cinnabar-50 rounded-xl px-3 py-2">
+              Live: saving this books real Bolt rides and spends real money.
+            </p>
+          )}
+
+          {dispatchError && (
+            <p className="text-xs text-cinnabar-600 font-medium">{dispatchError}</p>
+          )}
+          <button
+            type="submit"
+            disabled={savingDispatch}
+            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+          >
+            {savingDispatch ? "Saving…" : dispatchSaved ? "Saved!" : "Save dispatch settings"}
+          </button>
+        </form>
+      </div>
+
       {/* ── Testing (dev tool) ──────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-black-200">
@@ -496,14 +675,29 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
           </p>
         </div>
         <div className="px-4 py-4 space-y-3">
-          <button
-            type="button"
-            onClick={sendTestOrder}
-            disabled={testLoading}
-            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
-          >
-            {testLoading ? "Sending…" : "Send test order to CopperPot"}
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => sendTestOrder("pickup")}
+              disabled={testLoading}
+              className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+            >
+              {testLoading ? "Sending…" : "Send test PICKUP order"}
+            </button>
+            <button
+              type="button"
+              onClick={() => sendTestOrder("delivery")}
+              disabled={testLoading}
+              className="bg-black-900 hover:bg-black-700 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+            >
+              {testLoading ? "Sending…" : "Send test DELIVERY order"}
+            </button>
+          </div>
+          <p className="text-[11px] text-black-400 leading-relaxed">
+            Use the delivery one to test dispatch — a pickup order never gets a
+            rider, so it can&apos;t exercise any of it. The delivery order is
+            given a drop-off about 1.5km from the store.
+          </p>
           {testResult && (
             <p className="text-xs font-medium text-black-700">{testResult}</p>
           )}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getPostHogClient } from "@/lib/posthog";
+import { standDownRiderForOrder } from "@/lib/delivery/cancel-rider";
 
 /**
  * Mark an order as refunded/cancelled so the merchant is NOT paid for it.
@@ -125,6 +126,16 @@ export async function POST(request: NextRequest) {
       { status: 409 }
     );
   }
+
+  // Stand the rider down before touching the wallet. Since migration 101 a
+  // rider is requested up to a lead time before the food is ready, so an admin
+  // refunding a live order can easily be cancelling one with a Bolt ride already
+  // driving to the restaurant. Best-effort: a refund must not fail because Bolt
+  // was unreachable, and standDownRiderForOrder pages the Telegram group for any
+  // ride it could not cancel itself.
+  await standDownRiderForOrder(serviceClient, order_id, user.id).catch((err) =>
+    console.error(`[admin/orders/refund] stand-down failed order=${order_id}:`, err)
+  );
 
   // Re-derive the merchant wallet from source — the cancelled order now drops
   // out of pending automatically (recompute excludes cancelled). Loyalty

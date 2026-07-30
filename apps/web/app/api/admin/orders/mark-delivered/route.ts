@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getPostHogClient } from "@/lib/posthog";
+import { markOrderDelivered } from "@/lib/delivery/mark-order-delivered";
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient();
@@ -41,20 +42,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const deliveredAt = new Date().toISOString();
+  const result = await markOrderDelivered(serviceClient, {
+    orderId: order_id,
+    deliveryCostKobo: delivery_cost_kobo,
+    source: "manual",
+  });
 
-  const { error } = await serviceClient
-    .from("orders")
-    .update({ status: "delivered", delivery_cost_kobo, delivered_at: deliveredAt })
-    .eq("id", order_id)
-    .eq("status", "assigned_to_rider");
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  await serviceClient
-    .from("delivery_assignments")
-    .update({ status: "delivered", delivered_at: deliveredAt })
-    .eq("order_id", order_id);
+  if (!result.ok) {
+    if (result.reason === "not_in_assigned_state") {
+      // Previously this returned ok:true while still flipping the assignment
+      // to delivered, leaving orders and delivery_assignments disagreeing.
+      return NextResponse.json(
+        { error: "Order is no longer awaiting a rider — refresh the page" },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: result.message ?? "Update failed" }, { status: 500 });
+  }
 
   const posthog = getPostHogClient();
   posthog.capture({

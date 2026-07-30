@@ -22,6 +22,13 @@ interface SmsPayload {
   scheduledFor?: string;
   /** Merchant's reason — order_declined. */
   reason?: string;
+  /**
+   * Bolt-hosted live tracking page for the ride — order_in_transit only.
+   * Appended to the message when present; omitted entirely when it isn't, so a
+   * ride booked by hand (no Bolt ride_id, therefore no tracking page) still
+   * sends a clean message rather than a dangling "Track it:".
+   */
+  trackingUrl?: string;
 }
 
 /** "Thu 3 Jul, 6:30 PM" in Africa/Lagos — how slot times read in SMS copy. */
@@ -62,7 +69,7 @@ function buildMessage(
   eventType: SmsPayload["eventType"],
   orderNumber: string | number | undefined,
   restaurantName: string,
-  extras?: { scheduledFor?: string; reason?: string }
+  extras?: { scheduledFor?: string; reason?: string; trackingUrl?: string }
 ): string {
   const num = orderNumber ? `#${orderNumber}` : "";
   switch (eventType) {
@@ -79,7 +86,9 @@ function buildMessage(
     case "order_ready":
       return `Your order ${num} is ready for pickup at ${restaurantName}! 🛍️`;
     case "order_in_transit":
-      return `Your order ${num} from ${restaurantName} is ready and on its way! Sit tight!`;
+      return extras?.trackingUrl
+        ? `Your order ${num} from ${restaurantName} is on its way! Track your rider: ${extras.trackingUrl}`
+        : `Your order ${num} from ${restaurantName} is ready and on its way! Sit tight!`;
     case "order_delivered":
       return `Your order ${num} from ${restaurantName} has been delivered. Enjoy your meal! 😋`;
     case "order_cancelled":
@@ -554,6 +563,7 @@ serve(async (req) => {
   const message = buildMessage(eventType, orderNumber, restaurantName, {
     scheduledFor: payload.scheduledFor,
     reason: payload.reason,
+    trackingUrl: payload.trackingUrl,
   });
 
   const logId = await createLog({

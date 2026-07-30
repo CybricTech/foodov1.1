@@ -29,7 +29,10 @@ import {
 import { useFocusEffect, useSegments } from "expo-router";
 
 import {
+  laneForPolicy,
   normalizeSchedulingSettings,
+  resolveDispatchPolicy,
+  type DispatchPolicy,
   type OpeningHours,
   type SchedulingSettings,
 } from "@foodo/utils";
@@ -139,6 +142,11 @@ export function OrdersScreen({
   const [, setTick] = useState(0);
   const [completedTotal, setCompletedTotal] = useState(0);
 
+  // How this merchant's deliveries are handled (migration 101). Decides whether
+  // the "who delivers?" step appears. Defaults to hybrid — the value that asks
+  // rather than assumes — until the settings fetch lands.
+  const [dispatchPolicy, setDispatchPolicy] = useState<DispatchPolicy>("hybrid");
+
   const [dispatchState, setDispatchState] = useState<DispatchState | null>(null);
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
@@ -153,7 +161,7 @@ export function OrdersScreen({
     if (!supabase) return;
     supabase
       .from("restaurants")
-      .select("opening_hours, scheduling_settings")
+      .select("opening_hours, scheduling_settings, dispatch_policy")
       .eq("id", restaurantId)
       .single()
       .then(({ data }) => {
@@ -161,6 +169,7 @@ export function OrdersScreen({
         const row = data as unknown as Record<string, unknown>;
         setSchedulingSettings(normalizeSchedulingSettings(row.scheduling_settings));
         setOpeningHours((row.opening_hours ?? null) as OpeningHours | null);
+        setDispatchPolicy(resolveDispatchPolicy(row.dispatch_policy));
       });
   }, [restaurantId, supabase]);
 
@@ -482,10 +491,20 @@ export function OrdersScreen({
   );
 
   /* ---- Dispatch ---- */
-  const openDispatch = useCallback((order: OrderRow) => {
-    setDispatchState({ order, step: "select", selectedType: null });
-    setDispatchError(null);
-  }, []);
+  const openDispatch = useCallback(
+    (order: OrderRow) => {
+      // Only hybrid merchants get a choice. For the other two the lane is
+      // already settled, so go straight to the confirm step.
+      const fixed = laneForPolicy(dispatchPolicy);
+      setDispatchState(
+        fixed
+          ? { order, step: "confirm", selectedType: fixed as "platform_rider" | "own_rider" }
+          : { order, step: "select", selectedType: null }
+      );
+      setDispatchError(null);
+    },
+    [dispatchPolicy]
+  );
 
   const handleDispatchConfirm = useCallback(async () => {
     if (!dispatchState?.selectedType) return;
@@ -496,12 +515,20 @@ export function OrdersScreen({
       // Mirror web: ensure ready_for_pickup first, then dispatch.
       await updateOrderStatus(order.id, "ready_for_pickup");
       await dispatchOrder(order.id, selectedType);
+      // The platform lane no longer moves orders.status: the rider runs on its
+      // own track (migration 101) and the food stays "ready" until collected.
       const newStatus =
-        selectedType === "platform_rider" ? "assigned_to_rider" : "in_transit";
+        selectedType === "own_rider" ? "in_transit" : "ready_for_pickup";
       setOrders((prev) =>
         prev.map((o) =>
           o.id === order.id
-            ? { ...o, status: newStatus as OrderRow["status"], dispatch_type: selectedType }
+            ? {
+                ...o,
+                status: newStatus as OrderRow["status"],
+                dispatch_type: selectedType,
+                dispatch_state:
+                  selectedType === "platform_rider" ? "requested" : "not_required",
+              }
             : o
         )
       );

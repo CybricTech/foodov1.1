@@ -1,4 +1,43 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { buildDriverNote } from "@/lib/delivery/driver-note";
+
+/**
+ * parse_mode is HTML, so escape interpolated values — names and addresses can
+ * contain & < >, which would otherwise break the message or be dropped.
+ */
+export function escapeTelegramHtml(v: string | number | null | undefined): string {
+  return String(v ?? "—")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Post a message to the rider group. Best-effort: returns false rather than
+ * throwing, so an alert failing can never take down the caller.
+ */
+export async function sendTelegramMessage(text: string): Promise<boolean> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return false;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[telegram] send failed status=${res.status} ${body}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[telegram] send threw:", err);
+    return false;
+  }
+}
 
 /**
  * Send the "New Rider Request" Telegram alert for an order — exactly once.
@@ -69,25 +108,22 @@ export async function sendTelegramRiderAlert(
       .single(),
   ]);
 
-  // parse_mode is HTML, so escape interpolated values — names/addresses can
-  // contain & < >, which would otherwise break the message or be dropped.
-  const esc = (v: string | number | null | undefined) =>
-    String(v ?? "—")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-
   // Driver note: a self-contained block the dispatcher copies (the <pre> is
   // tap-to-copy in Telegram) and pastes straight into Bolt's “Note to driver”
-  // when booking the ride manually. Reads as instructions to the driver.
-  const driverNote =
-    `Please pick up order #${esc(orderNumber)} from ${esc(restaurant?.name)} and deliver to ${esc(order?.delivery_address)}. ` +
-    `Call the receiver, ${esc(order?.customer_name)}, on ${esc(order?.customer_phone)} when you arrive.`;
+  // when booking the ride manually. Built by the same helper the API booking
+  // path uses, so both routes send a rider the identical instruction.
+  const driverNote = buildDriverNote({
+    orderNumber,
+    restaurantName: restaurant?.name,
+    deliveryAddress: order?.delivery_address,
+    customerName: order?.customer_name,
+    customerPhone: order?.customer_phone,
+  });
 
   const text =
     `🔔 <b>New Rider Request</b>\n` +
     `Copy the note below → paste into Bolt’s “Note to driver”:\n\n` +
-    `<pre>${driverNote}</pre>`;
+    `<pre>${escapeTelegramHtml(driverNote)}</pre>`;
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {

@@ -1,14 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getRequestUser } from "@/lib/supabase/get-request-user";
-import { sendTelegramRiderAlert } from "@/lib/telegram";
-import { resolveDeliveryCommissionPct } from "@foodo/utils";
+import { requestRiderForOrder } from "@/lib/delivery/request-rider";
+import { commitDeliverySplit } from "@/lib/delivery/commit-delivery-split";
+import { laneForPolicy, resolveDispatchPolicy } from "@foodo/utils";
 
 /**
  * POST /api/dashboard/orders/dispatch
  *
- * Called when the merchant picks a delivery method for a ready order.
- * Creates a delivery_assignments record and updates the order status.
+ * The merchant choosing who takes a ready delivery order.
+ *
+ * Since migration 101 this is only one of four ways an order can get a rider,
+ * and the narrowest: it exists for HYBRID merchants, who decide per order.
+ *
+ *   platform  the rider is requested by the T−10 cron or by Mark Ready, not
+ *             here — this route only accepts platform_rider for them as a
+ *             belt-and-braces path if a stale client posts it, and even then it
+ *             just calls the same chokepoint the cron does.
+ *   in_house  only own_rider is legal; asking us for a rider is rejected.
+ *   hybrid    both, exactly as before.
+ *
+ * The platform lane no longer sets status = 'assigned_to_rider'. orders.status
+ * follows the food and orders.dispatch_state follows the rider, because a rider
+ * can now be en route while the food is still cooking — and the old status flip
+ * locked the merchant out of their own Mark Ready button.
  *
  * Body: { order_id: string, dispatch_type: "platform_rider" | "own_rider" }
  */
@@ -66,7 +81,9 @@ export async function POST(request: NextRequest) {
   // Verify the order belongs to this merchant's restaurant and is ready
   const { data: order, error: orderErr } = await serviceClient
     .from("orders")
-    .select("id, order_number, restaurant_id, status, fulfillment_type, delivery_fee_kobo, customer_phone")
+    .select(
+      "id, order_number, restaurant_id, status, fulfillment_type, delivery_fee_kobo, customer_phone"
+    )
     .eq("id", order_id)
     .eq("restaurant_id", profile.restaurant_id)
     .single();
@@ -89,197 +106,143 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check for existing assignment (idempotency)
+  /* ── Policy gate ─────────────────────────────────────────────────────────
+   * The merchant's policy decides which choices exist at all. A stale client —
+   * a cached dashboard tab, an old mobile build — must not be able to post the
+   * lane the merchant is no longer on, because the lane decides who pays for
+   * the delivery.
+   */
+  const { data: restaurantData } = await serviceClient
+    .from("restaurants")
+    .select("dispatch_policy")
+    .eq("id", profile.restaurant_id)
+    .single();
+
+  const policy = resolveDispatchPolicy(
+    (restaurantData as { dispatch_policy: string | null } | null)?.dispatch_policy
+  );
+  const fixedLane = laneForPolicy(policy);
+
+  if (fixedLane !== null && fixedLane !== dispatch_type) {
+    return NextResponse.json(
+      {
+        error:
+          policy === "in_house"
+            ? "Your store handles its own deliveries. Switch your dispatch setting to Platform or Hybrid to request a Kitchyn rider."
+            : "Your store is set to Kitchyn delivery — a rider is requested automatically before the food is ready.",
+        policy,
+      },
+      { status: 409 }
+    );
+  }
+
+  /* ── Platform lane ───────────────────────────────────────────────────────
+   * One chokepoint, shared with the T−10 cron and Mark Ready. It owns the
+   * idempotency latch, the lane commit, the delivery split and the Bolt/Telegram
+   * decision — so a hybrid merchant clicking this gets byte-identical treatment
+   * to a platform merchant whose timer fired.
+   */
+  if (dispatch_type === "platform_rider") {
+    const result = await requestRiderForOrder(
+      serviceClient,
+      order_id,
+      "dispatch:picker",
+      { lane: "platform_rider" }
+    );
+
+    if (result.outcome === "failed") {
+      return NextResponse.json({ error: result.reason }, { status: 500 });
+    }
+
+    // 'skipped' means a rider was already requested — the timer beat the click,
+    // or the merchant double-tapped. Both are success from here.
+    return NextResponse.json({
+      ok: true,
+      status: order.status,
+      dispatch_type,
+      dispatch_state: "requested",
+      existing: result.outcome === "skipped",
+    });
+  }
+
+  /* ── In-house lane ───────────────────────────────────────────────────────
+   * The merchant's own rider is leaving with the food right now, so unlike the
+   * platform lane this really is an in_transit transition and the customer's
+   * "on its way" SMS really is true at this moment.
+   */
   const { data: existing } = await serviceClient
     .from("delivery_assignments")
     .select("id")
     .eq("order_id", order_id)
     .limit(1);
 
-  if (existing && existing.length > 0) {
-    // Already assigned — just refresh the order status, leave wallet alone
-    const newStatus = dispatch_type === "platform_rider" ? "assigned_to_rider" : "in_transit";
-    await serviceClient
-      .from("orders")
-      .update({ status: newStatus, dispatch_type })
-      .eq("id", order_id);
+  const alreadyAssigned = Boolean(existing && existing.length > 0);
 
-    // Re-dispatching a platform_rider order is a renewed rider request, so the
-    // Telegram alert must fire here too — the early return below would otherwise
-    // skip the notification block further down.
-    if (dispatch_type === "platform_rider") {
-      await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number, "dispatch:existing").catch(console.error);
+  if (!alreadyAssigned) {
+    const { error: assignErr } = await serviceClient
+      .from("delivery_assignments")
+      .insert({
+        order_id,
+        restaurant_id: profile.restaurant_id,
+        dispatch_type,
+        rider_id: null,
+        status: "assigned",
+      });
+
+    // 23505 = a concurrent dispatch already created it. Idempotent, carry on.
+    if (assignErr && (assignErr as { code?: string }).code !== "23505") {
+      return NextResponse.json({ error: assignErr.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, status: newStatus, existing: true });
-  }
-
-  // Create delivery assignment record
-  const { error: assignErr } = await serviceClient
-    .from("delivery_assignments")
-    .insert({
-      order_id,
-      restaurant_id: profile.restaurant_id,
-      dispatch_type,
-      rider_id: null, // Will be assigned later for platform_rider
-      status: "assigned",
+    const split = await commitDeliverySplit(serviceClient, {
+      orderId: order_id,
+      restaurantId: order.restaurant_id,
+      orderNumber: order.order_number,
+      deliveryFeeKobo: order.delivery_fee_kobo ?? 0,
+      dispatchType: dispatch_type,
     });
 
-  if (assignErr) {
-    // 23505 = unique_violation on delivery_assignments(order_id): a concurrent
-    // dispatch request already created the assignment. Treat as idempotent —
-    // refresh status and (de-duplicated) re-send the alert rather than 500.
-    if (assignErr.code === "23505") {
-      const dupStatus = dispatch_type === "platform_rider" ? "assigned_to_rider" : "in_transit";
-      await serviceClient
-        .from("orders")
-        .update({ status: dupStatus, dispatch_type })
-        .eq("id", order_id);
-      if (dispatch_type === "platform_rider") {
-        await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number, "dispatch:race").catch(console.error);
-      }
-      return NextResponse.json({ ok: true, status: dupStatus, existing: true });
-    }
-    return NextResponse.json({ error: assignErr.message }, { status: 500 });
-  }
-
-  // ── Delivery-fee split (deferred from payment time) ──────────────────────────
-  // Now that we know the actual dispatch type, write the wallet rows that the
-  // paystack webhook intentionally skipped. This is idempotent: skip if a
-  // logistics_fee row already exists for this order (legacy orders created
-  // under the old code path that locked the split at payment time).
-  const deliveryFeeKobo = order.delivery_fee_kobo ?? 0;
-
-  if (deliveryFeeKobo > 0) {
-    const { data: existingLogistics } = await serviceClient
-      .from("wallet_transactions")
-      .select("id")
-      .eq("order_id", order_id)
-      .eq("type", "logistics_fee")
-      .limit(1);
-
-    if (!existingLogistics || existingLogistics.length === 0) {
-      // Delivery commission rate: merchant override, else platform default (10%)
-      const [{ data: settings }, { data: restaurantRate }] = await Promise.all([
-        serviceClient
-          .from("platform_settings")
-          .select("delivery_commission_pct, settlement_hold_hours")
-          .single(),
-        serviceClient
-          .from("restaurants")
-          .select("delivery_commission_pct" as never)
-          .eq("id", order.restaurant_id)
-          .single(),
-      ]);
-      const commissionPct = resolveDeliveryCommissionPct(
-        (restaurantRate as unknown as { delivery_commission_pct?: number | null } | null)
-          ?.delivery_commission_pct,
-        (settings as unknown as { delivery_commission_pct?: number } | null)
-          ?.delivery_commission_pct
-      );
-      const holdHours = Number(
-        (settings as unknown as { settlement_hold_hours?: number } | null)
-          ?.settlement_hold_hours ?? 24
-      );
-
-      // Split: Foodo provides rider → Foodo keeps 100%
-      //        Restaurant/3rd-party provides rider → Foodo keeps commissionPct
-      const foodoCutKobo =
-        dispatch_type === "platform_rider"
-          ? deliveryFeeKobo
-          : Math.round(deliveryFeeKobo * commissionPct);
-      const restaurantShareKobo = deliveryFeeKobo - foodoCutKobo;
-
-      const availableAt = new Date(
-        Date.now() + holdHours * 60 * 60 * 1000
-      ).toISOString();
-
-      const walletRows: Array<Record<string, unknown>> = [];
-
-      if (restaurantShareKobo > 0) {
-        walletRows.push({
-          restaurant_id: order.restaurant_id,
-          order_id,
-          type: "order_credit",
-          direction: "credit",
-          amount_kobo: restaurantShareKobo,
-          status: "pending",
-          available_at: availableAt,
-          description: `Delivery share (${dispatch_type}) — Order #${order.order_number}`,
-        });
-      }
-
-      if (foodoCutKobo > 0) {
-        walletRows.push({
-          restaurant_id: order.restaurant_id,
-          order_id,
-          type: "logistics_fee",
-          direction: "debit",
-          amount_kobo: foodoCutKobo,
-          status: "settled",
-          description:
-            dispatch_type === "platform_rider"
-              ? `Delivery fee (platform rider, 100%) — Order #${order.order_number}`
-              : `Delivery commission (${(commissionPct * 100).toFixed(0)}%, ${dispatch_type}) — Order #${order.order_number}`,
-        });
-      }
-
-      if (walletRows.length > 0) {
-        const { error: walletErr } = await serviceClient
-          .from("wallet_transactions")
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .insert(walletRows as any);
-        if (walletErr) {
-          return NextResponse.json({ error: walletErr.message }, { status: 500 });
-        }
-      }
-
-      if (restaurantShareKobo > 0) {
-        await serviceClient.rpc("increment_wallet_pending", {
-          p_restaurant_id: order.restaurant_id,
-          p_amount_kobo: restaurantShareKobo,
-        });
-      }
+    if (split.outcome === "error") {
+      return NextResponse.json({ error: split.reason }, { status: 500 });
     }
   }
 
-  // Update order status + persist the chosen dispatch type on the order itself
-  const newStatus = dispatch_type === "platform_rider" ? "assigned_to_rider" : "in_transit";
   const { error: statusErr } = await serviceClient
     .from("orders")
-    .update({ status: newStatus, dispatch_type })
+    .update({
+      status: "in_transit",
+      dispatch_type,
+      // The merchant's own rider needs nothing from us.
+      dispatch_state: "not_required",
+    })
     .eq("id", order_id);
 
   if (statusErr) {
     return NextResponse.json({ error: statusErr.message }, { status: 500 });
   }
 
-  // Telegram notification — awaited so serverless doesn't kill it on response return
-  if (dispatch_type === "platform_rider") {
-    await sendTelegramRiderAlert(serviceClient, order_id, profile.restaurant_id, order.order_number, "dispatch:new").catch(console.error);
+  // Fired once, on first dispatch only — a re-dispatch must not re-text.
+  if (!alreadyAssigned && order.customer_phone) {
+    await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-sms`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        restaurantId: profile.restaurant_id,
+        phone: order.customer_phone,
+        eventType: "order_in_transit",
+        orderId: order_id,
+        orderNumber: order.order_number,
+      }),
+    }).catch(console.error);
   }
 
-  // Customer "on its way" SMS — fired once at first dispatch (existing-assignment
-  // branch above short-circuits before this point, so re-dispatches don't duplicate).
-  if (order.customer_phone) {
-    await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-sms`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          restaurantId: profile.restaurant_id,
-          phone: order.customer_phone,
-          eventType: "order_in_transit",
-          orderId: order_id,
-          orderNumber: order.order_number,
-        }),
-      }
-    ).catch(console.error);
-  }
-
-  return NextResponse.json({ ok: true, status: newStatus, dispatch_type });
+  return NextResponse.json({
+    ok: true,
+    status: "in_transit",
+    dispatch_type,
+    existing: alreadyAssigned,
+  });
 }

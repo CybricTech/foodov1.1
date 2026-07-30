@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getMonnifyAccessToken } from "@/lib/monnify";
+import { getBoltAccessToken } from "@/lib/bolt";
 
 export type ServiceStatus = "healthy" | "degraded" | "down";
 
@@ -117,6 +118,18 @@ export async function runHealthChecks(): Promise<HealthResponse> {
       // A real network call to Monnify happens only when the token expires (~55min).
       // If Monnify is unreachable, this throws and the probe returns "down".
       const token = await getMonnifyAccessToken();
+      return token ? "Auth token valid" : undefined;
+    }),
+
+    probe("Bolt", "bolt", "external", async () => {
+      // Same trick as the Monnify probe: the cached token means this only
+      // reaches the network when the token has expired. Skipped entirely when
+      // Bolt isn't configured, so unconfigured environments read "healthy"
+      // rather than permanently "down".
+      if (!process.env.BOLT_CLIENT_ID || !process.env.BOLT_CLIENT_SECRET) {
+        return "Not configured";
+      }
+      const token = await getBoltAccessToken();
       return token ? "Auth token valid" : undefined;
     }),
 

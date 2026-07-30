@@ -60,6 +60,12 @@ export async function PATCH(request: NextRequest) {
     admin_alert_email?: string | null;
     auto_payout_enabled?: boolean;
     auto_payout_shadow?: boolean;
+    // Dispatch (migrations 095 / 101)
+    bolt_booking_enabled?: boolean;
+    bolt_booking_shadow?: boolean;
+    bolt_environment?: string;
+    timed_rider_request_enabled?: boolean;
+    rider_request_lead_minutes?: number;
   };
 
   // Only allow known fields
@@ -77,6 +83,33 @@ export async function PATCH(request: NextRequest) {
   if (updates.admin_alert_email !== undefined) allowed.admin_alert_email = updates.admin_alert_email;
   if (updates.auto_payout_enabled !== undefined) allowed.auto_payout_enabled = updates.auto_payout_enabled;
   if (updates.auto_payout_shadow !== undefined) allowed.auto_payout_shadow = updates.auto_payout_shadow;
+  if (updates.bolt_booking_enabled !== undefined) allowed.bolt_booking_enabled = updates.bolt_booking_enabled;
+  if (updates.bolt_booking_shadow !== undefined) allowed.bolt_booking_shadow = updates.bolt_booking_shadow;
+  if (updates.timed_rider_request_enabled !== undefined)
+    allowed.timed_rider_request_enabled = updates.timed_rider_request_enabled;
+
+  // Constrained rather than passed through: these two decide whether real rides
+  // get booked with real money, so a malformed value must be rejected here and
+  // not left to the DB check.
+  if (updates.bolt_environment !== undefined) {
+    if (!["sandbox", "production"].includes(updates.bolt_environment)) {
+      return NextResponse.json(
+        { error: "bolt_environment must be 'sandbox' or 'production'" },
+        { status: 400 }
+      );
+    }
+    allowed.bolt_environment = updates.bolt_environment;
+  }
+  if (updates.rider_request_lead_minutes !== undefined) {
+    const lead = Number(updates.rider_request_lead_minutes);
+    if (!Number.isFinite(lead) || lead < 0 || lead > 120) {
+      return NextResponse.json(
+        { error: "rider_request_lead_minutes must be between 0 and 120" },
+        { status: 400 }
+      );
+    }
+    allowed.rider_request_lead_minutes = Math.round(lead);
+  }
 
   if (Object.keys(allowed).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });

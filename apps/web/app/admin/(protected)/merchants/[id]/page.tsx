@@ -242,6 +242,10 @@ export default async function MerchantDetailPage({
           bank_account_number: restaurant.bank_account_number ?? null,
           paystack_recipient_code: restaurant.paystack_recipient_code ?? null,
           logistics_default: restaurant.logistics_default ?? null,
+          address: restaurant.address ?? null,
+          // Not in the generated types yet (migration 094).
+          place_id: (restaurant as unknown as Record<string, unknown>).place_id as string | null ?? null,
+          location_verified_at: (restaurant as unknown as Record<string, unknown>).location_verified_at as string | null ?? null,
           latitude: restaurant.latitude ?? null,
           longitude: restaurant.longitude ?? null,
           max_delivery_radius_km: (restaurant as unknown as Record<string, unknown>).max_delivery_radius_km as number | null ?? null,

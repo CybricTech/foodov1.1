@@ -7,12 +7,25 @@ import { cn } from "@foodo/ui";
 import { ImagePlus, UserPlus, Trash2, KeyRound, Eye, EyeOff, ExternalLink, Plus, X } from "lucide-react";
 import type { Restaurant } from "@foodo/database";
 import { FocalPointPicker, type FocalPoint } from "./focal-point-picker";
+import { AddressPicker, type VerifiedAddress } from "@/components/shared/address-picker";
 import {
   normalizeSchedulingSettings,
+  resolveDispatchPolicy,
   SCHEDULING_DEFAULTS,
+  type DispatchPolicy,
   type SchedulingSettings,
   type PausedRange,
 } from "@foodo/utils";
+
+/** What each dispatch policy actually means for the merchant's day. */
+const DISPATCH_POLICY_HINTS: Record<DispatchPolicy, string> = {
+  platform:
+    "We send you a rider automatically, timed to arrive as the food is ready. You just cook and mark it ready.",
+  in_house:
+    "Your own riders take every delivery. We never send you one, and you won't be asked who's delivering.",
+  hybrid:
+    "You pick who delivers each order when you mark it ready — your rider, or one of ours.",
+};
 
 // Nigerian bank list fetched from Paystack (cached in component state)
 type PaystackBank = { id: number; name: string; code: string };
@@ -392,16 +405,20 @@ function RestaurantDeliveryPricingSection({
 }
 
 function RestaurantLocationSection({
+  initialAddress,
   initialLat,
   initialLng,
+  initialVerified,
   initialMaxRadius,
 }: {
+  initialAddress: string | null;
   initialLat: number | null;
   initialLng: number | null;
+  initialVerified: boolean;
   initialMaxRadius: number | null;
 }) {
-  const [lat, setLat] = useState(initialLat ? String(initialLat) : "");
-  const [lng, setLng] = useState(initialLng ? String(initialLng) : "");
+  // Coordinates are only ever set by picking a place — see AddressPicker.
+  const [picked, setPicked] = useState<VerifiedAddress | null>(null);
   const [maxRadius, setMaxRadius] = useState(initialMaxRadius ? String(initialMaxRadius) : "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -409,12 +426,6 @@ function RestaurantLocationSection({
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const parsedLat = parseFloat(lat);
-    const parsedLng = parseFloat(lng);
-    if (isNaN(parsedLat) || isNaN(parsedLng)) {
-      setError("Enter valid latitude and longitude values");
-      return;
-    }
     setSaving(true);
     setError("");
     try {
@@ -422,8 +433,16 @@ function RestaurantLocationSection({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          latitude: parsedLat,
-          longitude: parsedLng,
+          // Omitted when nothing new was picked, so saving just the radius
+          // never disturbs an already-confirmed address.
+          ...(picked
+            ? {
+                address: picked.address,
+                latitude: picked.lat,
+                longitude: picked.lng,
+                place_id: picked.placeId,
+              }
+            : {}),
           max_delivery_radius_km: maxRadius ? parseInt(maxRadius) : null,
         }),
       });
@@ -440,50 +459,23 @@ function RestaurantLocationSection({
     setSaving(false);
   }
 
-  const hasLocation = initialLat && initialLng;
-
   return (
     <Section title="Restaurant location">
       <p className="text-xs text-black-400">
-        Set your restaurant&apos;s coordinates accurately — this is used to calculate delivery fees for your customers.
-        {!hasLocation && (
-          <span className="ml-1 text-dixie-600 font-medium">Location not set — delivery fees will use the base rate until this is configured.</span>
-        )}
+        Pick your exact address below. This is the address shown on your storefront, the point
+        delivery fees are measured from, and where riders are sent to collect orders.
       </p>
-      {hasLocation && (
-        <div className="bg-black-50 rounded-xl px-4 py-3 flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-viridian-500 flex-shrink-0" />
-          <div>
-            <p className="text-xs font-medium text-black-700">Location set</p>
-            <p className="text-xs text-black-400">{initialLat}, {initialLng}</p>
-          </div>
-        </div>
-      )}
       <form onSubmit={handleSave} className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-black-500 mb-1">Latitude</label>
-            <input
-              type="number"
-              step="any"
-              value={lat}
-              onChange={(e) => setLat(e.target.value)}
-              placeholder="e.g. 9.0579"
-              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-black-500 mb-1">Longitude</label>
-            <input
-              type="number"
-              step="any"
-              value={lng}
-              onChange={(e) => setLng(e.target.value)}
-              placeholder="e.g. 7.4951"
-              className="w-full px-3 py-2.5 rounded-xl border border-black-200 text-sm text-black-900 focus:outline-none focus:border-purple-500"
-            />
-          </div>
-        </div>
+        <AddressPicker
+          initialAddress={initialAddress}
+          initialLat={initialLat}
+          initialLng={initialLng}
+          initialVerified={initialVerified}
+          label="Store address"
+          hint="Choose from the suggestions so we can pin your exact location."
+          onSelect={setPicked}
+          onInvalidate={() => setPicked(null)}
+        />
         <div>
           <label className="block text-xs font-medium text-black-500 mb-1">Max delivery radius (km)</label>
           <input
@@ -500,9 +492,6 @@ function RestaurantLocationSection({
             Orders beyond this distance will be rejected. Leave blank to use the platform default.
           </p>
         </div>
-        <p className="text-xs text-black-400">
-          Find your coordinates: open Google Maps, right-click your restaurant location, and copy the numbers shown.
-        </p>
         {error && <p className="text-xs text-cinnabar-500">{error}</p>}
         <button
           type="submit"
@@ -568,7 +557,6 @@ export function SettingsClient({
   const [name, setName] = useState(r.name);
   const [description, setDescription] = useState(r.description ?? "");
   const [phone, setPhone] = useState(r.phone ?? "");
-  const [address, setAddress] = useState(r.address ?? "");
   const [city, setCity] = useState(r.city ?? "");
   const [state, setState] = useState(r.state ?? "");
   const [primaryColor, setPrimaryColor] = useState(r.primary_color ?? "#2D6A4F");
@@ -587,7 +575,14 @@ export function SettingsClient({
   const [vatPercentage, setVatPercentage] = useState(
     r.vat_percentage != null ? r.vat_percentage.toString() : ""
   );
-  const [logisticsDefault, setLogisticsDefault] = useState(r.logistics_default);
+  const [dispatchPolicy, setDispatchPolicy] = useState<DispatchPolicy>(
+    resolveDispatchPolicy((r as { dispatch_policy?: string | null }).dispatch_policy)
+  );
+  // Admins can freeze the field for a merchant who has been switching lanes to
+  // dodge delivery costs. Non-null = read-only here; the API enforces it too.
+  const dispatchPolicyLocked = Boolean(
+    (r as { dispatch_policy_locked_at?: string | null }).dispatch_policy_locked_at
+  );
   const [acceptsOrders, setAcceptsOrders] = useState(r.accepts_orders);
   const [acceptsDelivery, setAcceptsDelivery] = useState(r.accepts_delivery ?? true);
   const [acceptsPickup, setAcceptsPickup] = useState(r.accepts_pickup ?? true);
@@ -768,13 +763,14 @@ export function SettingsClient({
         name,
         description: description || null,
         phone: phone || null,
-        address: address || null,
+        // address is owned by RestaurantLocationSection / /api/merchant/location,
+        // which writes it atomically with the coordinates it was resolved from.
         city: city || null,
         state: state || null,
         primary_color: primaryColor,
         min_order_amount: minOrderNgn ? Math.round(parseFloat(minOrderNgn) * 100) : null,
         vat_percentage: vatPercentage ? parseFloat(vatPercentage) : null,
-        logistics_default: logisticsDefault,
+        dispatch_policy: dispatchPolicy,
         accepts_orders: acceptsOrders,
         accepts_delivery: acceptsDelivery,
         accepts_pickup: acceptsPickup,
@@ -841,15 +837,9 @@ export function SettingsClient({
                 placeholder="+2348012345678"
               />
             </Field>
-            <Field label="Address" hint="Street address shown on your storefront">
-              <textarea
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                rows={2}
-                className={inputCls}
-                placeholder="e.g. 14 Adeola Hopewell Street, Maitama"
-              />
-            </Field>
+            {/* Address is set in "Restaurant location" below — it is picked from
+                Google Places so the storefront text and the coordinates used for
+                delivery pricing and rider pickup can never drift apart. */}
             <div className="grid grid-cols-2 gap-3">
               <Field label="City">
                 <input
@@ -1140,16 +1130,26 @@ export function SettingsClient({
                 placeholder="e.g. 7.5"
               />
             </Field>
-            <Field label="Default logistics mode">
+            {/* Replaces the old "Default logistics mode" dropdown, which read
+                back a field nothing in dispatch ever consulted. This one is
+                real: it decides whether the merchant is asked who delivers, and
+                whether we go and find them a rider. */}
+            <Field label="How your deliveries are handled">
               <select
-                value={logisticsDefault}
-                onChange={(e) => setLogisticsDefault(e.target.value as Restaurant["logistics_default"])}
-                className={cn(inputCls, "bg-white")}
+                value={dispatchPolicy}
+                disabled={dispatchPolicyLocked}
+                onChange={(e) => setDispatchPolicy(e.target.value as DispatchPolicy)}
+                className={cn(inputCls, "bg-white", dispatchPolicyLocked && "opacity-60")}
               >
-                <option value="platform_rider">Platform Rider</option>
-                <option value="own_rider">Own Rider</option>
-                <option value="third_party">Third-Party (Kwik etc.)</option>
+                <option value="platform">Kitchyn delivers for me</option>
+                <option value="in_house">I use my own riders</option>
+                <option value="hybrid">Both — I choose per order</option>
               </select>
+              <p className="text-[11px] text-black-400 mt-1.5 leading-relaxed">
+                {dispatchPolicyLocked
+                  ? "This is set by your Kitchyn account manager. Get in touch to change it."
+                  : DISPATCH_POLICY_HINTS[dispatchPolicy]}
+              </p>
             </Field>
           </Section>
 
@@ -1509,8 +1509,13 @@ export function SettingsClient({
 
           {/* Restaurant location */}
           <RestaurantLocationSection
+            initialAddress={r.address ?? null}
             initialLat={r.latitude ?? null}
             initialLng={r.longitude ?? null}
+            initialVerified={
+              !!(r as RestaurantExtended & { location_verified_at?: string | null })
+                .location_verified_at
+            }
             initialMaxRadius={r.max_delivery_radius_km ?? null}
           />
 

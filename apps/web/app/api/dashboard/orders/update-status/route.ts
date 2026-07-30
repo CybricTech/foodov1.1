@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getRequestUser } from "@/lib/supabase/get-request-user";
-import { sendTelegramRiderAlert } from "@/lib/telegram";
+import { dispatchRideForOrder } from "@/lib/delivery/dispatch-ride";
+import {
+  readDispatchSettings,
+  refreshRiderRequestDueAt,
+  requestRiderForOrder,
+} from "@/lib/delivery/request-rider";
+import { standDownRiderForOrder } from "@/lib/delivery/cancel-rider";
 import { getPostHogClient } from "@/lib/posthog";
+import { policyRequestsPlatformRider, resolveDispatchPolicy } from "@foodo/utils";
 
 const VALID_STATUSES = [
   "pending",
@@ -78,7 +85,10 @@ export async function POST(req: NextRequest) {
   // riders page may complete it. Merchants can manage everything else.
   const { data: order, error: lookupError } = await serviceClient
     .from("orders")
-    .select("id, dispatch_type, status, fulfillment_type, customer_phone, order_number")
+    // One string literal, not a concatenation: Supabase infers the row type by
+    // parsing this text, and a `"a" + "b"` expression degrades the whole result
+    // to GenericStringError.
+    .select("id, dispatch_type, status, fulfillment_type, customer_phone, order_number, estimated_delivery_at, rider_requested_at, dispatch_state")
     .eq("id", orderId)
     .eq("restaurant_id", restaurantId)
     .single();
@@ -86,6 +96,21 @@ export async function POST(req: NextRequest) {
   if (lookupError || !order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+
+  // The merchant's dispatch policy governs both of the new behaviours below:
+  // when the rider timer is armed, and whether Mark Ready fires early.
+  const { data: restaurantData } = await serviceClient
+    .from("restaurants")
+    .select("dispatch_policy, rider_request_lead_minutes")
+    .eq("id", restaurantId)
+    .single();
+
+  const restaurant = restaurantData as {
+    dispatch_policy: string | null;
+    rider_request_lead_minutes: number | null;
+  } | null;
+  const policy = resolveDispatchPolicy(restaurant?.dispatch_policy);
+  const isPlatformPolicy = policyRequestsPlatformRider(policy);
 
   const PLATFORM_RIDER_LOCKED_TARGETS = new Set(["in_transit", "delivered", "completed"]);
   if (
@@ -144,7 +169,7 @@ export async function POST(req: NextRequest) {
       .eq("id", orderId)
       .single();
     if (orderRow?.order_number) {
-      await sendTelegramRiderAlert(
+      await dispatchRideForOrder(
         serviceClient,
         orderId,
         restaurantId,
@@ -152,6 +177,63 @@ export async function POST(req: NextRequest) {
         "status-update"
       ).catch(console.error);
     }
+  }
+
+  /* ── Arm the rider timer ──────────────────────────────────────────────────
+   * The merchant has just told us when the food will be ready, so this is the
+   * moment we can work out when to go and get a rider. Recomputed on every
+   * revision, and a no-op once the request has already gone out.
+   */
+  if (isPlatformPolicy && updatePayload.estimated_delivery_at) {
+    const settings = await readDispatchSettings(serviceClient);
+    if (settings.timedRequestEnabled) {
+      await refreshRiderRequestDueAt(
+        serviceClient,
+        orderId,
+        {
+          fulfillment_type: order.fulfillment_type,
+          estimated_delivery_at: updatePayload.estimated_delivery_at,
+          rider_requested_at: order.rider_requested_at,
+        },
+        policy,
+        restaurant?.rider_request_lead_minutes,
+        settings.leadMinutes
+      ).catch((err) =>
+        console.error(`[update-status] arming rider timer failed order=${orderId}:`, err)
+      );
+    }
+  }
+
+  /* ── Early ready ──────────────────────────────────────────────────────────
+   * "Whichever comes first." The merchant beat their own estimate, and food
+   * already cooked is a harder signal than a countdown, so go now. The outer
+   * latch inside requestRiderForOrder is what stops this and the T−10 tick from
+   * both producing a rider.
+   *
+   * Deliberately NOT gated on timed_rider_request_enabled: with the timer off,
+   * a platform merchant's Mark Ready is the ONLY trigger they have, and losing
+   * it would strand the order entirely.
+   */
+  if (
+    isPlatformPolicy &&
+    status === "ready_for_pickup" &&
+    order.status !== "ready_for_pickup" &&
+    order.fulfillment_type === "delivery"
+  ) {
+    await requestRiderForOrder(serviceClient, orderId, "ready:platform").catch((err) =>
+      console.error(`[update-status] early rider request failed order=${orderId}:`, err)
+    );
+  }
+
+  /* ── Cancellation ─────────────────────────────────────────────────────────
+   * Requesting a rider up to a lead time before the food is ready widens the
+   * cancel-after-request window from "almost never" to routine. Stand the rider
+   * down: cancel the Bolt ride, or tell the Telegram group not to book it.
+   */
+  if (status === "cancelled" && order.status !== "cancelled") {
+    await standDownRiderForOrder(serviceClient, orderId, user.id).catch((err) =>
+      console.error(`[update-status] stand-down failed order=${orderId}:`, err)
+    );
   }
 
   // Customer "order ready for pickup" SMS — only for pickup orders, only on the

@@ -2,7 +2,11 @@ import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServiceClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { OrderQueueClient } from "@/components/dashboard/order-queue-client";
-import { normalizeSchedulingSettings, type OpeningHours } from "@foodo/utils";
+import {
+  normalizeSchedulingSettings,
+  resolveDispatchPolicy,
+  type OpeningHours,
+} from "@foodo/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +59,7 @@ export default async function DashboardOrdersPage() {
       .order("scheduled_for", { ascending: true }),
     supabase
       .from("restaurants")
-      .select("opening_hours, scheduling_settings")
+      .select("opening_hours, scheduling_settings, dispatch_policy")
       .eq("id", restaurantId)
       .single() as unknown as Promise<{ data: Record<string, unknown> | null }>,
   ]);
@@ -91,6 +95,7 @@ export default async function DashboardOrdersPage() {
       initialCompletedTotal={completedTotal ?? 0}
       schedulingSettings={schedulingSettings}
       openingHours={(restaurantRow?.["opening_hours"] ?? null) as OpeningHours | null}
+      dispatchPolicy={resolveDispatchPolicy(restaurantRow?.["dispatch_policy"])}
     />
   );
 }

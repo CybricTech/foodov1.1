@@ -749,7 +749,13 @@ function ActionButton({
   }
 
   if (column === "in_transit") {
-    if (order.status === "ready_for_pickup" && order.fulfillment_type === "delivery") {
+    // A rider already requested (possibly by the T−10 timer, before the food
+    // was even ready) means there is nothing to assign — the pill below says so.
+    if (
+      order.status === "ready_for_pickup" &&
+      order.fulfillment_type === "delivery" &&
+      !order.rider_requested_at
+    ) {
       return (
         <PrimaryButton
           label="Assign Rider"
@@ -781,7 +787,9 @@ function ActionButton({
     }
     if (
       order.status === "assigned_to_rider" ||
-      (order.status === "in_transit" && order.dispatch_type === "platform_rider")
+      (order.dispatch_type === "platform_rider" &&
+        Boolean(order.rider_requested_at) &&
+        ["ready_for_pickup", "in_transit"].includes(order.status))
     ) {
       return (
         <View

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { MerchantOrdersClient } from "@/components/admin/merchant-orders-client";
+import { AddressPicker, type VerifiedAddress } from "@/components/shared/address-picker";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -68,6 +69,9 @@ type Restaurant = {
   bank_account_number: string | null;
   paystack_recipient_code: string | null;
   logistics_default: string | null;
+  address: string | null;
+  place_id: string | null;
+  location_verified_at: string | null;
   latitude: number | null;
   longitude: number | null;
   max_delivery_radius_km: number | null;
@@ -1223,18 +1227,99 @@ function SettingsTab({ restaurant }: { restaurant: Restaurant }) {
           <InfoRow
             label="Location"
             value={
-              restaurant.latitude && restaurant.longitude
-                ? `${restaurant.latitude}, ${restaurant.longitude}`
-                : "Not configured"
+              !restaurant.latitude || !restaurant.longitude
+                ? "Not configured"
+                : restaurant.location_verified_at
+                  ? `Confirmed · ${restaurant.latitude}, ${restaurant.longitude}`
+                  : `Unconfirmed · ${restaurant.latitude}, ${restaurant.longitude}`
             }
             muted={!restaurant.latitude}
-            warn={!restaurant.latitude}
+            warn={!restaurant.latitude || !restaurant.location_verified_at}
           />
         </div>
       </section>
 
+      <MerchantLocationForm restaurant={restaurant} />
+
       <MerchantDeliveryPricingForm restaurant={restaurant} />
     </div>
+  );
+}
+
+function MerchantLocationForm({ restaurant }: { restaurant: Restaurant }) {
+  const router = useRouter();
+  const [picked, setPicked] = useState<VerifiedAddress | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!picked) {
+      setError("Pick an address from the suggestions first");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/merchants/location", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          restaurantId: restaurant.id,
+          address: picked.address,
+          latitude: picked.lat,
+          longitude: picked.lng,
+          place_id: picked.placeId,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Failed to save");
+      } else {
+        setSaved(true);
+        setPicked(null);
+        setTimeout(() => setSaved(false), 3000);
+        router.refresh();
+      }
+    } catch {
+      setError("Network error");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <section>
+      <h2 className="text-base font-bold text-black-900 mb-3">Store Address</h2>
+      <div className="bg-white rounded-2xl border border-black-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-black-100">
+          <p className="text-xs text-black-400">
+            Sets the storefront address, the origin delivery fees are measured from, and the
+            rider pickup point. Coordinates are derived from the picked place — they can&apos;t
+            be typed, so the address and the pin can never disagree.
+          </p>
+        </div>
+        <form onSubmit={handleSave} className="px-5 py-5 space-y-4">
+          <AddressPicker
+            initialAddress={restaurant.address}
+            initialLat={restaurant.latitude}
+            initialLng={restaurant.longitude}
+            initialVerified={!!restaurant.location_verified_at}
+            label="Address"
+            onSelect={setPicked}
+            onInvalidate={() => setPicked(null)}
+          />
+          {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+          <button
+            type="submit"
+            disabled={saving || !picked}
+            className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+          >
+            {saving ? "Saving…" : saved ? "Saved!" : "Save address"}
+          </button>
+        </form>
+      </div>
+    </section>
   );
 }
 
