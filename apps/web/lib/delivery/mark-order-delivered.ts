@@ -25,8 +25,26 @@ export type MarkDeliveredResult =
  * platform order reaches its doorstep from 'ready_for_pickup' (rider collected
  * before we saw the pickup event) or 'in_transit' (the normal path).
  * 'assigned_to_rider' stays for orders dispatched before 101.
+ *
+ * 'confirmed' and 'preparing' are also here — not for the normal path, but for
+ * Bolt's own documented delivery guarantees: webhooks are "neither ordered nor
+ * deduplicated", and Bolt states outright that a COMPLETED event can arrive
+ * before DRIVING_WITH_CLIENT. Since we re-fetch current state on every webhook
+ * rather than trusting its payload, a COMPLETED that lands before we ever
+ * observed the pickup means we jump straight from whatever the food's status
+ * still is — 'preparing', or even 'confirmed' if the T-10 timer fired before
+ * the merchant clicked Start Preparing — directly to 'delivered', skipping
+ * in_transit. That single missed SMS is a far smaller problem than the
+ * alternative: without this, the order would sit at 'preparing' forever, with
+ * a COMPLETED Bolt ride nobody would think to go looking for.
  */
-const DELIVERABLE_FROM = ["assigned_to_rider", "ready_for_pickup", "in_transit"];
+const DELIVERABLE_FROM = [
+  "confirmed",
+  "preparing",
+  "assigned_to_rider",
+  "ready_for_pickup",
+  "in_transit",
+];
 
 export async function markOrderDelivered(
   supabase: SupabaseClient,

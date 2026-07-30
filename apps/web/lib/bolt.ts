@@ -24,7 +24,11 @@ const PROD_BASE = "https://node.bolt.eu/ride-booker-api/reseller";
 const SANDBOX_BASE = "https://node.bolt.eu/ride-booker-api-sandbox/reseller";
 
 // Refresh this far ahead of stated expiry so a token can't lapse mid-request.
-const TOKEN_REFRESH_MARGIN_MS = 60_000;
+// Bolt's own guidance: proactively refresh at ~80% of expires_in (~8 minutes
+// of a 10-minute token) rather than waiting for a 401. 120s margin matches
+// that on a 600s token; the 401-retry in boltFetch is the backstop if a
+// request is ever in flight right as this window closes.
+const TOKEN_REFRESH_MARGIN_MS = 120_000;
 // Fallback only — we trust the API's expires_in when it's well-formed.
 const TOKEN_DEFAULT_TTL_MS = 3500 * 1000;
 
@@ -64,12 +68,24 @@ export function isFailedState(state: string): boolean {
 export class BoltApiError extends Error {
   readonly code: string | null;
   readonly status: number | null;
+  /**
+   * The x-bolt-tracking response header. Bolt's own docs ask for this when
+   * you contact them about a failed request — worth keeping even though
+   * nothing here currently surfaces it further than the thrown error.
+   */
+  readonly trackingId: string | null;
 
-  constructor(message: string, code: string | null = null, status: number | null = null) {
+  constructor(
+    message: string,
+    code: string | null = null,
+    status: number | null = null,
+    trackingId: string | null = null
+  ) {
     super(message);
     this.name = "BoltApiError";
     this.code = code;
     this.status = status;
+    this.trackingId = trackingId;
   }
 }
 
@@ -278,12 +294,29 @@ async function boltFetch<T>(
   }
 
   if (!res.ok) {
-    const errObj = parsed as { code?: string; error?: string; message?: string } | null;
-    const code = errObj?.code ?? errObj?.error ?? null;
+    // Bolt's error body is { code: <number>, message: "RIDE_BOOKER_API_..." } —
+    // `message` carries the actual human-readable identifier (e.g.
+    // RIDE_BOOKER_API_AREA_NOT_SERVICED); `code` is an opaque number that means
+    // nothing on its own. Both are also echoed as response headers. Reading
+    // only `code` (as this used to) throws away the one field that explains
+    // what actually went wrong — every failure this system has ever logged
+    // said something like "404 30000" instead of "404
+    // RIDE_BOOKER_API_AREA_NOT_SERVICED".
+    const errObj = parsed as { code?: number | string; message?: string } | null;
+    const identifier =
+      errObj?.message ?? res.headers.get("x-bolt-error-message") ?? null;
+    const numericCode =
+      errObj?.code != null
+        ? String(errObj.code)
+        : res.headers.get("x-bolt-error-code");
+    const trackingId = res.headers.get("x-bolt-tracking");
+
     throw new BoltApiError(
-      `Bolt ${path} failed: ${res.status} ${code ?? text.slice(0, 200)}`,
-      code,
-      res.status
+      `Bolt ${path} failed: ${res.status} ${identifier ?? numericCode ?? text.slice(0, 200)}` +
+        (identifier && numericCode ? ` (code ${numericCode})` : ""),
+      identifier ?? numericCode,
+      res.status,
+      trackingId
     );
   }
 

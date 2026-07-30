@@ -180,7 +180,9 @@ async function markOrderInTransit(
     .from("orders")
     .update({ status: "in_transit" })
     .eq("id", orderId)
-    .in("status", ["preparing", "ready_for_pickup", "assigned_to_rider"])
+    // 'confirmed' covers the same edge as mark-order-delivered's DELIVERABLE_FROM:
+    // the T-10 timer can fire before the merchant clicks Start Preparing.
+    .in("status", ["confirmed", "preparing", "ready_for_pickup", "assigned_to_rider"])
     .select("id, order_number, restaurant_id, customer_phone");
 
   const order = (updated as Array<{
