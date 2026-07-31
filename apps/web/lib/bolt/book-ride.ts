@@ -32,6 +32,13 @@ import { buildDriverNote } from "@/lib/delivery/driver-note";
  */
 const BOLT_RIDER_CONTACT_PHONE = "+2348063662721";
 
+/**
+ * The name registered alongside BOLT_RIDER_CONTACT_PHONE. Deliberately not
+ * the customer's name — the driver sees this name and number as a pair, and
+ * the real customer contact lives in note_to_driver, not here.
+ */
+const BOLT_RIDER_CONTACT_NAME = "Check message for ride details";
+
 export type BookingOutcome =
   /** Ride is booked with Bolt; humans need not be paged. */
   | { outcome: "booked"; rideId: number; boltRideId: number }
@@ -235,7 +242,12 @@ export async function createRideAttempt(
     ride = await createRide(settings.environment, {
       fareId: fare.fareId,
       stops,
-      riderName: order.customer_name ?? "Customer",
+      // Fixed, same reasoning as the phone below: showing the real customer's
+      // name next to an ops phone number is its own source of confusion — the
+      // driver would see a name that doesn't match whoever picks up when they
+      // call. Pointed at the note_to_driver field instead, which actually has
+      // the real name, phone and address together.
+      riderName: BOLT_RIDER_CONTACT_NAME,
       // The registered "rider" contact on every Bolt trip — deliberately NOT
       // the customer's own phone. The customer is never the one talking to
       // the driver; the note_to_driver instruction already carries the real
