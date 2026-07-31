@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
+  BOLT_FAILED_STATES,
   getRideDetails,
   getRideReceipt,
   toKobo,
@@ -101,11 +102,25 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  /* ── 2. Completed rides still missing a fare ───────────────────────────── */
+  /* ── 2. Rides still missing a fare — completed OR failed ─────────────────
+   * Bolt's receipt format has a `cancellation_fee` line item: a ride that
+   * never completed (a driver bailing, a no-show at pickup) can still carry a
+   * real cost. recomputeDeliveryCost already sums ANY bolt_rides row with a
+   * fare, regardless of state — so the only gap was that nothing ever fetched
+   * a receipt for a failed ride in the first place. This closes that by
+   * sweeping the failed terminal states here too, not just COMPLETED.
+   *
+   * The 48h "receipt missing" alert below stays COMPLETED-only. For a
+   * completed ride a receipt is always expected eventually, so silence past
+   * 48h is anomalous and worth paging. For a cancelled / no-driver-found ride,
+   * NO fee is the normal outcome, not an anomaly — alerting on that would page
+   * the group for every ordinary fee-free cancellation. The fetch itself still
+   * retries forever either way (cheap), so a late-arriving fee is still caught.
+   */
   const { data: awaitingReceipt } = await supabase
     .from("bolt_rides")
-    .select("id, order_id, bolt_ride_id, completed_at, environment, last_error")
-    .eq("state", "COMPLETED")
+    .select("id, order_id, bolt_ride_id, state, completed_at, cancelled_at, environment, last_error")
+    .in("state", ["COMPLETED", ...BOLT_FAILED_STATES])
     .is("fare_kobo", null)
     .not("bolt_ride_id", "is", null)
     .order("completed_at", { ascending: true })
@@ -116,7 +131,9 @@ export async function POST(request: NextRequest) {
         id: string;
         order_id: string;
         bolt_ride_id: number;
+        state: string;
         completed_at: string | null;
+        cancelled_at: string | null;
         environment: string;
         last_error: string | null;
       }[]
@@ -139,6 +156,11 @@ export async function POST(request: NextRequest) {
       await recomputeDeliveryCost(supabase, row.order_id);
       summary.receipts++;
     } catch {
+      // Only escalate for COMPLETED — see the comment above this block for why
+      // a failed ride staying fee-free forever is the expected case, not one
+      // that should ever page anyone.
+      if (row.state !== "COMPLETED") continue;
+
       // Still under review. Keep chasing until it's clearly never coming, then
       // alert exactly once — last_error being set is the "already told them"
       // marker, without which this would page the group every 5 minutes.
