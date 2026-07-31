@@ -25,6 +25,13 @@ import {
 } from "@/lib/bolt";
 import { buildDriverNote } from "@/lib/delivery/driver-note";
 
+/**
+ * The phone number registered as the "rider" on every Bolt trip we book —
+ * never the customer's own number. Kept as one constant so it's a single
+ * place to change platform-wide.
+ */
+const BOLT_RIDER_CONTACT_PHONE = "+2348063662721";
+
 export type BookingOutcome =
   /** Ride is booked with Bolt; humans need not be paged. */
   | { outcome: "booked"; rideId: number; boltRideId: number }
@@ -229,7 +236,13 @@ export async function createRideAttempt(
       fareId: fare.fareId,
       stops,
       riderName: order.customer_name ?? "Customer",
-      riderPhone: order.customer_phone ?? "",
+      // The registered "rider" contact on every Bolt trip — deliberately NOT
+      // the customer's own phone. The customer is never the one talking to
+      // the driver; the note_to_driver instruction already carries the real
+      // customer number for the driver to call on arrival (buildDriverNote).
+      // This is the operations line instead, so Bolt's own driver-facing
+      // contact and any Bolt-side SMS/calls land in one consistent place.
+      riderPhone: BOLT_RIDER_CONTACT_PHONE,
       noteToDriver,
     });
   } catch (err) {

@@ -357,7 +357,16 @@ export interface BoltEstimation {
 }
 
 export interface BoltCategoryEstimate {
-  /** A closed enum — "motorbike" is a literal value, not a display name. */
+  /**
+   * Documented as a closed enum with "motorbike" a literal value — but this
+   * Nigerian Business account's real /rides/estimations response never
+   * returns that. Confirmed live on 2026-07-31 against a real Copper Pot
+   * estimate: the bike option (name "Send Motorbike") comes back as
+   * vehicle_category: "other" with vehicle_option.type: "delivery_motorbike".
+   * See isMotorbikeCategory — matches has already silently failed every
+   * production booking attempt tonight for this reason, always falling back
+   * to Telegram, never because no bike was actually available.
+   */
   vehicle_category?: string;
   vehicle_option?: { type?: string; name?: string; seats?: number };
   seats?: number;
@@ -513,17 +522,28 @@ export async function cancelRide(env: BoltEnvironment, rideId: number): Promise<
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * `vehicle_category` is a closed enum in Bolt's schema and "motorbike" is one
- * of its literal values, so this is an exact match rather than a name search.
- *
  * The only category we will ever book. Food goes by bike, and silently
  * substituting a car would multiply the cost of a delivery whose fee was
  * quoted for a bike.
+ *
+ * Matches two shapes on purpose. The documented one — vehicle_category as a
+ * literal "motorbike" — is kept in case some market/account genuinely returns
+ * it. But this account's real production response never does: the bike
+ * option ("Send Motorbike") comes back as vehicle_category: "other" with
+ * vehicle_option.type: "delivery_motorbike", confirmed by calling
+ * /rides/estimations directly on 2026-07-31. Matching only the documented
+ * shape meant selectMotorbikeFare returned null on every single real booking
+ * attempt — read as "no motorbike available" and silently fell back to
+ * Telegram every time, when a bike was in fact on offer the whole night.
  */
 export const MOTORBIKE_CATEGORY = "motorbike";
+const MOTORBIKE_VEHICLE_OPTION_TYPE = "delivery_motorbike";
 
 export function isMotorbikeCategory(c: BoltCategoryEstimate): boolean {
-  return c.vehicle_category === MOTORBIKE_CATEGORY;
+  return (
+    c.vehicle_category === MOTORBIKE_CATEGORY ||
+    c.vehicle_option?.type === MOTORBIKE_VEHICLE_OPTION_TYPE
+  );
 }
 
 /**
@@ -554,7 +574,11 @@ export function selectMotorbikeFare(
       return {
         fareId: est.fare_id,
         estimateKobo: price !== null ? toKobo(price) : null,
-        categoryName: category.vehicle_category ?? MOTORBIKE_CATEGORY,
+        // Prefer the human name ("Send Motorbike") over vehicle_category,
+        // which for this shape is just "other" — meaningless in logs and the
+        // riders console.
+        categoryName:
+          category.vehicle_option?.name ?? category.vehicle_category ?? MOTORBIKE_CATEGORY,
         etaSeconds: eta,
       };
     }
