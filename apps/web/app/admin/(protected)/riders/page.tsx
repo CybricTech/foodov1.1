@@ -12,7 +12,7 @@ const RIDE_COLUMNS =
   "id, order_id, attempt, bolt_ride_id, state, fare_kobo, estimate_kobo, invoice_url, " +
   "fare_breakdown, driver_name, driver_phone, vehicle_category, eta_seconds, " +
   "driver_lat, driver_lng, location_updated_at, last_error, created_at, booked_at, " +
-  "driver_assigned_at, picked_up_at, completed_at, cancelled_at";
+  "driver_assigned_at, picked_up_at, completed_at, cancelled_at, tracking_url";
 
 export default async function AdminRidersPage() {
   const supabase = createServiceClient();

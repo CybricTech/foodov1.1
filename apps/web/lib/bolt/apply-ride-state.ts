@@ -35,6 +35,15 @@ export interface BoltRideRow {
   state: string;
   fare_kobo: number | null;
   environment: string;
+  /**
+   * Already-known tracking link, if an earlier poll captured one. Bolt's
+   * response to any one call is not guaranteed to include tracking_url even
+   * once it exists — confirmed live on an order whose "on its way" SMS went
+   * out without the link despite one being on record moments later. Since the
+   * link never changes once assigned, this is the fallback when the current
+   * response happens to omit it.
+   */
+  tracking_url: string | null;
 }
 
 export type ApplyResult =
@@ -149,10 +158,17 @@ export async function applyRideState(
   // status, and it is the only place that does so for a platform order: the
   // request itself happens up to a lead time before the food is even ready.
   if (nextState === "DRIVING_WITH_CLIENT") {
+    // Prefer this call's fresh value, but fall back to whatever an earlier
+    // poll already captured — Bolt's response to any one call isn't
+    // guaranteed to include tracking_url even once it exists, and unlike ETA
+    // this link never changes once assigned, so an older one is exactly as
+    // good as a new one. Confirmed live: without this fallback, an order's
+    // "on its way" SMS went out with no link despite one already being on
+    // record from an earlier poll.
     await markOrderInTransit(
       supabase,
       ride.order_id,
-      details.tracking_url ?? null
+      details.tracking_url ?? ride.tracking_url ?? null
     );
   }
 
