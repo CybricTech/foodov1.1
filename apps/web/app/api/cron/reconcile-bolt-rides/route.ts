@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
   /* ── 1. Rides still in flight ──────────────────────────────────────────── */
   const { data: activeRows } = await supabase
     .from("bolt_rides")
-    .select("id, order_id, restaurant_id, attempt, bolt_ride_id, state, fare_kobo, environment")
+    .select("id, order_id, restaurant_id, attempt, bolt_ride_id, state, fare_kobo, environment, tracking_url")
     .not("bolt_ride_id", "is", null)
     .not("state", "in", "(COMPLETED,CANCELLED,CLIENT_CANCELLED,CLIENT_DID_NOT_SHOW,NO_DRIVER_FOUND,PAYMENT_BOOKING_FAILED,CREATE_FAILED,SHADOW)")
     .lte("updated_at", cutoff)

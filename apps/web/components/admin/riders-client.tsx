@@ -87,6 +87,8 @@ interface RideRow {
   picked_up_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
+  /** Bolt's own hosted live-tracking page. Same link the customer's SMS carries. */
+  tracking_url: string | null;
 }
 
 interface BoltStatus {
@@ -656,6 +658,21 @@ export function RidersClient({
               <Navigation size={12} />
               Locate driver
             </button>
+          )}
+
+          {/* Bolt's own live-tracking page — the exact link the customer's
+              "on its way" SMS carries. Not available on the manual lane (no
+              ride_id to have one) or before Bolt assigns a driver. */}
+          {ride && !FAILED_STATES.has(ride.state) && ride.tracking_url && (
+            <a
+              href={ride.tracking_url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-1.5 min-w-[7rem] flex-1 border border-black-200 text-black-600 hover:border-black-400 text-xs font-bold py-2.5 rounded-xl transition-colors cursor-pointer"
+            >
+              <ExternalLink size={12} />
+              Track live
+            </a>
           )}
 
           {boltStatus.enabled && (
