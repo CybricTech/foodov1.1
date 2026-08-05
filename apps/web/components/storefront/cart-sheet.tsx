@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, UtensilsCrossed, ArrowRight, Minus, Plus } from "lucide-react";
 import { formatKobo } from "@foodo/utils";
 import { useCartStore } from "@/lib/stores/cart";
+import { useScrollLock } from "@/lib/hooks/use-scroll-lock";
 import { transformImage } from "@/lib/images";
 import { useRestaurant } from "./restaurant-context";
 
@@ -22,10 +22,10 @@ export function CartSheet({ open, onClose }: CartSheetProps) {
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const isOpen = restaurant.accepts_orders;
 
-  useEffect(() => {
-    if (open) document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
-  }, [open]);
+  // overflow:hidden here was a no-op on iOS Safari, so the menu kept scrolling
+  // behind the open cart on most of our traffic. Shared hook, same technique as
+  // the item sheet, and reference-counted so the two can overlap safely.
+  useScrollLock(open);
 
   if (!open) return null;
 

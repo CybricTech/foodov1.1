@@ -11,6 +11,7 @@ import {
   type SchedulingSettings,
 } from "@foodo/utils";
 import { cn } from "@foodo/ui";
+import { useScrollLock } from "@/lib/hooks/use-scroll-lock";
 
 /**
  * "When would you like this?" bottom sheet — day list + time list side by
@@ -54,6 +55,11 @@ export function ScheduleOrderSheet({
   );
   const [draftSlot, setDraftSlot] = useState<string | null>(initialSlot);
   const accent = brandColor ?? "#7B2CBF";
+
+  // This sheet is only mounted while it is open, so the lock is simply its
+  // lifetime. It had none at all, which on a long checkout page meant the form
+  // scrolled away behind the day/time lists as the customer picked a slot.
+  useScrollLock(true);
 
   // Re-generate every minute so a sheet left open can't offer a stale slot.
   const [nowTick, setNowTick] = useState(() => Date.now());
