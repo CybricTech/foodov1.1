@@ -6,12 +6,14 @@ import { useConnection } from "@/lib/connection-context";
 import {
   formatKobo,
   isPendingScheduledOrder,
+  isPlatformRiderEngaged,
   formatLagosSlotLabel,
   laneForPolicy,
   type DispatchPolicy,
   type OpeningHours,
   type SchedulingSettings,
 } from "@foodo/utils";
+import { DASHBOARD_ORDER_SELECT } from "@/lib/orders/dashboard-order-select";
 import { cn } from "@foodo/ui";
 import {
   Inbox,
@@ -249,16 +251,7 @@ export function FrontlineOrdersClient({
     const [{ data, error }, { data: scheduledData, error: scheduledError }] = await Promise.all([
       supabase
         .from("orders")
-        .select(
-          `
-          id, order_number, status, payment_status, fulfillment_type,
-          customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
-          vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
-          special_instructions, delivery_address, dispatch_type,
-          scheduled_for, activated_at,
-          order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
-        `
-        )
+        .select(DASHBOARD_ORDER_SELECT)
         .eq("restaurant_id", restaurantId)
         .order("created_at", { ascending: false })
         .limit(200),
@@ -266,16 +259,7 @@ export function FrontlineOrdersClient({
       // newest-200 window long before their slot — fetch them separately.
       supabase
         .from("orders")
-        .select(
-          `
-          id, order_number, status, payment_status, fulfillment_type,
-          customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
-          vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
-          special_instructions, delivery_address, dispatch_type,
-          scheduled_for, activated_at,
-          order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
-        `
-        )
+        .select(DASHBOARD_ORDER_SELECT)
         .eq("restaurant_id", restaurantId)
         .not("scheduled_for", "is", null)
         .is("activated_at", null)
@@ -453,9 +437,18 @@ export function FrontlineOrdersClient({
           }),
         });
 
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
           throw new Error(data.error || "Failed to update status");
+        }
+        // Mark Ready at a platform merchant requests a rider inside this same
+        // call. Apply the rider track the server reports so the card swaps to
+        // "Kitchyn rider handling" now, without waiting on a Realtime event.
+        const dispatch = (data as { dispatch?: Partial<OrderRow> }).dispatch;
+        if (dispatch) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === orderId ? { ...o, ...dispatch } : o))
+          );
         }
       } catch (err) {
         // Revert optimistic update
@@ -520,19 +513,38 @@ export function FrontlineOrdersClient({
         const data = await dispatchRes.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error || "Failed to dispatch order");
       }
+      const dispatchBody = (await dispatchRes.json().catch(() => ({}))) as {
+        dispatch?: Partial<OrderRow>;
+      };
 
+      // Apply what the server ACTUALLY wrote, not a guess at it.
+      //
+      // This used to set status and dispatch_state only — never dispatch_type or
+      // rider_requested_at, which are the two fields the card keys the handover
+      // on. So the "Assign Rider" button survived its own dispatch, the merchant
+      // tapped it again, and again, on an order that already had a rider coming.
+      //
       // The platform lane no longer moves orders.status — the rider runs on its
-      // own track (migration 101) and the food stays "ready" until collected.
-      const newStatus =
+      // own track (migration 101) and the food stays "ready" until collected —
+      // so the fallback below only advances status for the in-house lane.
+      const fallbackStatus =
         dispatchModal.selectedType === "own_rider" ? "in_transit" : "ready_for_pickup";
       setOrders((prev) =>
         prev.map((o) =>
           o.id === dispatchModal.order.id
             ? {
                 ...o,
-                status: newStatus as OrderRow["status"],
+                status: fallbackStatus as OrderRow["status"],
+                dispatch_type: dispatchModal.selectedType,
                 dispatch_state:
                   dispatchModal.selectedType === "platform_rider" ? "requested" : "not_required",
+                // Only the platform lane asks us for a rider; the in-house lane
+                // must NOT look engaged or the merchant loses their own actions.
+                ...(dispatchModal.selectedType === "platform_rider"
+                  ? { rider_requested_at: new Date().toISOString() }
+                  : {}),
+                // Server truth wins over every default above.
+                ...(dispatchBody.dispatch ?? {}),
               }
             : o
         )
@@ -1099,6 +1111,12 @@ function FrontlineOrderCard({
   const [confirmMinutes, setConfirmMinutes] = useState(DEFAULT_PREP_MINUTES);
   const itemCount = getItemCount(order);
 
+  // A Kitchyn rider is on this one, so the merchant gets a status, not a button.
+  // The SAME predicate the API uses to reject a merchant's in_transit/delivered:
+  // when the two disagreed, this card rendered actions the server answered 403
+  // to and the order could not be advanced by anybody.
+  const riderEngaged = isPlatformRiderEngaged(order);
+
   return (
     <div
       className={cn(
@@ -1251,7 +1269,7 @@ function FrontlineOrderCard({
             <>
               {order.status === "ready_for_pickup" &&
                 order.fulfillment_type === "delivery" &&
-                !order.rider_requested_at && (
+                !riderEngaged && (
                   <button
                     onClick={() => onDispatchReady?.(order)}
                     disabled={loading}
@@ -1269,7 +1287,7 @@ function FrontlineOrderCard({
                   {loading ? "Updating…" : "Mark Collected"}
                 </button>
               )}
-              {order.status === "in_transit" && order.dispatch_type !== "platform_rider" && (
+              {order.status === "in_transit" && !riderEngaged && (
                 <button
                   onClick={() => onUpdateStatus(order.id, "delivered")}
                   disabled={loading}
@@ -1279,9 +1297,8 @@ function FrontlineOrderCard({
                 </button>
               )}
               {(order.status === "assigned_to_rider" ||
-                (order.dispatch_type === "platform_rider" &&
-                  ["ready_for_pickup", "in_transit"].includes(order.status) &&
-                  Boolean(order.rider_requested_at))) && (
+                (riderEngaged &&
+                  ["ready_for_pickup", "in_transit"].includes(order.status))) && (
                 <span className="flex-1 text-center text-xs text-purple-600 font-semibold py-2 bg-purple-50 rounded-lg">
                   Kitchyn rider handling
                 </span>

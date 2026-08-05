@@ -6,6 +6,7 @@ import {
   formatKobo,
   getOrderQueueBucket,
   formatLagosSlotLabel,
+  isPlatformRiderEngaged,
   policyShowsDispatchPicker,
   type DispatchPolicy,
   type OpeningHours,
@@ -268,9 +269,20 @@ export function OrderQueueClient({
           ...(estimatedReadyMinutes != null ? { estimatedReadyMinutes } : {}),
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error || "Failed to update status");
+      }
+      // Mark Ready at a platform merchant requests a rider inside that same
+      // call, so the response carries the resulting rider track. Applying it
+      // here is what turns the button into the "Kitchyn rider handling" pill
+      // immediately, rather than leaving it to a Realtime event that may be
+      // seconds away — or, on a flaky kitchen tablet, never arrive.
+      const dispatch = (data as { dispatch?: Partial<OrderRow> }).dispatch;
+      if (dispatch) {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? { ...o, ...dispatch } : o))
+        );
       }
     } catch (err) {
       setOrders((prev) =>
@@ -309,48 +321,73 @@ export function OrderQueueClient({
   async function dispatchOrder(orderId: string, dispatchType: "platform_rider" | "own_rider") {
     setActionLoading(orderId);
     setActionError(null);
+
+    // Snapshot every field this function touches, so a failure restores the row
+    // exactly. The previous version rolled back `status` alone — and read it out
+    // of the `orders` closure, which is the pre-optimistic-update array only by
+    // luck of render timing.
+    const before = orders.find((x) => x.id === orderId);
+    const rollback = (o: OrderRow): OrderRow =>
+      before
+        ? {
+            ...o,
+            status: before.status,
+            dispatch_type: before.dispatch_type,
+            dispatch_state: before.dispatch_state,
+            rider_requested_at: before.rider_requested_at,
+          }
+        : o;
+
     // The platform lane no longer moves orders.status — the rider is tracked
     // separately (migration 101), and the food stays "ready" until a rider
     // actually collects it. Only the in-house lane is a real status change.
-    const expectedStatus = dispatchType === "own_rider" ? "in_transit" : null;
-    if (expectedStatus) {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId ? { ...o, status: expectedStatus as OrderRow["status"] } : o
-        )
-      );
-    } else {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId ? { ...o, dispatch_state: "requested" } : o
-        )
-      );
-    }
+    //
+    // dispatch_type and rider_requested_at are set here too, not just
+    // dispatch_state: together they are what makes platformRiderHandling true,
+    // which is what swaps the picker for the "Kitchyn rider handling" pill.
+    // Setting dispatch_state alone left the merchant staring at the same two
+    // buttons after a successful dispatch.
+    const isPlatform = dispatchType === "platform_rider";
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              ...(isPlatform
+                ? {
+                    dispatch_type: dispatchType,
+                    dispatch_state: "requested",
+                    rider_requested_at: new Date().toISOString(),
+                  }
+                : {
+                    status: "in_transit" as OrderRow["status"],
+                    dispatch_type: dispatchType,
+                    dispatch_state: "not_required",
+                  }),
+            }
+          : o
+      )
+    );
+
     try {
       const res = await fetch("/api/dashboard/orders/dispatch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ order_id: orderId, dispatch_type: dispatchType }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? rollback(o) : o)));
+        setActionError((data as { error?: string }).error ?? "Failed to dispatch order.");
+      } else if ((data as { dispatch?: Partial<OrderRow> }).dispatch) {
+        // Replace the optimistic guess with what the server actually wrote.
+        const dispatch = (data as { dispatch: Partial<OrderRow> }).dispatch;
         setOrders((prev) =>
-          prev.map((o) =>
-            o.id === orderId
-              ? { ...o, status: orders.find((x) => x.id === orderId)?.status ?? o.status }
-              : o
-          )
+          prev.map((o) => (o.id === orderId ? { ...o, ...dispatch } : o))
         );
-        setActionError(data.error ?? "Failed to dispatch order.");
       }
     } catch {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? { ...o, status: orders.find((x) => x.id === orderId)?.status ?? o.status }
-            : o
-        )
-      );
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? rollback(o) : o)));
       setActionError("Network error");
     }
     setActionLoading(null);
@@ -727,17 +764,14 @@ function OrderCard({
   const isScheduled = getOrderQueueBucket(order) === "scheduled";
   const capacity = schedulingSettings.capacity_per_slot;
 
-  // Once a Foodo platform rider has the order, completion is handled exclusively
-  // from the admin riders page. The merchant sees a status pill, not an action.
-  // A Kitchyn rider is on this one, so the merchant sees a status, not a button.
+  // Once a Kitchyn rider has the order, completion is handled exclusively from
+  // the admin riders page. The merchant sees a status pill, not an action.
+  //
   // Keyed off the rider request rather than orders.status, because since
-  // migration 101 the request can land while the food is still cooking — the
-  // status check is retained for orders dispatched before then.
-  const platformRiderHandling =
-    order.dispatch_type === "platform_rider" &&
-    (Boolean(order.rider_requested_at) ||
-      order.status === "assigned_to_rider" ||
-      order.status === "in_transit");
+  // migration 101 the request can land while the food is still cooking. Shared
+  // with the API so the button the merchant sees and the transition the server
+  // accepts can never disagree — see isPlatformRiderEngaged.
+  const platformRiderHandling = isPlatformRiderEngaged(order);
 
   const nextStatus: Record<string, string | null> = {
     pending:           "confirmed",
@@ -789,10 +823,15 @@ function OrderCard({
   // merchant's rider is requested automatically before the food is ready, and an
   // in-house merchant always uses their own — asking either of them "who
   // delivers this?" is a question with one answer they never chose.
+  //
+  // ...and only until they answer it. Without the platformRiderHandling check a
+  // hybrid merchant who picked "Platform Rider" was still being asked to choose,
+  // on an order whose rider was already booked and paid for.
   const needsDeliveryChoice =
     order.status === "ready_for_pickup" &&
     order.fulfillment_type === "delivery" &&
-    policyShowsDispatchPicker(dispatchPolicy);
+    policyShowsDispatchPicker(dispatchPolicy) &&
+    !platformRiderHandling;
 
   return (
     <div className="bg-white rounded-2xl border border-black-100 overflow-hidden shadow-card">

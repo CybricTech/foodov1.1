@@ -167,6 +167,146 @@ export type DispatchState =
   | "failed"
   | "cancelled";
 
+/** Every value the orders.dispatch_state CHECK constraint allows (migration 101). */
+export const DISPATCH_STATES: readonly DispatchState[] = [
+  "not_required",
+  "pending",
+  "requested",
+  "booked",
+  "driver_assigned",
+  "picked_up",
+  "delivered",
+  "failed",
+  "cancelled",
+] as const;
+
+/**
+ * Is a Kitchyn rider actually on the hook for this order?
+ *
+ * THE definition of "the platform lane owns this delivery", and deliberately
+ * the only one. It decides two things that must agree exactly:
+ *
+ *   - the UI: show the "Kitchyn rider handling" pill instead of a hand-over
+ *     button, and stop asking a hybrid merchant who delivers
+ *   - the API: refuse a merchant's in_transit / delivered / completed, because
+ *     only the admin Riders page may close out a platform ride
+ *
+ * They used to be written out by hand in each place and they disagreed: the API
+ * keyed on dispatch_type alone while the UI also required rider_requested_at.
+ * An order carrying dispatch_type = 'platform_rider' with no rider ever
+ * requested therefore rendered a button that the API answered 403 to, every
+ * time, with no way forward. Hence one exported predicate and no local copies.
+ *
+ * WHY rider_requested_at AND NOT orders.status
+ * --------------------------------------------
+ * Before migration 101 this fact was expressed as status = 'assigned_to_rider'.
+ * That status is no longer written — the rider moved onto its own track — but
+ * 101's backfill stamped rider_requested_at on every order that was sitting in
+ * 'assigned_to_rider' or 'in_transit' at the time, so the single latch covers
+ * pre-101 rows too. Reading status here would also re-trap the order one step
+ * later: a merchant who legitimately hands food to a rider reaches 'in_transit'
+ * and would then be locked out of marking it delivered.
+ *
+ * dispatch_type alone is NOT enough: it is stamped at order creation by a
+ * free-delivery promo that declares who rides (see the checkout route), and by
+ * the admin test-order tool, in both cases long before anyone asks for a rider.
+ */
+export interface PlatformLaneOrder {
+  /** orders.dispatch_type */
+  dispatch_type?: string | null;
+  /** orders.rider_requested_at — the outer "a rider has been asked for" latch. */
+  rider_requested_at?: string | null;
+}
+
+export function isPlatformRiderEngaged(order: PlatformLaneOrder): boolean {
+  return order.dispatch_type === "platform_rider" && Boolean(order.rider_requested_at);
+}
+
+/**
+ * The rider track's forward progression. Index IS the rank — the only ordering
+ * that matters is that each state is strictly later than the one before it.
+ *
+ * 'failed', 'cancelled' and 'not_required' are absent on purpose: they are not
+ * points along the journey but ways of leaving it, and each has its own rule in
+ * {@link canAdvanceDispatchState}.
+ */
+const DISPATCH_PROGRESSION: readonly DispatchState[] = [
+  "pending",
+  "requested",
+  "booked",
+  "driver_assigned",
+  "picked_up",
+  "delivered",
+] as const;
+
+/**
+ * States the rider track never leaves. The delivery is over, one way or the
+ * other, and a late webhook must not resurrect it.
+ *
+ * 'failed' is NOT here, though it was. A failed ride is the one state whose
+ * entire purpose is to be recovered from: rebook.ts books another attempt and
+ * dispatch-ride.ts falls back to a Telegram note for a human to book by hand.
+ * Freezing the order on 'failed' meant a successfully re-booked ride still read
+ * "Trouble finding a rider" on every surface for the rest of its life.
+ */
+const TERMINAL_DISPATCH_STATES: readonly DispatchState[] = [
+  "delivered",
+  "cancelled",
+] as const;
+
+function dispatchRank(state: DispatchState): number {
+  return DISPATCH_PROGRESSION.indexOf(state);
+}
+
+/**
+ * May the rider track move from `current` to `next`?
+ *
+ * Bolt documents its webhooks as neither ordered nor deduplicated — a COMPLETED
+ * can arrive before DRIVING_WITH_CLIENT, and any event can arrive twice — so
+ * this has to be monotonic rather than merely "not already finished". The rules,
+ * in the order they are applied:
+ *
+ *   1. a no-op write is not a move
+ *   2. nothing leaves 'delivered' or 'cancelled'
+ *   3. an off-ramp ('failed' / 'cancelled') is reachable from anywhere still live
+ *   4. 'not_required' — "this order never wanted a Kitchyn rider" — is only
+ *      reachable before one has been asked for. Past that, a live ride exists
+ *      and hiding it would strand a rider nobody is tracking.
+ *   5. recovery from 'failed' resumes at 'requested' or later, never back at
+ *      'pending' (which would re-arm the T−10 timer on an order already past it)
+ *   6. otherwise: strictly forward along the progression, so a late 'booked'
+ *      cannot undo a 'picked_up'
+ *
+ * An unrecognised or absent `current` is treated as "nothing recorded yet" and
+ * allowed — a row predating the column must not be frozen by it.
+ */
+export function canAdvanceDispatchState(
+  current: string | null | undefined,
+  next: DispatchState
+): boolean {
+  if (current === next) return false;
+  if (!current || !DISPATCH_STATES.includes(current as DispatchState)) return true;
+
+  const from = current as DispatchState;
+
+  if (TERMINAL_DISPATCH_STATES.includes(from)) return false;
+  if (next === "failed" || next === "cancelled") return true;
+
+  if (next === "not_required") {
+    return from === "pending";
+  }
+
+  if (from === "failed") {
+    return dispatchRank(next) >= dispatchRank("requested");
+  }
+
+  // 'not_required' re-armed: a merchant who switched to the platform policy
+  // mid-order legitimately re-enters the progression at any point.
+  if (from === "not_required") return true;
+
+  return dispatchRank(next) > dispatchRank(from);
+}
+
 /** States where a ride is live enough that cancelling the order must cancel it. */
 const LIVE_DISPATCH_STATES: readonly DispatchState[] = [
   "requested",

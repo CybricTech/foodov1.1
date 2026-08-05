@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getRequestUser } from "@/lib/supabase/get-request-user";
 import { requestRiderForOrder } from "@/lib/delivery/request-rider";
 import { commitDeliverySplit } from "@/lib/delivery/commit-delivery-split";
+import { readOrderDispatchFields } from "@/lib/delivery/dispatch-fields";
 import { laneForPolicy, resolveDispatchPolicy } from "@foodo/utils";
 
 /**
@@ -156,12 +157,21 @@ export async function POST(request: NextRequest) {
 
     // 'skipped' means a rider was already requested — the timer beat the click,
     // or the merchant double-tapped. Both are success from here.
+    //
+    // The rider fields are read back rather than asserted. The old response
+    // hardcoded dispatch_state: "requested" and echoed the status read BEFORE
+    // the work, which is wrong the moment the Bolt booking lands inside the same
+    // request (already 'booked'), and says nothing about rider_requested_at —
+    // the one field the merchant's UI keys the whole handover on.
+    const dispatch = await readOrderDispatchFields(serviceClient, order_id);
+
     return NextResponse.json({
       ok: true,
-      status: order.status,
+      status: dispatch?.status ?? order.status,
       dispatch_type,
-      dispatch_state: "requested",
+      dispatch_state: dispatch?.dispatch_state ?? "requested",
       existing: result.outcome === "skipped",
+      ...(dispatch ? { dispatch } : {}),
     });
   }
 
@@ -239,10 +249,13 @@ export async function POST(request: NextRequest) {
     }).catch(console.error);
   }
 
+  const dispatch = await readOrderDispatchFields(serviceClient, order_id);
+
   return NextResponse.json({
     ok: true,
     status: "in_transit",
     dispatch_type,
     existing: alreadyAssigned,
+    ...(dispatch ? { dispatch } : {}),
   });
 }
