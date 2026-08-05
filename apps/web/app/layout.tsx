@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import * as Sentry from "@sentry/nextjs";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 
@@ -39,6 +40,12 @@ export default function RootLayout({
       </head>
       <body>
         <Providers>{children}</Providers>
+        {/* Vercel Web Analytics — page views and visitors, server-side sampled
+            and cookieless. Sits alongside PostHog (product analytics, in
+            Providers) rather than replacing it: this one survives the ad
+            blockers that eat posthog.com requests, so it is the honest
+            denominator for traffic. */}
+        <Analytics />
       </body>
     </html>
   );

@@ -14,11 +14,17 @@ import { laneForPolicy, resolveDispatchPolicy } from "@foodo/utils";
  * Since migration 101 this is only one of four ways an order can get a rider,
  * and the narrowest: it exists for HYBRID merchants, who decide per order.
  *
- *   platform  the rider is requested by the T−10 cron or by Mark Ready, not
- *             here — this route only accepts platform_rider for them as a
- *             belt-and-braces path if a stale client posts it, and even then it
- *             just calls the same chokepoint the cron does.
- *   in_house  only own_rider is legal; asking us for a rider is rejected.
+ *   platform  the rider is normally requested by the T−10 cron or by Mark Ready,
+ *             not here. This route still accepts platform_rider for them, and
+ *             that is now a real recovery path rather than only a stale-client
+ *             guard: when neither trigger produced a rider, the merchant's one
+ *             button on a ready delivery order posts here to go and get one. It
+ *             calls the same chokepoint the cron does, so the latch still makes
+ *             it exactly-once.
+ *   in_house  only own_rider is legal; asking us for a rider is rejected. Their
+ *             "Hand to Rider" button posts HERE and not to update-status, which
+ *             would move the status and skip the assignment row, the delivery
+ *             split and the customer's SMS.
  *   hybrid    both, exactly as before.
  *
  * The platform lane no longer sets status = 'assigned_to_rider'. orders.status

@@ -7,6 +7,7 @@ import {
   getOrderQueueBucket,
   formatLagosSlotLabel,
   isPlatformRiderEngaged,
+  laneForPolicy,
   policyShowsDispatchPicker,
   type DispatchPolicy,
   type OpeningHours,
@@ -805,20 +806,6 @@ function OrderCard({
 
   let next = platformRiderLocksActions ? null : nextStatus[order.status];
 
-  // "Customer Collected" is the pickup wording. An in-house merchant hitting
-  // this on a DELIVERY order is handing the food to their own rider, which is a
-  // different sentence for the same transition.
-  const resolvedActionLabel =
-    order.status === "ready_for_pickup" && order.fulfillment_type === "delivery"
-      ? "Hand to Rider"
-      : actionLabel[order.status];
-  // Pickup orders are never "in transit" — collecting completes them, so
-  // "Customer Collected" goes straight from ready_for_pickup to delivered.
-  if (order.status === "ready_for_pickup" && order.fulfillment_type === "pickup") {
-    next = "delivered";
-  }
-  const canCancel = ["pending", "confirmed"].includes(order.status);
-
   // The picker only exists for HYBRID merchants (migration 101). A platform
   // merchant's rider is requested automatically before the food is ready, and an
   // in-house merchant always uses their own — asking either of them "who
@@ -832,6 +819,56 @@ function OrderCard({
     order.fulfillment_type === "delivery" &&
     policyShowsDispatchPicker(dispatchPolicy) &&
     !platformRiderHandling;
+
+  /* ── The one button on a ready delivery order ───────────────────────────────
+   * A cooked delivery order that no Kitchyn rider is on yet. Which lane that
+   * single button commits it to is decided by the merchant's policy, never by
+   * the button's own wording:
+   *
+   *   in_house  their rider is leaving with it now         → own_rider
+   *   platform  the automatic request did not happen (or
+   *             failed); the useful action is to go and
+   *             get one, not to pretend it left            → platform_rider
+   *   hybrid    they are shown the picker instead, so this
+   *             is null and no primary button renders
+   *
+   * It routes through onDispatch, NOT onUpdateStatus. "Hand to Rider" used to
+   * post status = in_transit to update-status, which moves the status and does
+   * nothing else — no delivery_assignments row, no delivery-fee split committed
+   * to the wallet ledger, no dispatch_type stamped, and no "on its way" SMS to
+   * the customer. The order looked dispatched and settled as though nobody had
+   * delivered it.
+   */
+  const policyLane = laneForPolicy(dispatchPolicy);
+  const readyDeliveryLane: "platform_rider" | "own_rider" | null =
+    order.status === "ready_for_pickup" &&
+    order.fulfillment_type === "delivery" &&
+    !needsDeliveryChoice &&
+    !platformRiderHandling &&
+    (policyLane === "platform_rider" || policyLane === "own_rider")
+      ? policyLane
+      : null;
+
+  // A DELIVERY order never reaches in_transit through update-status — see above.
+  // Nulling `next` here makes that structural rather than a matter of which
+  // onClick a future edit happens to wire up.
+  if (order.status === "ready_for_pickup" && order.fulfillment_type === "delivery") {
+    next = null;
+  }
+  // Pickup orders are never "in transit" — collecting completes them, so
+  // "Customer Collected" goes straight from ready_for_pickup to delivered.
+  if (order.status === "ready_for_pickup" && order.fulfillment_type === "pickup") {
+    next = "delivered";
+  }
+
+  const resolvedActionLabel =
+    readyDeliveryLane === "own_rider"
+      ? "Hand to Rider"
+      : readyDeliveryLane === "platform_rider"
+        ? "Request a Kitchyn rider"
+        : actionLabel[order.status];
+
+  const canCancel = ["pending", "confirmed"].includes(order.status);
 
   return (
     <div className="bg-white rounded-2xl border border-black-100 overflow-hidden shadow-card">
@@ -1186,9 +1223,9 @@ function OrderCard({
           )}
 
           {/* ── Normal action buttons (non-delivery-choice states) ── */}
-          {!isScheduled && !platformRiderLocksActions && !needsDeliveryChoice && (next || canCancel) && !showCancel && (
+          {!isScheduled && !platformRiderLocksActions && !needsDeliveryChoice && (next || readyDeliveryLane || canCancel) && !showCancel && (
             <div className="px-4 py-3 flex gap-2">
-              {next && (
+              {(next || readyDeliveryLane) && (
                 <button
                   onClick={() => {
                     // First acceptance of a new paid order (pending→confirmed or
@@ -1197,7 +1234,12 @@ function OrderCard({
                     if (order.status === "pending" || order.status === "confirmed") {
                       setConfirmMinutes(defaultPrepMinutes(order));
                       setShowConfirm(true);
-                    } else {
+                    } else if (readyDeliveryLane) {
+                      // Committing a lane is never a bare status write — the
+                      // dispatch route owns the assignment row, the delivery-fee
+                      // split and the customer's SMS.
+                      onDispatch(order.id, readyDeliveryLane);
+                    } else if (next) {
                       onUpdateStatus(order.id, next);
                     }
                   }}
