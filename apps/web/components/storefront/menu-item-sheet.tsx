@@ -6,6 +6,7 @@ import Image from "next/image";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { useCartStore } from "@/lib/stores/cart";
+import { useScrollLock } from "@/lib/hooks/use-scroll-lock";
 import { transformImage } from "@/lib/images";
 import { useRestaurant } from "./restaurant-context";
 import { MenuItemCard, NewBadge } from "./menu-item-card";
@@ -61,26 +62,12 @@ export function MenuItemSheet({ item, onClose, allItems = [], onSelect, sale = n
   const dragStartY = useRef<number | null>(null);
   const dragCurrentY = useRef(0);
   const dismissing = useRef(false);
-  const savedScrollY = useRef(0);
 
-  // iOS-compatible scroll lock — overflow:hidden on body is ignored by iOS Safari.
-  // position:fixed freezes the page in place and lets env(safe-area-*) work correctly.
-  useEffect(() => {
-    if (item) {
-      savedScrollY.current = window.scrollY;
-      document.body.style.position = "fixed";
-      document.body.style.top = `-${savedScrollY.current}px`;
-      document.body.style.left = "0";
-      document.body.style.right = "0";
-    }
-    return () => {
-      document.body.style.position = "";
-      document.body.style.top = "";
-      document.body.style.left = "";
-      document.body.style.right = "";
-      window.scrollTo({ top: savedScrollY.current, behavior: "instant" });
-    };
-  }, [item]);
+  // iOS-compatible scroll lock. Keyed on open/closed rather than on the item, so
+  // opening the sheet cannot run a previous cleanup that scrolls the page — the
+  // bug that sent a customer back to the top of the menu on every item they
+  // tapped. See use-scroll-lock.ts.
+  useScrollLock(Boolean(item));
 
   if (!item) return null;
 
