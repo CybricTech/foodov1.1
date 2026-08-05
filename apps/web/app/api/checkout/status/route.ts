@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { verifyMonnifyTransaction, nairaToKobo } from "@/lib/monnify";
 import { getPostHogClient } from "@/lib/posthog";
+import {
+  buildOrderPayloadFromMetadata,
+  buildSavedAddressFromMetadata,
+} from "@/lib/checkout/order-payload";
 
 export async function GET(request: NextRequest) {
   const ref = request.nextUrl.searchParams.get("ref");
@@ -169,48 +173,10 @@ export async function GET(request: NextRequest) {
   // merchant pull-forward) flips it into the live queue.
   const scheduledFor = (meta.scheduled_for as string) || null;
 
-  const orderPayload = {
-    restaurant_id: restaurantId,
-    payment_id: paymentRow.id,
-    customer_phone: meta.customer_phone as string,
-    customer_name: meta.customer_name as string,
-    customer_email: (meta.customer_email as string) || null,
-    fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
-    delivery_address: (meta.delivery_address as string) || null,
-    special_instructions: (meta.special_instructions as string) || null,
-    scheduled_for: scheduledFor,
-    status: "confirmed" as const,
-    payment_status: "paid" as const,
-    subtotal_kobo: meta.subtotal_kobo as number,
-    delivery_fee_kobo: meta.delivery_fee_kobo as number,
-    vat_kobo: (meta.vat_kobo as number) || 0,
-    service_fee_kobo: (meta.service_fee_kobo as number) || 0,
-    // Discount/loyalty are merchant-funded: they reduce total_kobo (what the
-    // customer paid), which is what settlement nets off — so the merchant bears
-    // the cost. Must mirror the webhooks; previously this path omitted the
-    // discount and would have over-settled the merchant.
-    discount_id: (meta.discount_id as string) || null,
-    discount_code: (meta.discount_code as string) || null,
-    discount_kobo: (meta.discount_kobo as number) || 0,
-    loyalty_redeemed: (meta.loyalty_redeemed as boolean) || false,
-    loyalty_stamps_spent: (meta.loyalty_stamps_spent as number) || null,
-    total_kobo:
-      (meta.subtotal_kobo as number) +
-      (meta.delivery_fee_kobo as number) +
-      ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0) -
-      ((meta.discount_kobo as number) || 0),
-    subtotal: meta.subtotal_kobo as number,
-    total_amount:
-      (meta.subtotal_kobo as number) +
-      (meta.delivery_fee_kobo as number) +
-      ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0) -
-      ((meta.discount_kobo as number) || 0),
-    delivery_distance_km: (meta.delivery_distance_km as number) || null,
-    delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
-    order_number: `FD-${Date.now()}`,
-  };
+  const orderPayload = buildOrderPayloadFromMetadata(meta, {
+    restaurantId,
+    paymentId: paymentRow.id,
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orderResult = await supabase
@@ -330,14 +296,15 @@ export async function GET(request: NextRequest) {
       .eq("phone", meta.customer_phone as string)
       .single();
     if (customerRow) {
-      await supabase.from("customer_addresses").upsert(
-        {
-          customer_id: customerRow.id,
-          restaurant_id: restaurantId,
-          address: deliveryAddress,
-        },
-        { onConflict: "customer_id, address" }
-      );
+      const savedAddress = buildSavedAddressFromMetadata(meta, {
+        restaurantId,
+        customerId: customerRow.id,
+      });
+      if (savedAddress) {
+        await supabase
+          .from("customer_addresses")
+          .upsert(savedAddress, { onConflict: "customer_id, address" });
+      }
     }
   }
 
