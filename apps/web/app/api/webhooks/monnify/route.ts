@@ -5,6 +5,10 @@ import {
   nairaToKobo,
 } from "@/lib/monnify";
 import { getPostHogClient } from "@/lib/posthog";
+import {
+  buildOrderPayloadFromMetadata,
+  buildSavedAddressFromMetadata,
+} from "@/lib/checkout/order-payload";
 
 /**
  * Monnify webhook handler.
@@ -164,60 +168,15 @@ async function handleSuccessfulTransaction(
     );
   }
 
-  // Create the order — fallback order number; BEFORE INSERT trigger overrides
-  // with the proper prefix + sequence format if present.
-  const fallbackOrderNumber = `FD-${Date.now()}`;
-
   // Pre-order slot (087): stamped onto the order; activated_at stays NULL so
   // the order sits in the Scheduled bucket until the activation cron (or a
   // merchant pull-forward) flips it into the live queue.
   const scheduledFor = (meta.scheduled_for as string) || null;
 
-  const orderPayload = {
-    restaurant_id: restaurantId,
-    payment_id: ep.id,
-    customer_phone: meta.customer_phone as string,
-    customer_name: meta.customer_name as string,
-    customer_email: (meta.customer_email as string) || null,
-    fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
-    delivery_address: (meta.delivery_address as string) || null,
-    special_instructions: (meta.special_instructions as string) || null,
-    scheduled_for: scheduledFor,
-    status: "confirmed" as const,
-    payment_status: "paid" as const,
-    subtotal_kobo: meta.subtotal_kobo as number,
-    delivery_fee_kobo: meta.delivery_fee_kobo as number,
-    vat_kobo: (meta.vat_kobo as number) || 0,
-    service_fee_kobo: (meta.service_fee_kobo as number) || 0,
-    discount_id: (meta.discount_id as string) || null,
-    discount_code: (meta.discount_code as string) || null,
-    discount_kobo: (meta.discount_kobo as number) || 0,
-    loyalty_redeemed: (meta.loyalty_redeemed as boolean) || false,
-    loyalty_stamps_spent: (meta.loyalty_stamps_spent as number) || null,
-    total_kobo:
-      (meta.subtotal_kobo as number) +
-      (meta.delivery_fee_kobo as number) +
-      ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0) -
-      ((meta.discount_kobo as number) || 0),
-    subtotal: meta.subtotal_kobo as number,
-    total_amount:
-      (meta.subtotal_kobo as number) +
-      (meta.delivery_fee_kobo as number) +
-      ((meta.vat_kobo as number) || 0) +
-      ((meta.service_fee_kobo as number) || 0) -
-      ((meta.discount_kobo as number) || 0),
-    delivery_distance_km: (meta.delivery_distance_km as number) || null,
-    delivery_fee_kobo_calculated: (meta.delivery_fee_kobo as number) || 0,
-    // Exact destination coordinates the fee was priced from (picked suggestion
-    // or device GPS). Powers rider navigation deep-links to the precise pin.
-    delivery_lat: (meta.delivery_lat as number) ?? null,
-    delivery_lng: (meta.delivery_lng as number) ?? null,
-    // Free-delivery promos declare the rider; stamping it now lets settlement
-    // attribute the waived delivery fee (platform_rider => merchant-funded).
-    dispatch_type: (meta.dispatch_type as string) || null,
-    order_number: fallbackOrderNumber,
-  };
+  const orderPayload = buildOrderPayloadFromMetadata(meta, {
+    restaurantId,
+    paymentId: ep.id,
+  });
 
   const orderResult = await supabase
     .from("orders")
@@ -359,20 +318,15 @@ async function handleSuccessfulTransaction(
       .single();
 
     if (customerRow) {
-      await supabase
-        .from("customer_addresses")
-        .upsert(
-          {
-            customer_id: customerRow.id,
-            restaurant_id: restaurantId,
-            address: deliveryAddress,
-            // Coordinate-back the saved address so re-selecting it re-prices
-            // from lat/lng with zero geocoding (eliminates the wrong-street snap).
-            lat: (meta.delivery_lat as number) ?? null,
-            lng: (meta.delivery_lng as number) ?? null,
-          },
-          { onConflict: "customer_id, address" }
-        );
+      const savedAddress = buildSavedAddressFromMetadata(meta, {
+        restaurantId,
+        customerId: customerRow.id,
+      });
+      if (savedAddress) {
+        await supabase
+          .from("customer_addresses")
+          .upsert(savedAddress, { onConflict: "customer_id, address" });
+      }
     }
   }
 
