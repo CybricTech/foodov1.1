@@ -2,6 +2,7 @@ import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServiceClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { FrontlineOrdersClient } from "@/components/dashboard/frontline-orders-client";
+import { DASHBOARD_ORDER_SELECT } from "@/lib/orders/dashboard-order-select";
 import {
   normalizeSchedulingSettings,
   resolveDispatchPolicy,
@@ -10,14 +11,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const ORDER_SELECT = `
-  id, order_number, status, payment_status, fulfillment_type,
-  customer_name, customer_phone, subtotal_kobo, delivery_fee_kobo,
-  vat_kobo, service_fee_kobo, discount_kobo, discount_code, total_kobo, created_at,
-  special_instructions, delivery_address, dispatch_type,
-  scheduled_for, activated_at,
-  order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
-`;
+const ORDER_SELECT = DASHBOARD_ORDER_SELECT;
 
 export default async function FrontlineOrdersPage() {
   const session = await getDashboardUser();

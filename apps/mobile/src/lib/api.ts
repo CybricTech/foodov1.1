@@ -134,12 +134,28 @@ async function apiSend<T>(
   return payload as T;
 }
 
+/**
+ * The rider track as it stands after a write, echoed by both order routes.
+ *
+ * Either route can request a rider as a side effect — Mark Ready at a platform
+ * merchant, or the hybrid picker — so these three columns can change without the
+ * caller being able to predict them. Applying the echo beats guessing: it is
+ * right even when Realtime is down, which on a kitchen tablet it regularly is.
+ */
+export interface OrderDispatchFields {
+  /** NOT NULL in the database — safe to apply straight onto a card's row. */
+  status: string;
+  dispatch_type: string | null;
+  dispatch_state: string | null;
+  rider_requested_at: string | null;
+}
+
 /** POST /api/dashboard/orders/update-status */
 export function updateOrderStatus(
   orderId: string,
   status: string,
   estimatedReadyMinutes?: number
-): Promise<{ success: true }> {
+): Promise<{ success: true; dispatch?: OrderDispatchFields }> {
   return apiPost("/api/dashboard/orders/update-status", {
     orderId,
     status,
@@ -151,7 +167,12 @@ export function updateOrderStatus(
 export function dispatchOrder(
   orderId: string,
   dispatchType: "platform_rider" | "own_rider"
-): Promise<{ ok: true; status: string; dispatch_type?: string }> {
+): Promise<{
+  ok: true;
+  status: string;
+  dispatch_type?: string;
+  dispatch?: OrderDispatchFields;
+}> {
   return apiPost("/api/dashboard/orders/dispatch", {
     order_id: orderId,
     dispatch_type: dispatchType,

@@ -17,6 +17,7 @@ import {
   generateScheduleSlots,
   formatLagosDayLabel,
   formatLagosTime,
+  isPlatformRiderEngaged,
   lagosDateKey,
   type OpeningHours,
   type SchedulingSettings,
@@ -719,6 +720,11 @@ function ActionButton({
   onDispatchReady: (order: OrderRow) => void;
   onAccept: () => void;
 }) {
+  // A Kitchyn rider is on this one, so the merchant gets a status, not a button.
+  // The SAME predicate the API uses to reject a merchant's in_transit/delivered,
+  // so the card can never render an action the server will answer 403 to.
+  const riderEngaged = isPlatformRiderEngaged(order);
+
   if (column === "new") {
     return (
       <PrimaryButton
@@ -754,7 +760,7 @@ function ActionButton({
     if (
       order.status === "ready_for_pickup" &&
       order.fulfillment_type === "delivery" &&
-      !order.rider_requested_at
+      !riderEngaged
     ) {
       return (
         <PrimaryButton
@@ -775,7 +781,7 @@ function ActionButton({
         />
       );
     }
-    if (order.status === "in_transit" && order.dispatch_type !== "platform_rider") {
+    if (order.status === "in_transit" && !riderEngaged) {
       return (
         <PrimaryButton
           label={loading ? "Updating…" : "Mark Delivered"}
@@ -787,9 +793,7 @@ function ActionButton({
     }
     if (
       order.status === "assigned_to_rider" ||
-      (order.dispatch_type === "platform_rider" &&
-        Boolean(order.rider_requested_at) &&
-        ["ready_for_pickup", "in_transit"].includes(order.status))
+      (riderEngaged && ["ready_for_pickup", "in_transit"].includes(order.status))
     ) {
       return (
         <View

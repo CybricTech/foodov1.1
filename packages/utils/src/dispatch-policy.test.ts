@@ -1,15 +1,20 @@
 /**
- * The two functions here decide, on every delivery order, who pays for the last
- * mile and when we start spending money looking for a rider. A wrong answer from
- * either is a silent revenue leak rather than an error — nothing throws, nothing
- * alerts, the figure is just quietly wrong at settlement. Hence tests.
+ * The functions here decide, on every delivery order, who pays for the last
+ * mile, when we start spending money looking for a rider, whether the merchant
+ * or the admin console owns the order, and whether a rider's progress is allowed
+ * to be recorded at all. A wrong answer is a silent revenue leak or a stranded
+ * order rather than an error — nothing throws, nothing alerts, the figure is
+ * just quietly wrong at settlement or the card quietly stops responding. Hence
+ * tests.
  */
 import { describe, expect, it } from "vitest";
 import {
+  canAdvanceDispatchState,
   computeRiderRequestDueAt,
   DEFAULT_RIDER_REQUEST_LEAD_MINUTES,
   dispatchStateForBoltState,
   isDispatchStateLive,
+  isPlatformRiderEngaged,
   laneForPolicy,
   policyRequestsPlatformRider,
   policyShowsDispatchPicker,
@@ -254,6 +259,128 @@ describe("isDispatchStateLive", () => {
       undefined,
     ]) {
       expect(isDispatchStateLive(s)).toBe(false);
+    }
+  });
+});
+
+describe("isPlatformRiderEngaged", () => {
+  it("is true only once a rider has actually been asked for", () => {
+    expect(
+      isPlatformRiderEngaged({
+        dispatch_type: "platform_rider",
+        rider_requested_at: "2026-08-02T15:43:56Z",
+      })
+    ).toBe(true);
+  });
+
+  it("is false when dispatch_type was stamped but no rider was ever requested", () => {
+    // The exact shape that dead-ended orders in production: a free-delivery
+    // promo (or the admin test-order tool) stamps dispatch_type at creation, so
+    // keying the platform-lane lock on dispatch_type alone locked the merchant
+    // out of an order no rider had ever been sought for.
+    expect(
+      isPlatformRiderEngaged({
+        dispatch_type: "platform_rider",
+        rider_requested_at: null,
+      })
+    ).toBe(false);
+  });
+
+  it("is false for the merchant's own rider, however far along", () => {
+    expect(
+      isPlatformRiderEngaged({
+        dispatch_type: "own_rider",
+        rider_requested_at: "2026-08-02T15:43:56Z",
+      })
+    ).toBe(false);
+  });
+
+  it("is false for an order with nothing stamped at all", () => {
+    expect(isPlatformRiderEngaged({})).toBe(false);
+    expect(isPlatformRiderEngaged({ dispatch_type: null, rider_requested_at: null })).toBe(false);
+  });
+});
+
+describe("canAdvanceDispatchState", () => {
+  it("moves forward along the progression", () => {
+    expect(canAdvanceDispatchState("pending", "requested")).toBe(true);
+    expect(canAdvanceDispatchState("requested", "booked")).toBe(true);
+    expect(canAdvanceDispatchState("booked", "driver_assigned")).toBe(true);
+    expect(canAdvanceDispatchState("driver_assigned", "picked_up")).toBe(true);
+    expect(canAdvanceDispatchState("picked_up", "delivered")).toBe(true);
+  });
+
+  it("skips ahead when an event is missed", () => {
+    // Bolt can deliver COMPLETED without our ever seeing the pickup.
+    expect(canAdvanceDispatchState("requested", "picked_up")).toBe(true);
+    expect(canAdvanceDispatchState("pending", "delivered")).toBe(true);
+  });
+
+  it("refuses to walk backwards", () => {
+    // Webhooks are documented as unordered: a late 'booked' must not undo the
+    // fact that the rider already has the food.
+    expect(canAdvanceDispatchState("picked_up", "booked")).toBe(false);
+    expect(canAdvanceDispatchState("driver_assigned", "requested")).toBe(false);
+    expect(canAdvanceDispatchState("requested", "pending")).toBe(false);
+  });
+
+  it("treats a repeat of the same state as no move", () => {
+    for (const s of ["pending", "requested", "booked", "picked_up", "failed"] as const) {
+      expect(canAdvanceDispatchState(s, s)).toBe(false);
+    }
+  });
+
+  it("never leaves delivered or cancelled", () => {
+    for (const next of ["requested", "booked", "picked_up", "failed", "delivered"] as const) {
+      expect(canAdvanceDispatchState("delivered", next)).toBe(false);
+      expect(canAdvanceDispatchState("cancelled", next)).toBe(false);
+    }
+  });
+
+  it("lets a live ride fail or be cancelled from anywhere", () => {
+    for (const from of ["pending", "requested", "booked", "driver_assigned", "picked_up"]) {
+      expect(canAdvanceDispatchState(from, "failed")).toBe(true);
+      expect(canAdvanceDispatchState(from, "cancelled")).toBe(true);
+    }
+  });
+
+  it("recovers from failed — the whole point of the state", () => {
+    // A re-booked ride (rebook.ts) or a human booking off the Telegram note has
+    // to be able to report progress. Freezing on 'failed' left a delivered order
+    // reading "Trouble finding a rider" forever.
+    expect(canAdvanceDispatchState("failed", "requested")).toBe(true);
+    expect(canAdvanceDispatchState("failed", "booked")).toBe(true);
+    expect(canAdvanceDispatchState("failed", "driver_assigned")).toBe(true);
+    expect(canAdvanceDispatchState("failed", "picked_up")).toBe(true);
+    expect(canAdvanceDispatchState("failed", "delivered")).toBe(true);
+  });
+
+  it("does not re-arm the timer when recovering from failed", () => {
+    // 'pending' means "waiting for its T−10 tick". This order is long past that.
+    expect(canAdvanceDispatchState("failed", "pending")).toBe(false);
+    expect(canAdvanceDispatchState("failed", "not_required")).toBe(false);
+  });
+
+  it("only marks a rider unnecessary before one has been sought", () => {
+    expect(canAdvanceDispatchState("pending", "not_required")).toBe(true);
+    expect(canAdvanceDispatchState(null, "not_required")).toBe(true);
+    // Past this point a real ride exists; hiding it would strand a rider.
+    for (const from of ["requested", "booked", "driver_assigned", "picked_up"]) {
+      expect(canAdvanceDispatchState(from, "not_required")).toBe(false);
+    }
+  });
+
+  it("re-arms an order that was marked not_required", () => {
+    // A merchant switching from in_house to the platform policy mid-order.
+    expect(canAdvanceDispatchState("not_required", "pending")).toBe(true);
+    expect(canAdvanceDispatchState("not_required", "requested")).toBe(true);
+  });
+
+  it("allows anything when nothing has been recorded yet", () => {
+    // Rows predating migration 101 must not be frozen by a column they lack.
+    for (const from of [null, undefined, "", "SOMETHING_ELSE"]) {
+      expect(canAdvanceDispatchState(from, "requested")).toBe(true);
+      expect(canAdvanceDispatchState(from, "delivered")).toBe(true);
     }
   });
 });

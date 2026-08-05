@@ -16,6 +16,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  canAdvanceDispatchState,
   computeRiderRequestDueAt,
   laneForPolicy,
   resolveDispatchPolicy,
@@ -230,15 +231,18 @@ export async function requestRiderForOrder(
 /**
  * Set the rider-side state without disturbing orders.status.
  *
- * Never walks a terminal state backwards — webhooks are documented as neither
- * ordered nor deduplicated, so a late 'booked' must not undo a 'picked_up'.
+ * The legality of the move lives in `canAdvanceDispatchState` (@foodo/utils),
+ * which is monotonic: webhooks are documented as neither ordered nor
+ * deduplicated, so a late 'booked' must not undo a 'picked_up'. It also lets a
+ * 'failed' ride recover, which the previous terminal-state check did not — a
+ * re-booked ride, or one a human booked off the Telegram note, could never
+ * report progress again and the order read "Trouble finding a rider" forever.
+ *
+ * The read-then-write is not atomic, and deliberately isn't: the losing side of
+ * a genuine race is a duplicate or out-of-order webhook whose write the same
+ * predicate would reject on the next pass anyway. Making it a conditional
+ * UPDATE would mean encoding the rank ordering in SQL, in a second place.
  */
-const TERMINAL_DISPATCH_STATES = new Set<DispatchState>([
-  "delivered",
-  "cancelled",
-  "failed",
-]);
-
 export async function setDispatchState(
   supabase: SupabaseClient,
   orderId: string,
@@ -251,8 +255,7 @@ export async function setDispatchState(
     .single();
 
   const current = (data as { dispatch_state: string | null } | null)?.dispatch_state;
-  if (current === state) return;
-  if (current && TERMINAL_DISPATCH_STATES.has(current as DispatchState)) return;
+  if (!canAdvanceDispatchState(current, state)) return;
 
   await supabase.from("orders").update({ dispatch_state: state }).eq("id", orderId);
 }

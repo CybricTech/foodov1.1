@@ -514,20 +514,30 @@ export function OrdersScreen({
     try {
       // Mirror web: ensure ready_for_pickup first, then dispatch.
       await updateOrderStatus(order.id, "ready_for_pickup");
-      await dispatchOrder(order.id, selectedType);
+      const result = await dispatchOrder(order.id, selectedType);
       // The platform lane no longer moves orders.status: the rider runs on its
       // own track (migration 101) and the food stays "ready" until collected.
-      const newStatus =
+      const fallbackStatus =
         selectedType === "own_rider" ? "in_transit" : "ready_for_pickup";
       setOrders((prev) =>
         prev.map((o) =>
           o.id === order.id
             ? {
                 ...o,
-                status: newStatus as OrderRow["status"],
+                status: fallbackStatus as OrderRow["status"],
                 dispatch_type: selectedType,
                 dispatch_state:
                   selectedType === "platform_rider" ? "requested" : "not_required",
+                // Without this the card's "Assign Rider" button survived its own
+                // dispatch: the pill is gated on rider_requested_at, and nothing
+                // here ever set it. Only the platform lane asks us for a rider —
+                // the in-house lane must not look engaged, or the merchant loses
+                // their own Mark Delivered.
+                ...(selectedType === "platform_rider"
+                  ? { rider_requested_at: new Date().toISOString() }
+                  : {}),
+                // Server truth wins over every default above.
+                ...(result.dispatch ?? {}),
               }
             : o
         )

@@ -9,7 +9,12 @@ import {
 } from "@/lib/delivery/request-rider";
 import { standDownRiderForOrder } from "@/lib/delivery/cancel-rider";
 import { getPostHogClient } from "@/lib/posthog";
-import { policyRequestsPlatformRider, resolveDispatchPolicy } from "@foodo/utils";
+import {
+  isPlatformRiderEngaged,
+  policyRequestsPlatformRider,
+  resolveDispatchPolicy,
+} from "@foodo/utils";
+import { readOrderDispatchFields } from "@/lib/delivery/dispatch-fields";
 
 const VALID_STATUSES = [
   "pending",
@@ -112,15 +117,20 @@ export async function POST(req: NextRequest) {
   const policy = resolveDispatchPolicy(restaurant?.dispatch_policy);
   const isPlatformPolicy = policyRequestsPlatformRider(policy);
 
+  // Gated on isPlatformRiderEngaged — the SAME predicate the merchant UI uses to
+  // decide whether to render a hand-over button at all. It used to test
+  // dispatch_type on its own here while the UI also required rider_requested_at,
+  // and the gap between the two was a dead end: an order carrying
+  // dispatch_type = 'platform_rider' with no rider ever requested (stamped at
+  // creation by a free-delivery promo, or by the admin test-order tool) showed a
+  // "Hand to Rider" button that this branch answered 403 to, every time, with no
+  // other action available. The order could not be advanced by anyone.
   const PLATFORM_RIDER_LOCKED_TARGETS = new Set(["in_transit", "delivered", "completed"]);
-  if (
-    order.dispatch_type === "platform_rider" &&
-    PLATFORM_RIDER_LOCKED_TARGETS.has(status)
-  ) {
+  if (isPlatformRiderEngaged(order) && PLATFORM_RIDER_LOCKED_TARGETS.has(status)) {
     return NextResponse.json(
       {
         error:
-          "This order is assigned to a Foodo platform rider. Only the admin riders page can mark it delivered.",
+          "A Kitchyn rider is handling this order. Only the admin riders page can mark it delivered.",
       },
       { status: 403 }
     );
@@ -277,5 +287,10 @@ export async function POST(req: NextRequest) {
   });
   await posthog.shutdown();
 
-  return NextResponse.json({ success: true });
+  // Echo the rider track back. Mark Ready at a platform merchant requests a
+  // rider from inside this very request, so without this the client would render
+  // a stale "Hand to Rider" button over an order that already has one coming.
+  const dispatch = await readOrderDispatchFields(serviceClient, orderId);
+
+  return NextResponse.json({ success: true, ...(dispatch ? { dispatch } : {}) });
 }
