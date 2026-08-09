@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
-import { createBrowserClient } from "@/lib/supabase/client";
 import { Phone, PackageSearch, ArrowLeft, AlertCircle, Clock, MapPin, Bike, Package } from "lucide-react";
 import { cn } from "@foodo/ui";
 import { formatKobo, ORDER_STATUS_LABELS } from "@foodo/utils";
@@ -65,7 +64,6 @@ function FulfillmentIcon({ type }: { type: string }) {
 export default function TrackOrderPage() {
   const { restaurant } = useRestaurant();
   const router = useRouter();
-  const supabase = createBrowserClient();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [phone, setPhone] = useState("");
@@ -89,23 +87,27 @@ export default function TrackOrderPage() {
     setError("");
     setOrders(null);
 
-    const variants = phoneVariants(trimmed);
-    const phoneFilter = variants.map((v) => `customer_phone.eq.${v}`).join(",");
+    // Searched server-side via /api/orders/lookup. This used to be a direct
+    // browser query, which only worked because `orders` carried a
+    // `USING (true)` policy — the same request could have dropped the phone
+    // filter and walked the whole table. The route is scoped to this restaurant
+    // and rate limited, since phone numbers are guessable.
+    const query = new URLSearchParams({ restaurantId: restaurant.id });
+    for (const v of phoneVariants(trimmed)) query.append("phone", v);
 
-    // Search for orders by customer_phone within this restaurant
-    // Include recent delivered orders (last 24h) + all active orders
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-    const { data, error: fetchErr } = await supabase
-      .from("orders")
-      .select("id, order_number, status, fulfillment_type, customer_name, total_kobo, created_at, delivery_address")
-      .eq("restaurant_id", restaurant.id)
-      .or(phoneFilter)
-      .or(`and(status.neq.cancelled,status.neq.delivered),and(status.eq.delivered,created_at.gte.${oneDayAgo})`)
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (fetchErr) {
+    let data: ActiveOrder[] | null = null;
+    try {
+      const res = await fetch(`/api/orders/lookup?${query.toString()}`, {
+        cache: "no-store",
+      });
+      if (res.status === 429) {
+        setError("Too many attempts. Please wait a moment and try again.");
+        setSearching(false);
+        return;
+      }
+      if (!res.ok) throw new Error("lookup failed");
+      data = ((await res.json()) as { orders: ActiveOrder[] }).orders;
+    } catch {
       setError("Something went wrong. Please try again.");
       setSearching(false);
       return;

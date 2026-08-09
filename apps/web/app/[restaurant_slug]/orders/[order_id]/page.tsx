@@ -8,7 +8,6 @@ import {
   AlertCircle, MapPin, ArrowLeft,
   Store, CalendarClock, Loader2,
 } from "lucide-react";
-import { createBrowserClient } from "@/lib/supabase/client";
 import { transformImage } from "@/lib/images";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 import { OrderEtaCountdown } from "@/components/storefront/order-eta-countdown";
@@ -37,7 +36,6 @@ interface OrderWithItems extends Order {
 export default function OrderTrackingPage() {
   const params = useParams<{ restaurant_slug: string; order_id: string }>();
   const { restaurant } = useRestaurant();
-  const supabase = createBrowserClient();
 
   const [order, setOrder] = useState<OrderWithItems | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,41 +43,46 @@ export default function OrderTrackingPage() {
 
   const brandColor = restaurant.primary_color ?? "#2D6A4F";
 
+  // Orders are read through /api/orders/[id]/track on the service client. The
+  // browser used to query `orders` directly, which only worked because the
+  // table had a `USING (true)` policy that also let anyone enumerate every
+  // order on the platform. That policy is gone, which also rules out a realtime
+  // subscription here (realtime enforces RLS too), so status changes arrive by
+  // polling instead — a tracking page does not need sub-second updates.
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
-    async function fetchOrder() {
-      const { data, error: fetchError } = await supabase
-        .from("orders")
-        .select(`*, order_items (id, item_name, item_price_kobo, quantity, line_total_kobo)`)
-        .eq("id", params.order_id)
-        .single();
+    async function fetchOrder(initial: boolean) {
+      try {
+        const res = await fetch(`/api/orders/${params.order_id}/track`, {
+          cache: "no-store",
+        });
+        if (cancelled) return;
 
-      if (fetchError || !data) {
-        setError("Order not found");
-      } else {
-        setOrder(data as unknown as OrderWithItems);
+        if (!res.ok) {
+          // Only surface an error on first load; a failed poll keeps the last
+          // known state on screen rather than blanking the page.
+          if (initial) setError("Order not found");
+          return;
+        }
+
+        const data = (await res.json()) as OrderWithItems;
+        if (!cancelled) setOrder(data);
+      } catch {
+        if (!cancelled && initial) setError("Order not found");
+      } finally {
+        if (!cancelled && initial) setLoading(false);
       }
-      setLoading(false);
     }
 
-    fetchOrder();
+    fetchOrder(true);
+    timer = setInterval(() => fetchOrder(false), 12_000);
 
-    channel = supabase
-      .channel(`order-${params.order_id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "orders", filter: `id=eq.${params.order_id}` },
-        (payload) => {
-          setOrder((prev) =>
-            prev ? { ...prev, ...(payload.new as Partial<OrderWithItems>) } : null
-          );
-        }
-      )
-      .subscribe();
-
-    return () => { channel?.unsubscribe(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
   }, [params.order_id]);
 
   if (loading) {

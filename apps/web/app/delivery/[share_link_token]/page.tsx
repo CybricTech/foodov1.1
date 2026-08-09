@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { formatKobo } from "@foodo/utils";
 
 interface DeliveryCardProps {
@@ -7,7 +7,13 @@ interface DeliveryCardProps {
 }
 
 export default async function DeliveryCardPage({ params }: DeliveryCardProps) {
-  const supabase = await createServerClient();
+  // Read on the service client: this page is opened by a rider from a shared
+  // link with no session, so the cookie client here is `anon`. It used to rely
+  // on a `USING (share_link_token IS NOT NULL)` policy, which exposed EVERY
+  // assignment that had a token rather than the one being presented — and it
+  // also pulled customer name, phone and address through the nested join.
+  // The token in the URL is the capability, matched exactly below.
+  const supabase = createServiceClient();
 
   // Fetch assignment by token
   const { data: assignmentData } = await supabase
