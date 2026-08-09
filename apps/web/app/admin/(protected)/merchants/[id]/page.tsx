@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/server";
 import { MerchantDetailClient, type AgreementRow } from "@/components/admin/merchant-detail-client";
 import { MerchantSmsSenderCard } from "@/components/admin/merchant-sms-sender-card";
+import type { AuditRow } from "@/components/admin/audit-log-client";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function MerchantDetailPage({
     { data: walletTransactions },
     { data: agreement },
     { data: recentSettlements },
+    { data: recentActivity },
   ] = await Promise.all([
     supabase
       .from("restaurants")
@@ -118,6 +120,15 @@ export default async function MerchantDetailPage({
           monnify_disbursement_reference: string | null;
         }> | null;
       }>,
+
+    supabase
+      .from("audit_trail")
+      .select(
+        "id, source, created_at, table_name, operation, restaurant_id, restaurant_name, actor_id, actor_email, actor_name, actor_role_label, detail"
+      )
+      .eq("restaurant_id", id)
+      .order("created_at", { ascending: false })
+      .limit(100),
   ]);
 
   if (!restaurant) {
@@ -284,6 +295,7 @@ export default async function MerchantDetailPage({
         customers={safeCustomers}
         topItemsList={topItemsList}
         agreement={(agreement as unknown as AgreementRow) ?? null}
+        recentActivity={(recentActivity as unknown as AuditRow[]) ?? []}
       />
       </Suspense>
     </div>

@@ -22,6 +22,7 @@ import {
   CalendarClock,
   Wallet,
   FileSignature,
+  History,
   type LucideIcon,
 } from "lucide-react";
 
@@ -43,6 +44,7 @@ export const NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/changelog",    label: "What's New",    icon: Sparkles,        exact: false },
   { href: "/admin/loyalty",      label: "Loyalty Test",  icon: Stamp,           exact: false },
   { href: "/admin/logs/sms",     label: "SMS Logs",      icon: MessageSquare,   exact: false },
+  { href: "/admin/audit",        label: "Audit Log",     icon: History,         exact: false },
   { href: "/admin/system-health",label: "System Health",  icon: Activity,       exact: false },
   { href: "/admin/settings",     label: "Settings",      icon: Settings,        exact: false },
 ];
@@ -65,6 +67,7 @@ export const MOBILE_MORE_ITEMS: AdminNavItem[] = NAV_ITEMS.filter((i) =>
     "/admin/changelog",
     "/admin/loyalty",
     "/admin/logs/sms",
+    "/admin/audit",
     "/admin/system-health",
     "/admin/settings",
   ].includes(i.href)

@@ -17,15 +17,36 @@ export function escapeTelegramHtml(v: string | number | null | undefined): strin
  * throwing, so an alert failing can never take down the caller.
  */
 export async function sendTelegramMessage(text: string): Promise<boolean> {
+  return postToTelegramChat(process.env.TELEGRAM_CHAT_ID, text);
+}
+
+/**
+ * Post a message to the ops/alerts group — TELEGRAM_ALERTS_CHAT_ID, a
+ * separate chat from the rider group above (same bot token, different
+ * destination). Already used by the Sentry webhook; audit alerts share it
+ * rather than adding a third channel.
+ */
+export async function sendTelegramAlert(text: string): Promise<boolean> {
+  return postToTelegramChat(process.env.TELEGRAM_ALERTS_CHAT_ID, text);
+}
+
+async function postToTelegramChat(
+  chatId: string | undefined,
+  text: string
+): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return false;
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");

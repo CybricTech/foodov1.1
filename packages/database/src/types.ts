@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_log: {
+        Row: {
+          actor_id: string | null
+          actor_role: string | null
+          alerted_at: string | null
+          changes: Json
+          created_at: string
+          id: number
+          operation: string
+          record_id: string | null
+          restaurant_id: string | null
+          table_name: string
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_role?: string | null
+          alerted_at?: string | null
+          changes?: Json
+          created_at?: string
+          id?: number
+          operation: string
+          record_id?: string | null
+          restaurant_id?: string | null
+          table_name: string
+        }
+        Update: {
+          actor_id?: string | null
+          actor_role?: string | null
+          alerted_at?: string | null
+          changes?: Json
+          created_at?: string
+          id?: number
+          operation?: string
+          record_id?: string | null
+          restaurant_id?: string | null
+          table_name?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -51,6 +90,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      auth_events: {
+        Row: {
+          alerted_at: string | null
+          created_at: string
+          email: string | null
+          event: string
+          id: number
+          ip: unknown
+          session_id: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          alerted_at?: string | null
+          created_at?: string
+          email?: string | null
+          event: string
+          id?: number
+          ip?: unknown
+          session_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          alerted_at?: string | null
+          created_at?: string
+          email?: string | null
+          event?: string
+          id?: number
+          ip?: unknown
+          session_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
       }
       blog_posts: {
         Row: {
@@ -151,6 +226,7 @@ export type Database = {
           pickup_lng: number | null
           restaurant_id: string
           state: string
+          tracking_url: string | null
           updated_at: string
           vehicle_category: string | null
         }
@@ -186,6 +262,7 @@ export type Database = {
           pickup_lng?: number | null
           restaurant_id: string
           state?: string
+          tracking_url?: string | null
           updated_at?: string
           vehicle_category?: string | null
         }
@@ -221,6 +298,7 @@ export type Database = {
           pickup_lng?: number | null
           restaurant_id?: string
           state?: string
+          tracking_url?: string | null
           updated_at?: string
           vehicle_category?: string | null
         }
@@ -1678,6 +1756,9 @@ export type Database = {
           delivery_fee: number
           delivery_radius_km: number | null
           description: string | null
+          dispatch_policy: string
+          dispatch_policy_locked_at: string | null
+          dispatch_policy_locked_by: string | null
           estimated_delivery_minutes: number | null
           facebook_url: string | null
           id: string
@@ -1686,9 +1767,6 @@ export type Database = {
           is_test: boolean
           latitude: number | null
           location_verified_at: string | null
-          dispatch_policy: string
-          dispatch_policy_locked_at: string | null
-          dispatch_policy_locked_by: string | null
           logistics_default: string
           logo_url: string | null
           longitude: number | null
@@ -1740,6 +1818,9 @@ export type Database = {
           delivery_fee?: number
           delivery_radius_km?: number | null
           description?: string | null
+          dispatch_policy?: string
+          dispatch_policy_locked_at?: string | null
+          dispatch_policy_locked_by?: string | null
           estimated_delivery_minutes?: number | null
           facebook_url?: string | null
           id?: string
@@ -1748,9 +1829,6 @@ export type Database = {
           is_test?: boolean
           latitude?: number | null
           location_verified_at?: string | null
-          dispatch_policy?: string
-          dispatch_policy_locked_at?: string | null
-          dispatch_policy_locked_by?: string | null
           logistics_default?: string
           logo_url?: string | null
           longitude?: number | null
@@ -1802,6 +1880,9 @@ export type Database = {
           delivery_fee?: number
           delivery_radius_km?: number | null
           description?: string | null
+          dispatch_policy?: string
+          dispatch_policy_locked_at?: string | null
+          dispatch_policy_locked_by?: string | null
           estimated_delivery_minutes?: number | null
           facebook_url?: string | null
           id?: string
@@ -1810,9 +1891,6 @@ export type Database = {
           is_test?: boolean
           latitude?: number | null
           location_verified_at?: string | null
-          dispatch_policy?: string
-          dispatch_policy_locked_at?: string | null
-          dispatch_policy_locked_by?: string | null
           logistics_default?: string
           logo_url?: string | null
           longitude?: number | null
@@ -2176,13 +2254,40 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      audit_trail: {
+        Row: {
+          actor_email: string | null
+          actor_id: string | null
+          actor_name: string | null
+          actor_role_label: string | null
+          created_at: string | null
+          detail: Json | null
+          id: string | null
+          operation: string | null
+          restaurant_id: string | null
+          restaurant_name: string | null
+          source: string | null
+          table_name: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       activate_scheduled_orders: { Args: never; Returns: undefined }
       debit_wallet_for_settlement: {
         Args: { p_amount_kobo: number; p_restaurant_id: string }
         Returns: undefined
+      }
+      evaluate_audit_alerts: {
+        Args: never
+        Returns: {
+          actor_email: string
+          detail: Json
+          event_at: string
+          restaurant_name: string
+          rule: string
+          target_email: string
+        }[]
       }
       finance_assert_admin: { Args: never; Returns: undefined }
       finance_daily: {
@@ -2309,6 +2414,7 @@ export type Database = {
         }[]
       }
       mark_late_orders: { Args: never; Returns: undefined }
+      prune_audit_data: { Args: never; Returns: undefined }
       recompute_all_restaurant_wallets: { Args: never; Returns: undefined }
       recompute_restaurant_wallet: {
         Args: { p_restaurant_id: string }
@@ -2462,4 +2568,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

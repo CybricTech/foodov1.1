@@ -6,6 +6,7 @@ import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { MerchantOrdersClient } from "@/components/admin/merchant-orders-client";
 import { AddressPicker, type VerifiedAddress } from "@/components/shared/address-picker";
+import { AuditLogClient, type AuditRow } from "@/components/admin/audit-log-client";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -143,6 +144,7 @@ export type MerchantDetailClientProps = {
   customers: Customer[];
   topItemsList: [string, number][];
   agreement: AgreementRow | null;
+  recentActivity: AuditRow[];
 };
 
 /* ------------------------------------------------------------------ */
@@ -155,6 +157,7 @@ const TABS = [
   { key: "customers", label: "Customers" },
   { key: "financials", label: "Financials" },
   { key: "agreement", label: "Agreement" },
+  { key: "activity", label: "Activity" },
   { key: "settings", label: "Settings" },
 ] as const;
 
@@ -174,6 +177,7 @@ export function MerchantDetailClient({
   customers,
   topItemsList,
   agreement,
+  recentActivity,
 }: MerchantDetailClientProps) {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab");
@@ -223,6 +227,9 @@ export function MerchantDetailClient({
       )}
       {activeTab === "agreement" && (
         <AgreementTab restaurant={restaurant} initialAgreement={agreement} />
+      )}
+      {activeTab === "activity" && (
+        <ActivityTab restaurantId={restaurant.id} initialActivity={recentActivity} />
       )}
       {activeTab === "settings" && (
         <SettingsTab restaurant={restaurant} />
@@ -1179,6 +1186,29 @@ function SlugEditForm({ restaurant }: { restaurant: Restaurant }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Activity Tab                                                       */
+/* ------------------------------------------------------------------ */
+
+function ActivityTab({
+  restaurantId,
+  initialActivity,
+}: {
+  restaurantId: string;
+  initialActivity: AuditRow[];
+}) {
+  return (
+    <section>
+      <h2 className="text-base font-bold text-black-900 mb-1">Activity</h2>
+      <p className="text-xs text-black-400 mb-4">
+        Sign-ins and changes made by this merchant&rsquo;s staff — including
+        writes made directly from the dashboard that never touch our servers.
+      </p>
+      <AuditLogClient initialRows={initialActivity} restaurantId={restaurantId} />
+    </section>
   );
 }
 
