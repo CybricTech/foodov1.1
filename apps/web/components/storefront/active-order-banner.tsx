@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { UtensilsCrossed } from "lucide-react";
-import { createBrowserClient } from "@/lib/supabase/client";
 import { useRestaurant } from "@/components/storefront/restaurant-context";
 
 const TERMINAL_STATUSES = ["delivered", "cancelled"] as const;
@@ -38,82 +37,74 @@ export function ActiveOrderBanner() {
   const { restaurant } = useRestaurant();
   const [banner, setBanner] = useState<BannerState | null>(null);
 
+  // Reads go through /api/orders/[id]/track on the service client. The browser
+  // used to query `orders` directly, which only worked because of a
+  // `USING (true)` policy that also allowed enumerating every order on the
+  // platform. With that policy gone a realtime subscription is no longer
+  // possible either (realtime enforces RLS), so the banner polls instead.
   useEffect(() => {
     const storageKey = `kitchyn:lastOrder:${restaurant.slug}`;
 
-    let channel: ReturnType<ReturnType<typeof createBrowserClient>["channel"]> | null = null;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
-    async function init() {
+    function readStoredOrderId(): string | null {
       let raw: string | null = null;
       try {
         raw = localStorage.getItem(storageKey);
       } catch {
-        return;
+        return null;
       }
-
-      if (!raw) return;
+      if (!raw) return null;
 
       let parsed: { orderId: string; savedAt: number } | null = null;
       try {
         parsed = JSON.parse(raw);
       } catch {
-        return;
+        return null;
       }
-
-      if (!parsed?.orderId || !parsed?.savedAt) return;
+      if (!parsed?.orderId || !parsed?.savedAt) return null;
 
       if (Date.now() - parsed.savedAt > TTL_MS) {
         try { localStorage.removeItem(storageKey); } catch {}
-        return;
+        return null;
       }
-
-      const { orderId } = parsed;
-      const supabase = createBrowserClient();
-
-      const { data, error } = await supabase
-        .from("orders")
-        .select("id, status, fulfillment_type, order_number")
-        .eq("id", orderId)
-        .single();
-
-      if (error || !data) return;
-
-      if (TERMINAL_STATUSES.includes(data.status as (typeof TERMINAL_STATUSES)[number])) {
-        try { localStorage.removeItem(storageKey); } catch {}
-        return;
-      }
-
-      setBanner({ orderId, status: data.status as ActiveStatus });
-
-      channel = supabase
-        .channel(`active-order-banner-${orderId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "orders",
-            filter: `id=eq.${orderId}`,
-          },
-          (payload) => {
-            const newStatus = (payload.new as { status?: string }).status;
-            if (!newStatus) return;
-
-            if (TERMINAL_STATUSES.includes(newStatus as (typeof TERMINAL_STATUSES)[number])) {
-              try { localStorage.removeItem(storageKey); } catch {}
-              setBanner(null);
-            } else {
-              setBanner({ orderId, status: newStatus as ActiveStatus });
-            }
-          }
-        )
-        .subscribe();
+      return parsed.orderId;
     }
 
-    init();
+    function forget() {
+      try { localStorage.removeItem(storageKey); } catch {}
+      setBanner(null);
+      if (timer) clearInterval(timer);
+    }
+
+    async function poll(orderId: string) {
+      let status: string | undefined;
+      try {
+        const res = await fetch(`/api/orders/${orderId}/track`, { cache: "no-store" });
+        if (!res.ok) return;
+        status = ((await res.json()) as { status?: string }).status;
+      } catch {
+        return;
+      }
+      if (cancelled || !status) return;
+
+      if (TERMINAL_STATUSES.includes(status as (typeof TERMINAL_STATUSES)[number])) {
+        forget();
+        return;
+      }
+      setBanner({ orderId, status: status as ActiveStatus });
+    }
+
+    const orderId = readStoredOrderId();
+    if (!orderId) return;
+
+    poll(orderId);
+    timer = setInterval(() => poll(orderId), 12_000);
 
     return () => {
-      channel?.unsubscribe();
+      cancelled = true;
+      if (timer) clearInterval(timer);
     };
   }, [restaurant.slug]);
 

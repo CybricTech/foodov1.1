@@ -2,9 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckCircle, UtensilsCrossed, Phone, MapPin, Clock, ArrowLeft, Store, Sparkles } from "lucide-react";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { getCachedRestaurant } from "@/lib/supabase/storefront-cache";
 import { transformImage } from "@/lib/images";
-import { getRestaurantBySlug } from "@foodo/database";
 import { formatKobo } from "@foodo/utils";
 
 export const dynamic = "force-dynamic";
@@ -14,20 +14,26 @@ interface SuccessPageProps {
 }
 
 export async function generateMetadata({ params }: SuccessPageProps) {
-  const supabase = await createServerClient();
-  const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
   return {
     title: `Order Confirmed — ${restaurant?.name ?? "Restaurant"}`,
   };
 }
 
 export default async function OrderSuccessPage({ params }: SuccessPageProps) {
-  const supabase = await createServerClient();
-
-  const restaurant = await getRestaurantBySlug(supabase, params.restaurant_slug);
+  // Both reads here run on the service client: this page renders for a
+  // logged-out customer, and `anon` no longer has SELECT on `restaurants`
+  // (it exposed every merchant's bank_account_number, bank_account_name and
+  // paystack_recipient_code to anyone with the public key) or on `orders`.
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) notFound();
 
-  const { data: order } = await supabase
+  // Read the order on the service client. This page renders for a logged-out
+  // customer, so the cookie-based client here is the `anon` role — which used
+  // to see every order on the platform via a `USING (true)` policy. That policy
+  // is gone; knowledge of the order UUID in the URL is the capability, same as
+  // the tracking page and the self-cancel route.
+  const { data: order } = await createServiceClient()
     .from("orders")
     .select(`
       id, order_number, status, fulfillment_type,
