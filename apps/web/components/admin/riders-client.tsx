@@ -843,7 +843,9 @@ export function RidersClient({
                     <th className="text-left px-4 py-3 font-semibold">Restaurant</th>
                     <th className="text-left px-4 py-3 font-semibold">Customer</th>
                     <th className="text-left px-4 py-3 font-semibold">Rider</th>
-                    <th className="text-left px-4 py-3 font-semibold">Assigned</th>
+                    <th className="text-left px-4 py-3 font-semibold">Requested</th>
+                    <th className="text-left px-4 py-3 font-semibold">Driver assigned</th>
+                    <th className="text-left px-4 py-3 font-semibold">Picked up</th>
                     <th className="text-left px-4 py-3 font-semibold">Delivered</th>
                     <th className="text-left px-4 py-3 font-semibold">Duration</th>
                     <th className="text-right px-4 py-3 font-semibold">Customer paid</th>
@@ -880,6 +882,14 @@ export function RidersClient({
                       const orderRides = ridesByOrder.get(h.id) ?? [];
                       const paid = orderRides.find((r) => r.invoice_url);
                       const driver = [...orderRides].reverse().find((r) => r.driver_name);
+                      // Last attempt wins for each stamp — a re-booked order's
+                      // final ride is the one whose timeline actually matters.
+                      const driverAssignedAt = [...orderRides]
+                        .reverse()
+                        .find((r) => r.driver_assigned_at)?.driver_assigned_at ?? null;
+                      const pickedUpAt = [...orderRides]
+                        .reverse()
+                        .find((r) => r.picked_up_at)?.picked_up_at ?? null;
 
                       return (
                         <tr key={h.id} className="border-t border-black-100 hover:bg-black-50/50">
@@ -924,6 +934,12 @@ export function RidersClient({
                           </td>
                           <td className="px-4 py-3 text-black-700 whitespace-nowrap">
                             {formatDateTime(assignedAt)}
+                          </td>
+                          <td className="px-4 py-3 text-black-700 whitespace-nowrap">
+                            {formatDateTime(driverAssignedAt)}
+                          </td>
+                          <td className="px-4 py-3 text-black-700 whitespace-nowrap">
+                            {formatDateTime(pickedUpAt)}
                           </td>
                           <td className="px-4 py-3 text-black-700 whitespace-nowrap">
                             {deliveredAt ? formatDateTime(deliveredAt) : "—"}
