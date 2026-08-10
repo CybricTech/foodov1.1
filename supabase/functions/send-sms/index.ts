@@ -53,6 +53,11 @@ function formatSlotForSms(iso: string | undefined): string {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Caller auth — see _shared auth note in settle-payouts/index.ts. Every
+// legitimate caller (Next.js API routes, other edge functions) already sends
+// this exact value as its bearer, so this is a same-value comparison, not a
+// new credential.
+const CRON_ENGINE_KEY = Deno.env.get("CRON_ENGINE_KEY") ?? SUPABASE_SERVICE_KEY;
 const SENDCHAMP_API_KEY = Deno.env.get("SENDCHAMP_API_KEY")!;
 const SENDCHAMP_DEFAULT_SENDER_ID = Deno.env.get("SENDCHAMP_DEFAULT_SENDER_ID") ?? "Kitchyn";
 const SENDCHAMP_ROUTE = Deno.env.get("SENDCHAMP_ROUTE") ?? "non_dnd";
@@ -63,6 +68,23 @@ const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
 const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+// ── Caller authorization ───────────────────────────────────────────────────
+// verify_jwt (Supabase's own gateway check) only proves the caller presented
+// SOME validly-signed project JWT — the public anon/publishable key qualifies,
+// and so does a legacy JWT even after "disable legacy API keys" (that toggle
+// only affects PostgREST, not the Edge Functions gateway). This function
+// therefore checks the bearer itself, matching the shared internal secret.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function isAuthorized(req: Request): boolean {
+  if (!CRON_ENGINE_KEY) return false;
+  return timingSafeEqual(req.headers.get("authorization") ?? "", `Bearer ${CRON_ENGINE_KEY}`);
+}
 
 // ── Simple SMS message builder (customer notifications + SMS fallback) ────────
 function buildMessage(
@@ -378,6 +400,12 @@ async function updateLog(
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 serve(async (req) => {
+  if (!isAuthorized(req)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }

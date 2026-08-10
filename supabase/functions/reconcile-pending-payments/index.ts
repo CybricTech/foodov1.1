@@ -3,6 +3,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Caller auth — see settle-payouts/index.ts. Only pg_cron should call this,
+// authenticated with the same value (pulled from vault.cron_bearer_key).
+const CRON_ENGINE_KEY = Deno.env.get("CRON_ENGINE_KEY") ?? SUPABASE_SERVICE_KEY;
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function isAuthorized(req: Request): boolean {
+  if (!CRON_ENGINE_KEY) return false;
+  return timingSafeEqual(req.headers.get("authorization") ?? "", `Bearer ${CRON_ENGINE_KEY}`);
+}
 // Public base URL of the Next.js web app (e.g. https://drizzybites.…). Must be
 // set as a function secret: `supabase secrets set APP_BASE_URL=https://…`.
 const APP_BASE_URL = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
@@ -34,7 +47,13 @@ const BATCH_LIMIT = 50;
  * a server-side replay of the poll, so reconciled orders are byte-for-byte
  * identical to ones created when a customer stays on the page.
  */
-serve(async () => {
+serve(async (req) => {
+  if (!isAuthorized(req)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (!APP_BASE_URL) {
     console.error("[reconcile] APP_BASE_URL secret is not set — cannot replay status poll");
     return new Response(JSON.stringify({ error: "APP_BASE_URL not configured" }), {

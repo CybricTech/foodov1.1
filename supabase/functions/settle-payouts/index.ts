@@ -13,6 +13,23 @@ const APP_BASE_URL = (Deno.env.get("APP_BASE_URL") ?? "").replace(/\/$/, "");
 const SERVICE_KEY =
   Deno.env.get("CRON_ENGINE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
+// Caller auth — verify_jwt only proves SOME validly-signed project JWT was
+// presented (the public anon key qualifies, and so does a legacy JWT even
+// after "disable legacy API keys", which only affects PostgREST). Only
+// pg_cron should ever call this function, authenticated with the same
+// SERVICE_KEY above (see the pg_cron job definition, which pulls it from
+// vault.cron_bearer_key rather than a literal).
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function isAuthorized(req: Request): boolean {
+  if (!SERVICE_KEY) return false;
+  return timingSafeEqual(req.headers.get("authorization") ?? "", `Bearer ${SERVICE_KEY}`);
+}
+
 /**
  * Thin trigger for the automated payout engine.
  *
@@ -25,7 +42,13 @@ const SERVICE_KEY =
  * Nothing here moves money or computes anything; keeping the engine in the web
  * app means it shares ONE copy of the settlement math with the manual route.
  */
-serve(async () => {
+serve(async (req) => {
+  if (!isAuthorized(req)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (!APP_BASE_URL) {
     console.error("[settle-payouts] APP_BASE_URL secret is not set — cannot trigger engine");
     return new Response(JSON.stringify({ error: "APP_BASE_URL not configured" }), {
