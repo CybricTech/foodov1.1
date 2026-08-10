@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import posthog from "posthog-js";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 export default function MerchantLoginPage() {
   return (
@@ -16,7 +17,7 @@ export default function MerchantLoginPage() {
 
 function MerchantLoginForm() {
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") ?? "/dashboard";
+  const redirect = safeRedirect(searchParams.get("redirect"), "/dashboard");
   const supabase = createBrowserClient();
 
   const [email, setEmail] = useState("");

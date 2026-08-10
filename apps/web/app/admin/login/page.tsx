@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 export default function AdminLoginPage() {
   return (
@@ -15,7 +16,7 @@ export default function AdminLoginPage() {
 
 function AdminLoginForm() {
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") ?? "/admin";
+  const redirect = safeRedirect(searchParams.get("redirect"), "/admin");
   const supabase = createBrowserClient();
 
   const [email, setEmail] = useState("");
