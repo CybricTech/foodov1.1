@@ -3,6 +3,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Caller auth — see settle-payouts/index.ts. Not yet deployed (dispatch ships
+// disabled), fixed ahead of time so it's not a repeat gap when it goes live.
+const CRON_ENGINE_KEY = Deno.env.get("CRON_ENGINE_KEY") ?? SUPABASE_SERVICE_KEY;
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function isAuthorized(req: Request): boolean {
+  if (!CRON_ENGINE_KEY) return false;
+  return timingSafeEqual(req.headers.get("authorization") ?? "", `Bearer ${CRON_ENGINE_KEY}`);
+}
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -54,7 +67,8 @@ async function dispatchPlatformRider(
       await fetch(`${SUPABASE_URL}/functions/v1/send-sms`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          // send-sms checks its caller — this must match its expected key.
+          Authorization: `Bearer ${CRON_ENGINE_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -189,6 +203,12 @@ async function dispatchThirdParty(
 }
 
 serve(async (req) => {
+  if (!isAuthorized(req)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }

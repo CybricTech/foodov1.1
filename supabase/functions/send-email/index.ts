@@ -2,6 +2,28 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const RESEND_FROM = Deno.env.get("RESEND_FROM_EMAIL") ?? "admin@cybric.tech";
+// Caller auth — see settle-payouts/index.ts. Every legitimate caller already
+// sends this exact value as its bearer. This is the function that was proven
+// exploitable during the 2026-08-09 review: with no check here, ANY holder of
+// the public anon key could send arbitrary "password-reset"/"super-admin-alert"
+// email with attacker-controlled to/props, from this domain via Resend.
+const CRON_ENGINE_KEY =
+  Deno.env.get("CRON_ENGINE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+// verify_jwt only proves SOME validly-signed project JWT was presented — the
+// public anon key qualifies, and so does a legacy JWT even after "disable
+// legacy API keys" (that only affects PostgREST, not this gateway). Check the
+// bearer against the shared internal secret ourselves.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function isAuthorized(req: Request): boolean {
+  if (!CRON_ENGINE_KEY) return false;
+  return timingSafeEqual(req.headers.get("authorization") ?? "", `Bearer ${CRON_ENGINE_KEY}`);
+}
 
 interface OrderItem {
   name: string;
@@ -481,6 +503,12 @@ function buildHtml(payload: EmailPayload): { subject: string; html: string } {
 }
 
 serve(async (req) => {
+  if (!isAuthorized(req)) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
