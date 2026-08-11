@@ -288,6 +288,45 @@ export function FrontlineOrdersClient({
     return onReconnect(runCatchup);
   }, [onReconnect, runCatchup]);
 
+  // ── Realtime resilience ───────────────────────────────────────────────────
+  // A WebSocket can die silently: the browser stays online, supabase-js never
+  // surfaces CHANNEL_ERROR, and the board simply stops receiving orders with
+  // no visible signal. onReconnect alone cannot save us there — it only fires
+  // on an unhealthy→healthy transition that never gets reported. These two
+  // safety nets make recovery unconditional. Missing an incoming order is the
+  // worst failure this screen has, so it retries forever rather than settling.
+  const [connGeneration, setConnGeneration] = useState(0);
+  const retryAttemptRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastHealthyAtRef = useRef(Date.now());
+
+  const scheduleRetry = useCallback(() => {
+    if (retryTimerRef.current) return; // one retry in flight at a time
+    const attempt = retryAttemptRef.current + 1;
+    retryAttemptRef.current = attempt;
+    const delay = Math.min(1000 * 2 ** (attempt - 1), 30_000);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      setConnGeneration((g) => g + 1);
+    }, delay);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
+
+  // Degraded safety net: if the channel has not been healthy for 60 s, re-pull
+  // the order list every 30 s until it recovers. runCatchup replaces the list
+  // wholesale, so this both backfills missed orders and clears completed ones.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (Date.now() - lastHealthyAtRef.current > 60_000) void runCatchup();
+    }, 30_000);
+    return () => clearInterval(t);
+  }, [runCatchup]);
+
   // Auto-refresh timestamps every 60 seconds
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 60_000);
@@ -369,12 +408,19 @@ export function FrontlineOrdersClient({
       .subscribe((channelStatus) => {
         if (intentional) return;
         if (channelStatus === "SUBSCRIBED") {
+          retryAttemptRef.current = 0;
+          lastHealthyAtRef.current = Date.now();
           reportRealtimeStatus(true);
+          // Fill the gap between the last healthy moment and now — a rejoin
+          // does not replay the events missed while the socket was down.
+          void runCatchup();
         } else if (
           channelStatus === "CHANNEL_ERROR" ||
-          channelStatus === "TIMED_OUT"
+          channelStatus === "TIMED_OUT" ||
+          channelStatus === "CLOSED"
         ) {
           reportRealtimeStatus(false);
+          scheduleRetry();
         }
       });
 
@@ -385,8 +431,10 @@ export function FrontlineOrdersClient({
       reportRealtimeStatus(true);
       channel.unsubscribe();
     };
+    // connGeneration is the retry driver — each bump tears down the dead
+    // channel and builds a fresh one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurantId, soundEnabled]);
+  }, [restaurantId, soundEnabled, connGeneration]);
 
   const playNewOrderSound = useCallback(() => {
     try {
