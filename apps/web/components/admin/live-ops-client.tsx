@@ -13,18 +13,20 @@ import { useConnectionOptional } from "@/lib/connection-context";
 import { cn } from "@foodo/ui";
 import { formatKobo } from "@foodo/utils";
 import {
-  AlertTriangle,
   Bike,
   ChevronDown,
-  Clock,
-  Flame,
   PauseCircle,
   Search,
   ShoppingBag,
-  Store,
-  Wallet,
-  Zap,
 } from "lucide-react";
+import type { LiveOpsClientProps, OpsSummary } from "@/lib/admin/ops-types";
+import { NewOrderNotifier } from "./ops/ops-notifier";
+import { SystemHealthStrip } from "./ops/ops-system-health";
+import { OpsKpiRow } from "./ops/ops-kpi-row";
+import { OpsSecondaryRow } from "./ops/ops-secondary-row";
+import { OpsSlaStrip } from "./ops/ops-sla-strip";
+import { OpsHourlyChart } from "./ops/ops-hourly-chart";
+import { OrderDetailDrawer } from "./ops/order-detail-drawer";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -75,6 +77,15 @@ interface FeedEvent {
   totalKobo: number;
   isNew: boolean;
 }
+
+type FeedFilter = "all" | "new" | "status" | "cancelled";
+
+const FEED_FILTERS: { key: FeedFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "new", label: "New orders" },
+  { key: "status", label: "Status changes" },
+  { key: "cancelled", label: "Cancellations" },
+];
 
 // ────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -128,6 +139,32 @@ const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 const STALE_PENDING_MINUTES = 10;
 
+const MAX_VISIBLE_ORDERS = 3;
+
+/**
+ * Row cap on the server page's order query — must stay in sync with the
+ * `.limit(1000)` in app/admin/(protected)/page.tsx. A snapshot that hits this
+ * cap is treated as truncated (and therefore not authoritative about removals).
+ */
+const SERVER_ORDER_CAP = 1000;
+
+/**
+ * All-zero ops_summary stand-in for the SLA strip when the RPC was
+ * unavailable at request time (summaryToday === null). Mirrors migration
+ * 104's NULL-on-empty semantics: every avg field is null → all four SLA
+ * cards render "—" / "no data" instead of faking 0 min / ₦0 / 0%.
+ */
+const ZERO_SUMMARY: OpsSummary = {
+  orders_count: 0,
+  gmv_kobo: 0,
+  delivered_count: 0,
+  cancelled_count: 0,
+  avg_prep_minutes: null,
+  avg_delivery_minutes: null,
+  avg_order_value_kobo: null,
+  cancellation_rate: null,
+};
+
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────────
@@ -178,6 +215,65 @@ function firstName(name: string | null): string {
   return name.trim().split(/\s+/)[0];
 }
 
+/**
+ * Merge fresh rows into existing state by id — the only way state is ever
+ * reconciled in this component (refetch spec §3/§6):
+ *  • matching ids take the fresh row's fields (server wins per field)
+ *  • brand-new ids PREPEND (they sit at the top of the queue)
+ *  • nothing is ever removed (rows outside a fetch window stay)
+ */
+function mergeById<T extends { id: string }>(prev: T[], fresh: T[]): T[] {
+  const byId = new Map(prev.map((item) => [item.id, item]));
+  const freshEntries: T[] = [];
+  for (const item of fresh) {
+    const existing = byId.get(item.id);
+    if (existing) byId.set(item.id, { ...existing, ...item });
+    else freshEntries.push(item);
+  }
+  return [...freshEntries, ...byId.values()];
+}
+
+/** True when both arrays carry exactly the same id set (order-insensitive). */
+function sameIdSet<T extends { id: string }>(a: T[], b: T[]): boolean {
+  if (a.length !== b.length) return false;
+  const ids = new Set(a.map((x) => x.id));
+  return b.every((x) => ids.has(x.id));
+}
+
+/**
+ * Reconcile client state against an AUTHORITATIVE server snapshot.
+ *
+ * Unlike mergeById (which never removes and is correct for the narrow
+ * today-only fallback), the server page query returns exactly the set that
+ * belongs on the board: "created today OR still active". So a row we hold that
+ * the server did NOT return has left the board — it was completed or cancelled
+ * on some other surface — and keeping it strands a permanently stale card.
+ * That is the "+48791m LATE" ghost: an old active order marked delivered
+ * elsewhere never disappeared, because merge-only reconciliation cannot drop.
+ *
+ * The one row we must NOT drop is a realtime arrival that raced the server
+ * render (created after the snapshot was taken). `watermarkMs` is the server's
+ * own render timestamp, so anything newer is kept even when absent upstream.
+ */
+function reconcileById<T extends { id: string; created_at: string }>(
+  prev: T[],
+  fresh: T[],
+  watermarkMs: number
+): T[] {
+  const freshById = new Map(fresh.map((item) => [item.id, item]));
+  const prevById = new Map(prev.map((item) => [item.id, item]));
+  const kept: T[] = [];
+  for (const item of prev) {
+    if (freshById.has(item.id)) continue; // re-emitted below, server wins
+    if (new Date(item.created_at).getTime() > watermarkMs) kept.push(item);
+  }
+  const merged = fresh.map((item) => {
+    const existing = prevById.get(item.id);
+    return existing ? { ...existing, ...item } : item;
+  });
+  return [...kept, ...merged];
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Component
 // ────────────────────────────────────────────────────────────────────────────
@@ -187,14 +283,15 @@ export function LiveOpsClient({
   initialOrders,
   ridersOnline,
   pendingSettlements,
-}: {
-  initialMerchants: MerchantRow[];
-  initialOrders: LiveOrderRow[];
-  ridersOnline: number;
-  pendingSettlements: number;
-}) {
+  initialNowMs,
+  summaryToday,
+  summaryLastWeek,
+  hourlyToday,
+  hourlyYesterday,
+}: LiveOpsClientProps) {
   const supabase = useMemo(() => createBrowserClient(), []);
   const connection = useConnectionOptional();
+  const reportRealtimeStatus = connection?.reportRealtimeStatus;
 
   const [merchants, setMerchants] = useState<MerchantRow[]>(initialMerchants);
   const [orders, setOrders] = useState<LiveOrderRow[]>(initialOrders);
@@ -218,17 +315,46 @@ export function LiveOpsClient({
       }))
   );
   const [live, setLive] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  // Seeded from the server render's timestamp (not `Date.now()` here) so the
+  // very first client render matches the SSR HTML exactly — see
+  // `initialNowMs` doc in lib/admin/ops-types.ts.
+  const [now, setNow] = useState(initialNowMs);
   const [mounted, setMounted] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [showClosed, setShowClosed] = useState(false);
-  const [lastSync, setLastSync] = useState(() => Date.now());
+  const [lastSync, setLastSync] = useState(initialNowMs);
+  const [feedOpen, setFeedOpen] = useState(true);
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>("all");
+  const [newOrderSignal, setNewOrderSignal] = useState<{
+    order: LiveOrderRow;
+    merchantName: string;
+  } | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<{
+    id: string;
+    order_number: string;
+    status: string;
+  } | null>(null);
 
   const merchantsRef = useRef(merchants);
   merchantsRef.current = merchants;
   const ordersRef = useRef(orders);
   ordersRef.current = orders;
+  // When realtime was last healthy — the badge's sync stamp means "realtime
+  // last SUBSCRIBED at", not "last full snapshot at" (refetch spec §7.8).
+  const lastSubscribedAtRef = useRef(0);
+  // Bumping this tears down the channel and builds a fresh one — the retry
+  // driver. Supabase's own rejoin gives up on some CHANNEL_ERROR classes
+  // (expired token, hard close), which is how the board used to sit silently
+  // disconnected while still claiming to be live.
+  const [connGeneration, setConnGeneration] = useState(0);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const retryAttemptRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Realtime has never once connected since mount — used so the degraded
+  // poller still runs when the very first subscribe fails (previously gated
+  // behind lastSubscribedAtRef > 0, which left a cold start with no data path).
+  const mountedAtRef = useRef(0);
+  if (mountedAtRef.current === 0) mountedAtRef.current = initialNowMs;
 
   useEffect(() => setMounted(true), []);
 
@@ -238,12 +364,54 @@ export function LiveOpsClient({
     return () => clearInterval(t);
   }, []);
 
-  const pushFeed = useCallback((ev: FeedEvent) => {
-    setFeed((prev) => [ev, ...prev].slice(0, 40));
+  // Exponential backoff, capped at 30 s so a long outage keeps retrying at a
+  // steady, server-friendly cadence instead of giving up or hammering.
+  const scheduleRetry = useCallback(() => {
+    if (retryTimerRef.current) return; // one retry in flight at a time
+    const attempt = retryAttemptRef.current + 1;
+    retryAttemptRef.current = attempt;
+    setRetryAttempt(attempt);
+    const delay = Math.min(1000 * 2 ** (attempt - 1), 30_000);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      setConnGeneration((g) => g + 1);
+    }, delay);
   }, []);
 
-  // Full snapshot refetch — used on reconnect and as a periodic safety net
-  const refetchSnapshot = useCallback(async () => {
+  // Operator-triggered "Retry now" — cancels the pending backoff and
+  // reconnects immediately rather than waiting out the delay.
+  const retryNow = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    retryAttemptRef.current = 0;
+    setRetryAttempt(0);
+    setConnGeneration((g) => g + 1);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
+
+  const pushFeed = useCallback((ev: FeedEvent) => {
+    // Replace-by-orderId + move-to-front (UX doc §10.3): an order appears at
+    // most once in the feed — a status transition replaces its entry in place.
+    setFeed((prev) =>
+      [
+        { ...ev, key: `${ev.orderId}-${Date.now()}` },
+        ...prev.filter((e) => e.orderId !== ev.orderId),
+      ].slice(0, 40)
+    );
+  }, []);
+
+  // Narrow reconnect fallback — today-only orders (.limit(200)) + the full
+  // active-merchant list, merged by id into state (never replaced). Board
+  // repairs only — KPI numbers come from the server-side ops_summary props,
+  // never from this array (refetch spec §6).
+  const refetchFallback = useCallback(async () => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const [{ data: freshOrders }, { data: freshMerchants }] = await Promise.all([
@@ -252,11 +420,9 @@ export function LiveOpsClient({
         .select(
           "id, restaurant_id, order_number, status, payment_status, fulfillment_type, dispatch_type, total_kobo, customer_name, customer_phone, delivery_address, special_instructions, created_at, updated_at, estimated_delivery_at, delivered_at, cancelled_reason"
         )
-        .or(
-          `created_at.gte.${start.toISOString()},status.in.(${ACTIVE_STATUSES.join(",")})`
-        )
+        .gte("created_at", start.toISOString())
         .order("created_at", { ascending: false })
-        .limit(1000),
+        .limit(200),
       supabase
         .from("restaurants")
         .select(
@@ -266,27 +432,32 @@ export function LiveOpsClient({
         .order("name"),
     ]);
     // Exclude test/demo restaurants (and their orders) — same rule as the
-    // server page, so a snapshot refresh never reintroduces them.
+    // server page, so the fallback never reintroduces them.
     const all =
       (freshMerchants as unknown as (MerchantRow & { is_test?: boolean })[]) ??
       null;
     const real = all?.filter((m) => !m.is_test) ?? null;
-    if (real) setMerchants(real);
+    if (real) setMerchants((prev) => mergeById(prev, real));
     if (freshOrders && real) {
       const realIds = new Set(real.map((m) => m.id));
-      setOrders(
-        (freshOrders as unknown as LiveOrderRow[]).filter((o) =>
-          realIds.has(o.restaurant_id)
+      setOrders((prev) =>
+        mergeById(
+          prev,
+          (freshOrders as unknown as LiveOrderRow[]).filter((o) =>
+            realIds.has(o.restaurant_id)
+          )
         )
       );
     } else if (freshOrders) {
-      setOrders(freshOrders as unknown as LiveOrderRow[]);
+      setOrders((prev) =>
+        mergeById(prev, freshOrders as unknown as LiveOrderRow[])
+      );
     }
-    setLastSync(Date.now());
   }, [supabase]);
 
   // Realtime — orders (all merchants) + restaurant open/pause toggles
   useEffect(() => {
+    let disposed = false;
     const channel = supabase
       .channel("admin-live-ops")
       .on(
@@ -295,9 +466,13 @@ export function LiveOpsClient({
         (payload) => {
           const row = payload.new as LiveOrderRow;
           // Drop events from restaurants not on the board (test/demo
-          // merchants, or brand-new ones until the next snapshot refresh).
+          // merchants, or brand-new ones until the 20 s props-sync backfill
+          // picks them up on the next server render).
           if (!merchantsRef.current.some((m) => m.id === row.restaurant_id))
             return;
+          const merchantName =
+            merchantsRef.current.find((m) => m.id === row.restaurant_id)
+              ?.name ?? "—";
           setOrders((prev) =>
             prev.some((o) => o.id === row.id) ? prev : [row, ...prev]
           );
@@ -306,13 +481,13 @@ export function LiveOpsClient({
             at: Date.now(),
             orderId: row.id,
             orderNumber: row.order_number,
-            merchantName:
-              merchantsRef.current.find((m) => m.id === row.restaurant_id)
-                ?.name ?? "—",
+            merchantName,
             status: row.status,
             totalKobo: row.total_kobo,
             isNew: true,
           });
+          // Bell + browser Notification signal (notifier guards by order id).
+          setNewOrderSignal({ order: row, merchantName });
         }
       )
       .on(
@@ -359,24 +534,116 @@ export function LiveOpsClient({
         }
       )
       .subscribe((status) => {
-        setLive(status === "SUBSCRIBED");
+        if (disposed) return;
+        const healthy = status === "SUBSCRIBED";
+        setLive(healthy);
+        // Publish to the shared provider so the global ConnectionBanner and
+        // every onReconnect subscriber (including this page's catch-up) react
+        // to a dead socket — not just to browser online/offline events. A
+        // WebSocket can die while navigator.onLine stays true, which is the
+        // common case and previously went completely unsignalled here.
+        reportRealtimeStatus?.(healthy);
+        if (healthy) {
+          retryAttemptRef.current = 0;
+          setRetryAttempt(0);
+          lastSubscribedAtRef.current = Date.now();
+          setLastSync(Date.now());
+          // Repair anything missed while the socket was down. Cheap and
+          // merge-by-id, so a redundant call after a brief blip is harmless.
+          void refetchFallback();
+        } else if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          scheduleRetry();
+        }
       });
 
     return () => {
+      disposed = true;
+      // Drop our opinion on realtime health when this board unmounts, or the
+      // banner stays stuck "reconnecting" on whatever page comes next.
+      reportRealtimeStatus?.(true);
       channel.unsubscribe();
     };
-  }, [supabase, pushFeed]);
+    // scheduleRetry/refetchFallback are stable useCallbacks; connGeneration is
+    // the retry driver — each bump rebuilds the channel from scratch.
+  }, [
+    supabase,
+    pushFeed,
+    connGeneration,
+    reportRealtimeStatus,
+    scheduleRetry,
+    refetchFallback,
+  ]);
 
-  // Re-sync after a connection drop + every 2 minutes as a safety net
+  // Re-sync after a connection drop: degraded (> 60 s without a SUBSCRIBED
+  // status) ⇒ narrow fallback; otherwise the channel replay already covered
+  // the gap, so just refresh the sync stamp (refetch spec §3.1).
   useEffect(() => {
     if (!connection) return;
-    return connection.onReconnect(refetchSnapshot);
-  }, [connection, refetchSnapshot]);
+    return connection.onReconnect(() => {
+      if (Date.now() - lastSubscribedAtRef.current > 60_000) {
+        void refetchFallback();
+      } else {
+        setLastSync(Date.now());
+      }
+    });
+  }, [connection, refetchFallback]);
 
+  // Degraded safety net: while realtime is down, keep the board repaired with
+  // the narrow fallback every 30 s until the channel recovers. Idempotent and
+  // merge-by-id, so overlap is harmless.
+  //
+  // The reference point is "last healthy moment" = last SUBSCRIBED, or mount
+  // if we have never connected at all. Keying off lastSubscribedAt alone left
+  // the worst case uncovered: when the very first subscribe fails, it stays 0
+  // and the poller never fires, so a board that opened during an outage had no
+  // data path whatsoever.
   useEffect(() => {
-    const t = setInterval(refetchSnapshot, 120_000);
+    const t = setInterval(() => {
+      const lastHealthy = lastSubscribedAtRef.current || mountedAtRef.current;
+      if (!live && Date.now() - lastHealthy > 60_000) {
+        void refetchFallback();
+      }
+    }, 30_000);
     return () => clearInterval(t);
-  }, [refetchSnapshot]);
+  }, [live, refetchFallback]);
+
+  // Props-sync reconcile — the layout's 20 s router.refresh() re-fetches page
+  // data server-side, and that snapshot is AUTHORITATIVE for what belongs on
+  // the board ("created today OR still active"). Reconciling (not merging)
+  // against it is what makes the board self-heal: a row the server stopped
+  // returning has been completed or cancelled somewhere else, so it is dropped
+  // instead of lingering forever as a fake "still preparing, 33d late" card.
+  // Rows created after the server's render timestamp are kept — those are
+  // realtime arrivals that raced the snapshot, not departures.
+  //
+  // Skipped when the id set is unchanged — router.refresh fires every 20 s and
+  // an unconditional setState would re-render the whole board needlessly.
+  const firstRenderRef = useRef(true);
+  useEffect(() => {
+    if (firstRenderRef.current) {
+      firstRenderRef.current = false;
+      return;
+    }
+    setMerchants((prev) =>
+      sameIdSet(prev, initialMerchants)
+        ? prev
+        : mergeById(prev, initialMerchants)
+    );
+    setOrders((prev) => {
+      if (sameIdSet(prev, initialOrders)) return prev;
+      // A truncated snapshot is not authoritative about what LEFT the board —
+      // absence could just mean "past the cap". Removing then would delete the
+      // oldest active orders, which are exactly the ones an operator most needs
+      // to see. Degrade to merge-only until the page raises its limit.
+      return initialOrders.length >= SERVER_ORDER_CAP
+        ? mergeById(prev, initialOrders)
+        : reconcileById(prev, initialOrders, initialNowMs);
+    });
+  }, [initialOrders, initialMerchants, initialNowMs]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Derived state
@@ -467,7 +734,18 @@ export function LiveOpsClient({
     const q = search.trim().toLowerCase();
 
     const enriched = merchants
-      .filter((m) => (q ? m.name.toLowerCase().includes(q) : true))
+      .filter((m) => {
+        if (!q) return true;
+        if (m.name.toLowerCase().includes(q)) return true;
+        // Surface a merchant when any of its tracked orders matches — order
+        // number or customer name. Cheap scan over realtime state only.
+        const active = derived.byMerchant.get(m.id) ?? [];
+        return active.some(
+          (o) =>
+            o.order_number.toLowerCase().includes(q) ||
+            (o.customer_name ?? "").toLowerCase().includes(q)
+        );
+      })
       .map((m) => {
         const withinHours = isWithinOpeningHours(m.opening_hours, now);
         const isOpen = m.accepts_orders && withinHours;
@@ -504,6 +782,15 @@ export function LiveOpsClient({
   const openCount = merchantBoard.open.length;
   const totalActiveMerchants = merchants.length;
 
+  // Feed filtered by the segmented control (UX doc §6.3): All / New orders
+  // (isNew) / Status changes (!isNew) / Cancellations (status === "cancelled").
+  const visibleFeed = useMemo(() => {
+    if (feedFilter === "all") return feed;
+    if (feedFilter === "new") return feed.filter((ev) => ev.isNew);
+    if (feedFilter === "status") return feed.filter((ev) => !ev.isNew);
+    return feed.filter((ev) => ev.status === "cancelled");
+  }, [feed, feedFilter]);
+
   // ──────────────────────────────────────────────────────────────────────────
   // Render
   // ──────────────────────────────────────────────────────────────────────────
@@ -518,11 +805,13 @@ export function LiveOpsClient({
               Live Operations
             </h1>
             <span
+              role="status"
+              aria-live="polite"
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider",
                 live
                   ? "bg-viridian-100 text-emerald-700"
-                  : "bg-gold-100 text-gold-600"
+                  : "bg-cinnabar-100 text-cinnabar-500"
               )}
             >
               <span className="relative flex h-2 w-2">
@@ -532,90 +821,91 @@ export function LiveOpsClient({
                 <span
                   className={cn(
                     "relative inline-flex h-2 w-2 rounded-full",
-                    live ? "bg-emerald-500" : "bg-gold"
+                    live ? "bg-emerald-500" : "bg-cinnabar-500 animate-pulse"
                   )}
                 />
               </span>
-              {live ? "Live" : "Connecting"}
+              {live
+                ? "Live"
+                : retryAttempt > 0
+                  ? `Reconnecting · try ${retryAttempt}`
+                  : "Connecting"}
             </span>
+            {/* Manual escape hatch — an operator who sees a stale board can
+                force a reconnect instead of waiting out the backoff. */}
+            {!live && (
+              <button
+                type="button"
+                onClick={retryNow}
+                className="rounded-full border border-black-200 px-2.5 py-1 text-[11px] font-bold text-black-500 hover:bg-black-50 min-h-10 md:min-h-0"
+              >
+                Retry now
+              </button>
+            )}
           </div>
           <p className="text-black-500 text-sm mt-1">
             Every merchant and every order on Kitchyn, right now
-            {mounted && (
-              <span className="text-black-400">
+            {/* Declutter (§10.1): the sync stamp's only job is explaining
+                staleness — hidden while the stream is healthy. */}
+            {!live && (
+              <span className="text-cinnabar-500 font-semibold">
                 {" "}
-                · synced {formatAge(new Date(lastSync).toISOString(), now)} ago
+                · not live — last synced{" "}
+                {formatAge(new Date(lastSync).toISOString(), now)} ago
               </span>
             )}
           </p>
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search merchants…"
-            className="w-56 rounded-xl border border-black-200 bg-white pl-9 pr-3 py-2 text-sm text-black-900 placeholder:text-black-400 focus:outline-none focus:ring-2 focus:ring-purple-400"
-          />
+        <div className="flex items-center gap-2">
+          <NewOrderNotifier newOrderSignal={newOrderSignal} />
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search merchants…"
+              className="w-56 rounded-xl border border-black-200 bg-white pl-9 pr-3 py-2 text-sm text-black-900 placeholder:text-black-400 focus:outline-none focus:ring-2 focus:ring-purple-400"
+            />
+          </div>
         </div>
       </div>
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
-        <Kpi
-          label="Active Orders"
-          value={derived.activeOrders.length.toLocaleString()}
-          icon={<Zap className="h-4 w-4" />}
-          tone="purple"
-        />
-        <Kpi
-          label="Late Orders"
-          value={derived.lateCount.toLocaleString()}
-          icon={<AlertTriangle className="h-4 w-4" />}
-          tone={derived.lateCount > 0 ? "red" : undefined}
-          href="/admin/late-orders"
-          sub={derived.lateCount > 0 ? "past ETA — review" : "all on time"}
-        />
-        <Kpi
-          label="Unconfirmed"
-          value={derived.staleCount.toLocaleString()}
-          icon={<Clock className="h-4 w-4" />}
-          tone={derived.staleCount > 0 ? "amber" : undefined}
-          sub={`pending > ${STALE_PENDING_MINUTES}m`}
-        />
-        <Kpi
-          label="Open Merchants"
-          value={`${openCount}/${totalActiveMerchants}`}
-          icon={<Store className="h-4 w-4" />}
-        />
-        <Kpi
-          label="Orders Today"
-          value={derived.ordersToday.toLocaleString()}
-          icon={<ShoppingBag className="h-4 w-4" />}
-          sub={`${derived.deliveredToday} delivered · ${derived.cancelledToday} cancelled`}
-        />
-        <Kpi
-          label="GMV Today"
-          value={formatKobo(derived.gmvToday)}
-          icon={<Flame className="h-4 w-4" />}
-          sub="paid orders"
-        />
-        <Kpi
-          label="Riders Online"
-          value={ridersOnline.toLocaleString()}
-          icon={<Bike className="h-4 w-4" />}
-          href="/admin/riders"
-        />
-        <Kpi
-          label="Settlements"
-          value={pendingSettlements.toLocaleString()}
-          icon={<Wallet className="h-4 w-4" />}
-          tone={pendingSettlements > 0 ? "purple" : undefined}
-          href="/admin/settlements"
-          sub="pending + processing"
-        />
-      </div>
+      {/* System health — self-fetching strip */}
+      <SystemHealthStrip hourlyYesterday={hourlyYesterday} />
+
+      {/* Primary KPI row — GMV: exact RPC value when available (no truncation),
+          realtime-derived otherwise so it never shows ₦0 with paid orders */}
+      <OpsKpiRow
+        activeOrders={derived.activeOrders.length}
+        lateCount={derived.lateCount}
+        staleCount={derived.staleCount}
+        gmvTodayKobo={summaryToday ? summaryToday.gmv_kobo : derived.gmvToday}
+        summaryToday={summaryToday}
+        summaryLastWeek={summaryLastWeek}
+      />
+
+      {/* Secondary KPI row — RPC counts when available (no truncation),
+          realtime snapshot otherwise */}
+      <OpsSecondaryRow
+        ordersToday={summaryToday?.orders_count ?? derived.ordersToday}
+        openCount={openCount}
+        totalActiveMerchants={totalActiveMerchants}
+        deliveredToday={summaryToday?.delivered_count ?? derived.deliveredToday}
+        cancelledToday={summaryToday?.cancelled_count ?? derived.cancelledToday}
+        ridersOnline={ridersOnline}
+        pendingSettlements={pendingSettlements}
+      />
+
+      {/* SLA strip — summaryToday when available; all-null zero summary
+          (every card "—") when the RPC didn't resolve */}
+      <OpsSlaStrip summary={summaryToday ?? ZERO_SUMMARY} />
+
+      {/* Hourly throughput — collapsed by default */}
+      <OpsHourlyChart
+        hourlyToday={hourlyToday}
+        hourlyYesterday={hourlyYesterday}
+      />
 
       {/* Pipeline */}
       <div className="bg-white rounded-2xl border border-black-200 p-4">
@@ -700,43 +990,57 @@ export function LiveOpsClient({
                 state={isPaused ? "paused" : "open"}
                 now={now}
                 statusFilter={statusFilter}
+                onOpenOrder={(o) =>
+                  setSelectedOrder({
+                    id: o.id,
+                    order_number: o.order_number,
+                    status: o.status,
+                  })
+                }
               />
             ))}
           </div>
 
-          {/* Closed / paused merchants */}
+          {/* Closed / paused merchants — capped at 12, then a single link */}
           {merchantBoard.closed.length > 0 && (
             <div className="pt-2">
-              <button
-                onClick={() => setShowClosed((v) => !v)}
-                className="flex items-center gap-2 text-xs font-semibold text-black-500 uppercase tracking-widest hover:text-black-900"
-              >
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 transition-transform",
-                    showClosed && "rotate-180"
-                  )}
-                />
+              <p className="text-xs font-semibold text-black-500 uppercase tracking-widest">
                 Closed or Paused ({merchantBoard.closed.length})
-              </button>
+              </p>
 
-              {showClosed && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
-                  {merchantBoard.closed.map(
-                    ({ m, active, today, late, isPaused }) => (
-                      <MerchantCard
-                        key={m.id}
-                        merchant={m}
-                        active={active}
-                        today={today}
-                        late={late}
-                        state={isPaused ? "paused" : "closed"}
-                        now={now}
-                        statusFilter={statusFilter}
-                      />
-                    )
-                  )}
-                </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
+                {merchantBoard.closed
+                  .slice(0, 12)
+                  .map(({ m, active, today, late, isPaused }) => (
+                    <MerchantCard
+                      key={m.id}
+                      merchant={m}
+                      active={active}
+                      today={today}
+                      late={late}
+                      state={isPaused ? "paused" : "closed"}
+                      now={now}
+                      statusFilter={statusFilter}
+                      onOpenOrder={(o) =>
+                        setSelectedOrder({
+                          id: o.id,
+                          order_number: o.order_number,
+                          status: o.status,
+                        })
+                      }
+                    />
+                  ))}
+              </div>
+
+              {merchantBoard.closed.length > 12 && (
+                <Link
+                  href="/admin/merchants"
+                  className="block px-4 py-2.5 text-xs font-semibold text-purple-600 hover:bg-purple-50"
+                >
+                  +{merchantBoard.closed.length - 12} more closed or paused
+                  merchant
+                  {merchantBoard.closed.length - 12 === 1 ? "" : "s"} →
+                </Link>
               )}
             </div>
           )}
@@ -744,68 +1048,132 @@ export function LiveOpsClient({
 
         {/* Live feed */}
         <div className="space-y-3 xl:sticky xl:top-4">
-          <p className="text-xs font-semibold text-black-500 uppercase tracking-widest">
-            Live Activity
-          </p>
-          <div className="bg-white rounded-2xl border border-black-200 divide-y divide-black-100 max-h-[70vh] overflow-y-auto">
-            {feed.length === 0 && (
-              <p className="p-6 text-center text-sm text-black-500">
-                Waiting for activity…
-              </p>
-            )}
-            {feed.map((ev) => (
-              <div key={ev.key} className="flex items-start gap-3 px-4 py-3">
-                <span
-                  className={cn(
-                    "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-                    STATUS_DOT[ev.status] ?? "bg-black-400"
-                  )}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-black-900 truncate">
-                    <span className="font-bold">#{ev.orderNumber}</span>
-                    {ev.isNew ? (
-                      <>
-                        {" "}
-                        <span className="font-semibold text-purple-600">
-                          new order
-                        </span>{" "}
-                        · {formatKobo(ev.totalKobo)}
-                      </>
-                    ) : (
-                      <>
-                        {" "}
-                        →{" "}
-                        <span
-                          className={cn(
-                            "font-semibold",
-                            ev.status === "cancelled"
-                              ? "text-cinnabar-500"
-                              : ev.status === "delivered"
-                                ? "text-emerald-700"
-                                : "text-black-900"
-                          )}
-                        >
-                          {STATUS_LABELS[ev.status] ?? ev.status}
-                        </span>
-                      </>
-                    )}
-                  </p>
-                  <p className="text-xs text-black-500 truncate">
-                    {ev.merchantName}
-                    {mounted && (
-                      <span className="text-black-400">
-                        {" "}
-                        · {formatAge(new Date(ev.at).toISOString(), now)} ago
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-black-500 uppercase tracking-widest">
+              Live Activity
+            </p>
+            <button
+              type="button"
+              onClick={() => setFeedOpen((v) => !v)}
+              aria-expanded={feedOpen}
+              aria-label={
+                feedOpen ? "Collapse live activity" : "Expand live activity"
+              }
+              className="h-10 w-10 rounded-full flex items-center justify-center text-black-500 hover:bg-black-50 transition-colors"
+            >
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 transition-transform",
+                  feedOpen && "rotate-180"
+                )}
+              />
+            </button>
           </div>
+
+          {feedOpen && (
+            <>
+              {/* Segmented filter */}
+              <div
+                className="flex flex-wrap items-center gap-1 rounded-xl border border-black-200 bg-white p-1"
+                role="group"
+                aria-label="Filter live activity"
+              >
+                {FEED_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => setFeedFilter(f.key)}
+                    aria-pressed={feedFilter === f.key}
+                    className={cn(
+                      "rounded-lg min-h-10 px-3 text-xs font-semibold transition-colors",
+                      feedFilter === f.key
+                        ? "bg-purple-50 text-purple-700"
+                        : "text-black-500 hover:bg-black-50"
+                    )}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-white rounded-2xl border border-black-200 divide-y divide-black-100 max-h-[70vh] overflow-y-auto">
+                {visibleFeed.length === 0 && (
+                  <p className="p-6 text-center text-sm text-black-500">
+                    Waiting for activity…
+                  </p>
+                )}
+                {visibleFeed.map((ev) => (
+                  <button
+                    key={ev.key}
+                    type="button"
+                    onClick={() =>
+                      setSelectedOrder({
+                        id: ev.orderId,
+                        order_number: ev.orderNumber,
+                        status: ev.status,
+                      })
+                    }
+                    className="w-full text-left cursor-pointer hover:bg-black-50 transition-colors px-4 py-3 flex items-start gap-3"
+                  >
+                    <span
+                      className={cn(
+                        "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                        STATUS_DOT[ev.status] ?? "bg-black-400"
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-black-900 truncate">
+                        <span className="font-bold">#{ev.orderNumber}</span>
+                        {ev.isNew ? (
+                          <>
+                            {" "}
+                            <span className="font-semibold text-purple-600">
+                              new order
+                            </span>{" "}
+                            · {formatKobo(ev.totalKobo)}
+                          </>
+                        ) : (
+                          <>
+                            {" "}
+                            →{" "}
+                            <span
+                              className={cn(
+                                "font-semibold",
+                                ev.status === "cancelled"
+                                  ? "text-cinnabar-500"
+                                  : ev.status === "delivered"
+                                    ? "text-emerald-700"
+                                    : "text-black-900"
+                              )}
+                            >
+                              {STATUS_LABELS[ev.status] ?? ev.status}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                      <p className="text-xs text-black-500 truncate">
+                        {ev.merchantName}
+                        {mounted && (
+                          <span className="text-black-400">
+                            {" "}
+                            · {formatAge(new Date(ev.at).toISOString(), now)} ago
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Order detail drawer — right slide-over */}
+      <OrderDetailDrawer
+        order={selectedOrder}
+        onClose={() => setSelectedOrder(null)}
+      />
     </div>
   );
 }
@@ -813,60 +1181,6 @@ export function LiveOpsClient({
 // ────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ────────────────────────────────────────────────────────────────────────────
-
-function Kpi({
-  label,
-  value,
-  sub,
-  icon,
-  tone,
-  href,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  icon?: React.ReactNode;
-  tone?: "purple" | "red" | "amber";
-  href?: string;
-}) {
-  const valueColor =
-    tone === "purple"
-      ? "text-purple-600"
-      : tone === "red"
-        ? "text-cinnabar-500"
-        : tone === "amber"
-          ? "text-gold-600"
-          : "text-black-900";
-
-  const body = (
-    <div
-      className={cn(
-        "bg-white rounded-2xl border px-3.5 py-3 h-full",
-        tone === "red" ? "border-cinnabar-200" : "border-black-200",
-        href && "hover:shadow-card transition-shadow"
-      )}
-    >
-      <div className="flex items-center gap-1.5 text-black-400">
-        {icon}
-        <p className="text-[11px] text-black-500 font-medium truncate">
-          {label}
-        </p>
-      </div>
-      <p className={cn("text-xl font-extrabold mt-1", valueColor)}>{value}</p>
-      {sub && <p className="text-[11px] text-black-400 mt-0.5 truncate">{sub}</p>}
-    </div>
-  );
-
-  return href ? (
-    <Link href={href} className="block">
-      {body}
-    </Link>
-  ) : (
-    body
-  );
-}
-
-const MAX_VISIBLE_ORDERS = 6;
 
 function MerchantCard({
   merchant,
@@ -876,6 +1190,7 @@ function MerchantCard({
   state,
   now,
   statusFilter,
+  onOpenOrder,
 }: {
   merchant: MerchantRow;
   active: LiveOrderRow[];
@@ -884,6 +1199,7 @@ function MerchantCard({
   state: "open" | "paused" | "closed";
   now: number;
   statusFilter: string | null;
+  onOpenOrder: (order: LiveOrderRow) => void;
 }) {
   const visible = statusFilter
     ? active.filter((o) => o.status === statusFilter)
@@ -972,7 +1288,12 @@ function MerchantCard({
       {visible.length > 0 ? (
         <div className="border-t border-black-100 divide-y divide-black-100">
           {visible.slice(0, MAX_VISIBLE_ORDERS).map((o) => (
-            <OrderRow key={o.id} order={o} now={now} />
+            <OrderRow
+              key={o.id}
+              order={o}
+              now={now}
+              onClick={() => onOpenOrder(o)}
+            />
           ))}
           {visible.length > MAX_VISIBLE_ORDERS && (
             <Link
@@ -999,16 +1320,26 @@ function MerchantCard({
   );
 }
 
-function OrderRow({ order, now }: { order: LiveOrderRow; now: number }) {
+function OrderRow({
+  order,
+  now,
+  onClick,
+}: {
+  order: LiveOrderRow;
+  now: number;
+  onClick: () => void;
+}) {
   const late = minutesLate(order, now);
   const stalePending =
     order.status === "pending" &&
     minutesSince(order.created_at, now) >= STALE_PENDING_MINUTES;
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        "flex items-center gap-3 px-4 py-2.5",
+        "flex items-center gap-3 px-4 py-2.5 w-full text-left cursor-pointer hover:bg-black-50 transition-colors",
         late > 0 && "bg-cinnabar-100/40"
       )}
     >
@@ -1061,6 +1392,6 @@ function OrderRow({ order, now }: { order: LiveOrderRow; now: number }) {
           {formatAge(order.created_at, now)}
         </span>
       </div>
-    </div>
+    </button>
   );
 }
