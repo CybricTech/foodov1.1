@@ -63,9 +63,25 @@ const SENDCHAMP_DEFAULT_SENDER_ID = Deno.env.get("SENDCHAMP_DEFAULT_SENDER_ID") 
 const SENDCHAMP_ROUTE = Deno.env.get("SENDCHAMP_ROUTE") ?? "non_dnd";
 const TERMII_API_KEY = Deno.env.get("TERMII_API_KEY")!;
 const TERMII_SENDER_ID = Deno.env.get("TERMII_SENDER_ID") ?? "Foodo";
-const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
-const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
-const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+
+// ── Interakt (Meta WhatsApp Business API BSP) ────────────────────────────────
+// Interakt sends APPROVED TEMPLATES ONLY — free-form text is not accepted on
+// this endpoint. Merchant order alerts are business-initiated (the merchant
+// never messaged us first), so the 24-hour customer-service window never
+// applies and a template is mandatory on every send.
+//
+// The template name/language are env-configurable because the template is
+// created and approved in the Interakt dashboard, not in this repo — the code
+// must not hardcode a name that Meta has not approved yet. Until
+// INTERAKT_API_KEY is set the WhatsApp path is simply skipped and merchants
+// fall through to SMS, so deploying this ahead of approval is safe.
+const INTERAKT_API_KEY = Deno.env.get("INTERAKT_API_KEY");
+const INTERAKT_TEMPLATE_NAME = Deno.env.get("INTERAKT_TEMPLATE_NAME") ?? "new_order_merchant";
+const INTERAKT_TEMPLATE_LANG = Deno.env.get("INTERAKT_TEMPLATE_LANG") ?? "en";
+// Base for the template's dynamic "View order" button. The approved template
+// owns the static prefix; Interakt appends this suffix as buttonValues[0].
+const MERCHANT_DASHBOARD_URL =
+  Deno.env.get("MERCHANT_DASHBOARD_URL") ?? "https://kitchyn.app";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -312,34 +328,102 @@ async function sendViaTermiiWhatsApp(
   return res.ok && body.code !== "err";
 }
 
-// ── Send via Twilio (SMS fallback) ────────────────────────────────────────────
-async function sendViaTwilio(
+// ── Send via Interakt (WhatsApp template) ─────────────────────────────────────
+/**
+ * Splits a normalized phone into Interakt's two required parts. Interakt wants
+ * countryCode and phoneNumber SEPARATELY, and the local part must carry no
+ * country code and no leading zero — unlike every other provider here, which
+ * takes one concatenated string.
+ *
+ * normalizePhone() yields "2348012345678" for Nigerian numbers, so the split is
+ * "+234" + "8012345678". Returns null for anything that isn't a recognisable
+ * Nigerian number rather than guessing a country code we can't verify.
+ */
+function splitPhoneForInterakt(
+  phone: string
+): { countryCode: string; phoneNumber: string } | null {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("234") && digits.length === 13) {
+    return { countryCode: "+234", phoneNumber: digits.slice(3) };
+  }
+  return null;
+}
+
+/**
+ * Sends the approved merchant new-order template.
+ *
+ * Body variables are positional and must match the approved template exactly;
+ * a count mismatch is Meta error 132000 and the send fails outright. Order:
+ *   {{1}} order number   {{2}} customer name   {{3}} item count
+ *   {{4}} order total    {{5}} fulfillment type
+ * buttonValues[0] carries the dynamic URL suffix for the "View order" button.
+ *
+ * Values are deliberately short single-line strings: WhatsApp rejects template
+ * parameters containing newlines, tabs or long runs of spaces, which is why the
+ * old rich multi-line message cannot be ported here as-is.
+ */
+async function sendViaInterakt(
   phone: string,
-  message: string
-): Promise<boolean> {
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
-    return false;
+  params: {
+    orderNumber: string;
+    customerName: string;
+    itemCount: number;
+    totalKobo: number;
+    fulfillmentType: string;
+    orderId: string;
+  }
+): Promise<{ ok: boolean; messageId: string | null }> {
+  if (!INTERAKT_API_KEY) return { ok: false, messageId: null };
+
+  const split = splitPhoneForInterakt(phone);
+  if (!split) {
+    console.error(`Interakt: unsupported phone format ${phone}`);
+    return { ok: false, messageId: null };
   }
 
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-  const credentials = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
-
-  const body = new URLSearchParams({
-    From: TWILIO_PHONE_NUMBER,
-    To: phone,
-    Body: message,
-  });
-
-  const res = await fetch(url, {
+  const res = await fetch("https://api.interakt.ai/v1/public/message/", {
     method: "POST",
     headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${INTERAKT_API_KEY}`,
+      "Content-Type": "application/json",
     },
-    body: body.toString(),
+    body: JSON.stringify({
+      countryCode: split.countryCode,
+      phoneNumber: split.phoneNumber,
+      // Echoed back on the status webhook so a delivery result can be matched
+      // to its sms_logs row without a second lookup.
+      callbackData: params.orderId,
+      type: "Template",
+      template: {
+        name: INTERAKT_TEMPLATE_NAME,
+        languageCode: INTERAKT_TEMPLATE_LANG,
+        bodyValues: [
+          params.orderNumber,
+          params.customerName,
+          String(params.itemCount),
+          formatKoboToNaira(params.totalKobo),
+          params.fulfillmentType === "pickup" ? "Pickup" : "Delivery",
+        ],
+        buttonValues: {
+          "0": [`dashboard/frontline/orders?order=${params.orderId}`],
+        },
+      },
+    }),
   });
 
-  return res.ok;
+  if (res.status === 429) {
+    console.error("Interakt rate limit exceeded");
+    return { ok: false, messageId: null };
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.result !== true) {
+    console.error(`Interakt send failed: ${res.status} ${JSON.stringify(body)}`);
+    return { ok: false, messageId: null };
+  }
+  // Interakt returns only an accepted-for-delivery id here — the real
+  // Sent/Delivered/Read/Failed outcome arrives later on the status webhook.
+  return { ok: true, messageId: body.id ?? null };
 }
 
 // ── Helper: log to sms_logs ───────────────────────────────────────────────────
@@ -385,7 +469,9 @@ async function updateLog(
   logId: string,
   status: "sent" | "failed",
   provider: string,
-  channel: "sms" | "whatsapp"
+  channel: "sms" | "whatsapp",
+  /** Provider-side message id — Interakt's, used to match its status webhook. */
+  providerRef?: string | null
 ) {
   await supabase
     .from("sms_logs")
@@ -393,6 +479,7 @@ async function updateLog(
       status,
       provider,
       channel,
+      ...(providerRef ? { provider_ref: providerRef } : {}),
       sent_at: status === "sent" ? new Date().toISOString() : null,
     })
     .eq("id", logId);
@@ -481,32 +568,56 @@ serve(async (req) => {
     let messageToSend: string;
 
     if (whatsappNumber && order) {
-      // Try WhatsApp with rich message
+      // WhatsApp via Interakt — an approved template, not free-form text.
+      // message_body still records the human-readable summary so the SMS Logs
+      // screen stays readable; the wire payload is the template's variables.
+      const itemCount = order.order_items.reduce(
+        (sum, item) => sum + item.quantity,
+        0
+      );
       messageToSend = buildWhatsAppOrderMessage(order);
+      provider = "interakt";
       const logId = await createLog({
         restaurantId,
         orderId,
         phone: whatsappNumber,
         message: messageToSend,
         eventType,
-        provider: "termii",
+        provider: "interakt",
         channel: "whatsapp",
         status: "queued",
       });
 
-      sent = await sendViaTermiiWhatsApp(whatsappNumber, messageToSend);
+      const result = await sendViaInterakt(whatsappNumber, {
+        orderNumber,
+        customerName: order.customer_name ?? "Guest",
+        itemCount,
+        totalKobo: order.total_kobo,
+        fulfillmentType: order.fulfillment_type,
+        orderId,
+      });
+      sent = result.ok;
       channel = "whatsapp";
 
       if (!sent) {
-        // WhatsApp failed — fall back to SMS on same number
+        // Template rejected, key missing, or Interakt unreachable — the
+        // merchant still has to learn an order arrived, so drop to SMS on the
+        // same number. Provider flips so the log reflects what actually sent.
         const simpleMessage = buildMessage(eventType, orderNumber, restaurantName);
         sent = await sendViaTermii(whatsappNumber, simpleMessage);
+        provider = "termii";
         channel = "sms";
         messageToSend = simpleMessage;
       }
 
       if (logId) {
-        await updateLog(logId, sent ? "sent" : "failed", provider, channel);
+        await updateLog(
+          logId,
+          sent ? "sent" : "failed",
+          provider,
+          channel,
+          result.messageId
+        );
       }
     } else {
       // No WhatsApp number — send SMS on restaurant phone
@@ -522,12 +633,10 @@ serve(async (req) => {
         status: "queued",
       });
 
+      // Termii is the only SMS path now — the Twilio fallback was retired with
+      // the Interakt migration. A Termii failure here is terminal for this
+      // send; pg_cron retries cover transient outages.
       sent = await sendViaTermii(recipientPhone, messageToSend);
-
-      if (!sent) {
-        sent = await sendViaTwilio(recipientPhone, messageToSend);
-        provider = "twilio";
-      }
 
       if (logId) {
         await updateLog(logId, sent ? "sent" : "failed", provider, "sms");
@@ -535,6 +644,13 @@ serve(async (req) => {
     }
 
     // ── Admin copy (fire-and-forget) ──────────────────────────────────────
+    // STILL ON TERMII WHATSAPP, deliberately. Moving this to Interakt needs a
+    // SECOND approved template (the admin variant is prefixed with the
+    // restaurant name, so it has a different variable set) and only one
+    // template — the merchant new-order alert — has been submitted. Termii's
+    // WhatsApp channel keeps working, so this path is left untouched rather
+    // than pointed at a template that does not exist. Revisit once an admin
+    // template is approved.
     if (order) {
       const { data: platformSettings } = await supabase
         .from("platform_settings")

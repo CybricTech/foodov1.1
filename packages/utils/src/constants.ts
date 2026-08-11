@@ -81,7 +81,15 @@ export const SMS_EVENT_TYPES = [
 export type SmsEventType = (typeof SMS_EVENT_TYPES)[number];
 
 // ─── SMS Providers ───────────────────────────────────────────────────────────
-export const SMS_PROVIDERS = ["termii", "twilio"] as const;
+// "twilio" is retained for historical sms_logs rows only — the Twilio send
+// path was removed when merchant WhatsApp moved to Interakt (migration 106).
+// "interakt" is WhatsApp-only; it cannot send SMS.
+export const SMS_PROVIDERS = [
+  "termii",
+  "twilio",
+  "sendchamp",
+  "interakt",
+] as const;
 export type SmsProvider = (typeof SMS_PROVIDERS)[number];
 
 // ─── SMS Log Status ──────────────────────────────────────────────────────────
