@@ -15,7 +15,12 @@ const ORDER_SELECT = DASHBOARD_ORDER_SELECT;
 
 export default async function FrontlineOrdersPage() {
   const session = await getDashboardUser();
-  if (!session) redirect("/dashboard/login");
+  // Carry the destination through login. Merchants reach this page from the
+  // "View Order" button in the WhatsApp new-order alert, usually on a phone
+  // where no session exists — without this they log in and land on the generic
+  // dashboard instead of the order they were told to look at. safeRedirect on
+  // the login page rejects anything that isn't a same-origin path.
+  if (!session) redirect("/dashboard/login?redirect=/dashboard/frontline/orders");
 
   const supabase = createServiceClient();
   const { restaurantId } = session;
