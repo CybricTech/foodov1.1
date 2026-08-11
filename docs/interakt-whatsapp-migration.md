@@ -39,13 +39,35 @@ Category: **Utility** (not Marketing — this is a transactional alert).
 
 **Body:**
 ```
-New order {{1}} from {{2}}.
-{{3}} item(s) · {{4}} · {{5}}
-Open your dashboard to accept it.
+Hello! You have a new order waiting on Kitchyn.
+
+Order number: {{1}}
+Customer: {{2}}
+Number of items: {{3}}
+Order total: {{4}}
+Fulfilment method: {{5}}
+
+Please open your dashboard to review the items and confirm this order as
+soon as you can.
 ```
 
+The body is verbose on purpose. Meta rejects templates whose text is mostly
+placeholders — an earlier draft (`New order {{1}} from {{2}}. {{3}} item(s) ·
+{{4}} · {{5}}`) packed 5 variables into ~56 characters and was refused with
+"too many variables / increase the length of the message". Two rules to respect
+when editing this:
+
+- **Density** — plenty of literal text per variable. Don't compress it back
+  down.
+- **Adjacency** — never put two variables next to each other separated only by
+  punctuation (`{{4}} · {{5}}` was part of the problem). One per line, each
+  behind a label, keeps them apart.
+- The body must also not begin or end with a variable.
+
 **Variable order is positional and must match exactly.** A count mismatch is
-Meta error `132000` and the send fails outright.
+Meta error `132000` and the send fails outright. The rewrite above deliberately
+kept the original order, so no code change was needed — preserve that property
+if you reword it again.
 
 | Slot | Value | Example |
 |------|-------|---------|
@@ -55,19 +77,9 @@ Meta error `132000` and the send fails outright.
 | `{{4}}` | order total | `₦21,890` |
 | `{{5}}` | fulfillment type | `Delivery` / `Pickup` |
 
-**Button:** one **static** URL button labelled `View Order`, pointing at
-`https://kitchyn.app/dashboard/frontline/orders`.
-
-Static, not dynamic, on purpose: the orders board ignores query params, so a
-per-order dynamic URL would look like a deep link while landing on the plain
-board. The code therefore sends **no `buttonValues`** — supplying them for a
-button that carries no variable is itself an error. Upgrade to a dynamic URL
-only once the board can open a specific order from a param.
-
-Also **turn "Enable Button Click Tracking" OFF**. Interakt's own notice says it
-works only for templates sent via Campaigns, not via the API — and we send via
-the API. Leaving it on wraps the URL in a tracking redirect that buys nothing
-and adds a failure mode.
+**Button:** one *dynamic URL* button labelled `View order`, base URL
+`https://kitchyn.app/`. The code supplies the suffix
+`dashboard/frontline/orders?order=<orderId>` as `buttonValues["0"]`.
 
 ## 3. Environment variables
 
@@ -78,6 +90,7 @@ Set on the `send-sms` edge function:
 | `INTERAKT_API_KEY` | yes | — | Developer Settings. Sent as `Authorization: Basic <key>` — already base64 from Interakt, do **not** re-encode. |
 | `INTERAKT_TEMPLATE_NAME` | no | `new_order_merchant` | Must match the approved template. |
 | `INTERAKT_TEMPLATE_LANG` | no | `en` | Must match the approved language. |
+| `MERCHANT_DASHBOARD_URL` | no | `https://kitchyn.app` | Button base. |
 
 Removed: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`.
 
