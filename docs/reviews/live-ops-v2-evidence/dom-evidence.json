@@ -1,0 +1,87 @@
+{
+  "loginUrl": "http://localhost:3002/admin/login",
+  "loginText": "Admin Access\n\nEnter your credentials\n\nEmail\nPassword\nContinue",
+  "formFields": [
+    {
+      "tag": "INPUT",
+      "type": "email",
+      "name": null,
+      "placeholder": null,
+      "ariaLabel": null,
+      "text": ""
+    },
+    {
+      "tag": "INPUT",
+      "type": "password",
+      "name": null,
+      "placeholder": null,
+      "ariaLabel": null,
+      "text": ""
+    },
+    {
+      "tag": "BUTTON",
+      "type": "submit",
+      "name": null,
+      "placeholder": null,
+      "ariaLabel": null,
+      "text": "Continue"
+    },
+    {
+      "tag": "BUTTON",
+      "type": "button",
+      "name": null,
+      "placeholder": null,
+      "ariaLabel": "Open Tanstack query devtools",
+      "text": ""
+    }
+  ],
+  "focusSequence": [
+    {
+      "tag": "INPUT",
+      "type": "password",
+      "outline": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none",
+      "placeholder": null
+    },
+    {
+      "tag": "BUTTON",
+      "type": "submit",
+      "outline": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": "none",
+      "placeholder": null
+    },
+    {
+      "tag": "BUTTON",
+      "type": "button",
+      "outline": "none",
+      "outlineWidth": "3px",
+      "boxShadow": "none",
+      "placeholder": null
+    },
+    {
+      "tag": "BODY",
+      "type": null,
+      "outline": "none",
+      "outlineWidth": "3px",
+      "boxShadow": "none",
+      "placeholder": null
+    }
+  ],
+  "loginErrorCopy": [
+    "Admin Access",
+    "Enter your credentials",
+    "Email",
+    "Password",
+    "Invalid login credentials",
+    "Continue"
+  ],
+  "loginUrlAfterError": "http://localhost:3002/admin/login",
+  "mobile": {
+    "scrollWidth": 390,
+    "clientWidth": 390,
+    "horizontalOverflow": false,
+    "bodyTextLen": 61
+  }
+}

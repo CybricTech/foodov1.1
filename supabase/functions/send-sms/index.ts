@@ -63,9 +63,27 @@ const SENDCHAMP_DEFAULT_SENDER_ID = Deno.env.get("SENDCHAMP_DEFAULT_SENDER_ID") 
 const SENDCHAMP_ROUTE = Deno.env.get("SENDCHAMP_ROUTE") ?? "non_dnd";
 const TERMII_API_KEY = Deno.env.get("TERMII_API_KEY")!;
 const TERMII_SENDER_ID = Deno.env.get("TERMII_SENDER_ID") ?? "Foodo";
-const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
-const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
-const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+
+// ── Infobip (Meta WhatsApp Business API BSP) ─────────────────────────────────
+// Infobip sends APPROVED TEMPLATES ONLY — free-form text is not accepted for
+// business-initiated messages. Merchant order alerts are business-initiated
+// (the merchant never messaged us first), so the 24-hour customer-service
+// window never applies and a template is mandatory on every send. Switching
+// BSP does not change this: it is a Meta platform rule, not a vendor one.
+//
+// INFOBIP_BASE_URL is ACCOUNT-SPECIFIC (e.g. xxxxx.api.infobip.com) — there is
+// no shared host to hardcode, so it must be configured per environment.
+// INFOBIP_SENDER is the registered WhatsApp sender number the alert comes from.
+//
+// Until INFOBIP_API_KEY, INFOBIP_BASE_URL and INFOBIP_SENDER are all set the
+// WhatsApp path is skipped and merchants fall through to SMS, so deploying
+// ahead of sender registration and template approval is safe.
+const INFOBIP_API_KEY = Deno.env.get("INFOBIP_API_KEY");
+const INFOBIP_BASE_URL = Deno.env.get("INFOBIP_BASE_URL");
+const INFOBIP_SENDER = Deno.env.get("INFOBIP_SENDER");
+const INFOBIP_TEMPLATE_NAME =
+  Deno.env.get("INFOBIP_TEMPLATE_NAME") ?? "new_order_merchant";
+const INFOBIP_TEMPLATE_LANG = Deno.env.get("INFOBIP_TEMPLATE_LANG") ?? "en";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -312,34 +330,105 @@ async function sendViaTermiiWhatsApp(
   return res.ok && body.code !== "err";
 }
 
-// ── Send via Twilio (SMS fallback) ────────────────────────────────────────────
-async function sendViaTwilio(
+// ── Send via Infobip (WhatsApp template) ──────────────────────────────────────
+/**
+ * Sends the approved merchant new-order template.
+ *
+ * Placeholders are POSITIONAL and must match the approved template exactly — a
+ * count mismatch fails the send. Order:
+ *   {{1}} order number   {{2}} customer name   {{3}} item count
+ *   {{4}} order total    {{5}} fulfillment type
+ *
+ * No `buttons` are sent: the template's "View Order" button is a STATIC URL to
+ * the orders board, and a static button takes no runtime parameter. Revisit if
+ * the board ever learns to open a specific order from a query param — today it
+ * ignores them, so a per-order dynamic URL would look like a deep link while
+ * landing on the plain board.
+ *
+ * Values are deliberately short single-line strings: WhatsApp rejects template
+ * parameters containing newlines, tabs or long runs of spaces, which is why the
+ * rich multi-line message used for SMS cannot be ported here as-is.
+ *
+ * `to` takes the already-normalized international number (no '+'), so unlike
+ * the previous BSP integration there is no country restriction here.
+ */
+async function sendViaInfobip(
   phone: string,
-  message: string
-): Promise<boolean> {
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
-    return false;
+  params: {
+    orderNumber: string;
+    customerName: string;
+    itemCount: number;
+    totalKobo: number;
+    fulfillmentType: string;
+    orderId: string;
+  }
+): Promise<{ ok: boolean; messageId: string | null }> {
+  if (!INFOBIP_API_KEY || !INFOBIP_BASE_URL || !INFOBIP_SENDER) {
+    return { ok: false, messageId: null };
   }
 
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-  const credentials = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`);
-
-  const body = new URLSearchParams({
-    From: TWILIO_PHONE_NUMBER,
-    To: phone,
-    Body: message,
-  });
+  const base = INFOBIP_BASE_URL.replace(/\/+$/, "");
+  const url = `${base.startsWith("http") ? base : `https://${base}`}/whatsapp/1/message/template`;
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
+      // Infobip's own scheme — NOT Bearer and NOT Basic.
+      Authorization: `App ${INFOBIP_API_KEY}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
     },
-    body: body.toString(),
+    body: JSON.stringify({
+      messages: [
+        {
+          from: INFOBIP_SENDER,
+          to: normalizePhoneE164(phone),
+          // Our own id, echoed on the delivery-status webhook so a result can
+          // be matched back to its order without a second lookup.
+          messageId: params.orderId,
+          content: {
+            templateName: INFOBIP_TEMPLATE_NAME,
+            language: INFOBIP_TEMPLATE_LANG,
+            templateData: {
+              body: {
+                placeholders: [
+                  params.orderNumber,
+                  params.customerName,
+                  String(params.itemCount),
+                  formatKoboToNaira(params.totalKobo),
+                  params.fulfillmentType === "pickup" ? "Pickup" : "Delivery",
+                ],
+              },
+            },
+          },
+        },
+      ],
+    }),
   });
 
-  return res.ok;
+  if (res.status === 429) {
+    console.error("Infobip rate limit exceeded");
+    return { ok: false, messageId: null };
+  }
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error(`Infobip send failed: ${res.status} ${JSON.stringify(body)}`);
+    return { ok: false, messageId: null };
+  }
+
+  // Infobip always returns 200 with a per-message status; a REJECTED group
+  // means the send did NOT happen even though the HTTP call succeeded, so the
+  // status has to be inspected rather than trusting res.ok alone.
+  const msg = body.messages?.[0];
+  const group = msg?.status?.groupName;
+  if (group === "REJECTED" || group === "UNDELIVERABLE") {
+    console.error(`Infobip rejected message: ${JSON.stringify(msg?.status)}`);
+    return { ok: false, messageId: null };
+  }
+  // PENDING/ACCEPTED only means accepted for delivery — the real
+  // DELIVERED/EXPIRED/REJECTED outcome arrives later on the status webhook.
+  return { ok: true, messageId: msg?.messageId ?? null };
 }
 
 // ── Helper: log to sms_logs ───────────────────────────────────────────────────
@@ -385,7 +474,9 @@ async function updateLog(
   logId: string,
   status: "sent" | "failed",
   provider: string,
-  channel: "sms" | "whatsapp"
+  channel: "sms" | "whatsapp",
+  /** Provider-side message id — Infobip's, for its delivery-status webhook. */
+  providerRef?: string | null
 ) {
   await supabase
     .from("sms_logs")
@@ -393,6 +484,7 @@ async function updateLog(
       status,
       provider,
       channel,
+      ...(providerRef ? { provider_ref: providerRef } : {}),
       sent_at: status === "sent" ? new Date().toISOString() : null,
     })
     .eq("id", logId);
@@ -481,32 +573,56 @@ serve(async (req) => {
     let messageToSend: string;
 
     if (whatsappNumber && order) {
-      // Try WhatsApp with rich message
+      // WhatsApp via Infobip — an approved template, not free-form text.
+      // message_body still records the human-readable summary so the SMS Logs
+      // screen stays readable; the wire payload is the template's variables.
+      const itemCount = order.order_items.reduce(
+        (sum, item) => sum + item.quantity,
+        0
+      );
       messageToSend = buildWhatsAppOrderMessage(order);
+      provider = "infobip";
       const logId = await createLog({
         restaurantId,
         orderId,
         phone: whatsappNumber,
         message: messageToSend,
         eventType,
-        provider: "termii",
+        provider: "infobip",
         channel: "whatsapp",
         status: "queued",
       });
 
-      sent = await sendViaTermiiWhatsApp(whatsappNumber, messageToSend);
+      const result = await sendViaInfobip(whatsappNumber, {
+        orderNumber,
+        customerName: order.customer_name ?? "Guest",
+        itemCount,
+        totalKobo: order.total_kobo,
+        fulfillmentType: order.fulfillment_type,
+        orderId,
+      });
+      sent = result.ok;
       channel = "whatsapp";
 
       if (!sent) {
-        // WhatsApp failed — fall back to SMS on same number
+        // Template rejected, config missing, or Infobip unreachable — the
+        // merchant still has to learn an order arrived, so drop to SMS on the
+        // same number. Provider flips so the log reflects what actually sent.
         const simpleMessage = buildMessage(eventType, orderNumber, restaurantName);
         sent = await sendViaTermii(whatsappNumber, simpleMessage);
+        provider = "termii";
         channel = "sms";
         messageToSend = simpleMessage;
       }
 
       if (logId) {
-        await updateLog(logId, sent ? "sent" : "failed", provider, channel);
+        await updateLog(
+          logId,
+          sent ? "sent" : "failed",
+          provider,
+          channel,
+          result.messageId
+        );
       }
     } else {
       // No WhatsApp number — send SMS on restaurant phone
@@ -522,12 +638,10 @@ serve(async (req) => {
         status: "queued",
       });
 
+      // Termii is the only SMS path now — the Twilio fallback was retired with
+      // the Infobip migration. A Termii failure here is terminal for this
+      // send; pg_cron retries cover transient outages.
       sent = await sendViaTermii(recipientPhone, messageToSend);
-
-      if (!sent) {
-        sent = await sendViaTwilio(recipientPhone, messageToSend);
-        provider = "twilio";
-      }
 
       if (logId) {
         await updateLog(logId, sent ? "sent" : "failed", provider, "sms");
@@ -535,6 +649,13 @@ serve(async (req) => {
     }
 
     // ── Admin copy (fire-and-forget) ──────────────────────────────────────
+    // STILL ON TERMII WHATSAPP, deliberately. Moving this to Infobip needs a
+    // SECOND approved template (the admin variant is prefixed with the
+    // restaurant name, so it has a different variable set) and only one
+    // template — the merchant new-order alert — has been submitted. Termii's
+    // WhatsApp channel keeps working, so this path is left untouched rather
+    // than pointed at a template that does not exist. Revisit once an admin
+    // template is approved.
     if (order) {
       const { data: platformSettings } = await supabase
         .from("platform_settings")
