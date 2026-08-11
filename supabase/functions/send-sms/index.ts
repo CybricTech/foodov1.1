@@ -64,22 +64,26 @@ const SENDCHAMP_ROUTE = Deno.env.get("SENDCHAMP_ROUTE") ?? "non_dnd";
 const TERMII_API_KEY = Deno.env.get("TERMII_API_KEY")!;
 const TERMII_SENDER_ID = Deno.env.get("TERMII_SENDER_ID") ?? "Foodo";
 
-// ── Interakt (Meta WhatsApp Business API BSP) ────────────────────────────────
-// Interakt sends APPROVED TEMPLATES ONLY — free-form text is not accepted on
-// this endpoint. Merchant order alerts are business-initiated (the merchant
-// never messaged us first), so the 24-hour customer-service window never
-// applies and a template is mandatory on every send.
+// ── Infobip (Meta WhatsApp Business API BSP) ─────────────────────────────────
+// Infobip sends APPROVED TEMPLATES ONLY — free-form text is not accepted for
+// business-initiated messages. Merchant order alerts are business-initiated
+// (the merchant never messaged us first), so the 24-hour customer-service
+// window never applies and a template is mandatory on every send. Switching
+// BSP does not change this: it is a Meta platform rule, not a vendor one.
 //
-// The template name/language are env-configurable because the template is
-// created and approved in the Interakt dashboard, not in this repo — the code
-// must not hardcode a name that Meta has not approved yet. Until
-// INTERAKT_API_KEY is set the WhatsApp path is simply skipped and merchants
-// fall through to SMS, so deploying this ahead of approval is safe.
-const INTERAKT_API_KEY = Deno.env.get("INTERAKT_API_KEY");
-const INTERAKT_TEMPLATE_NAME = Deno.env.get("INTERAKT_TEMPLATE_NAME") ?? "new_order_merchant";
-const INTERAKT_TEMPLATE_LANG = Deno.env.get("INTERAKT_TEMPLATE_LANG") ?? "en";
-// The "View Order" button URL is baked into the approved template as a STATIC
-// link to the orders board, so no button config is needed here.
+// INFOBIP_BASE_URL is ACCOUNT-SPECIFIC (e.g. xxxxx.api.infobip.com) — there is
+// no shared host to hardcode, so it must be configured per environment.
+// INFOBIP_SENDER is the registered WhatsApp sender number the alert comes from.
+//
+// Until INFOBIP_API_KEY, INFOBIP_BASE_URL and INFOBIP_SENDER are all set the
+// WhatsApp path is skipped and merchants fall through to SMS, so deploying
+// ahead of sender registration and template approval is safe.
+const INFOBIP_API_KEY = Deno.env.get("INFOBIP_API_KEY");
+const INFOBIP_BASE_URL = Deno.env.get("INFOBIP_BASE_URL");
+const INFOBIP_SENDER = Deno.env.get("INFOBIP_SENDER");
+const INFOBIP_TEMPLATE_NAME =
+  Deno.env.get("INFOBIP_TEMPLATE_NAME") ?? "new_order_merchant";
+const INFOBIP_TEMPLATE_LANG = Deno.env.get("INFOBIP_TEMPLATE_LANG") ?? "en";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -326,46 +330,29 @@ async function sendViaTermiiWhatsApp(
   return res.ok && body.code !== "err";
 }
 
-// ── Send via Interakt (WhatsApp template) ─────────────────────────────────────
-/**
- * Splits a normalized phone into Interakt's two required parts. Interakt wants
- * countryCode and phoneNumber SEPARATELY, and the local part must carry no
- * country code and no leading zero — unlike every other provider here, which
- * takes one concatenated string.
- *
- * normalizePhone() yields "2348012345678" for Nigerian numbers, so the split is
- * "+234" + "8012345678". Returns null for anything that isn't a recognisable
- * Nigerian number rather than guessing a country code we can't verify.
- */
-function splitPhoneForInterakt(
-  phone: string
-): { countryCode: string; phoneNumber: string } | null {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("234") && digits.length === 13) {
-    return { countryCode: "+234", phoneNumber: digits.slice(3) };
-  }
-  return null;
-}
-
+// ── Send via Infobip (WhatsApp template) ──────────────────────────────────────
 /**
  * Sends the approved merchant new-order template.
  *
- * Body variables are positional and must match the approved template exactly;
- * a count mismatch is Meta error 132000 and the send fails outright. Order:
+ * Placeholders are POSITIONAL and must match the approved template exactly — a
+ * count mismatch fails the send. Order:
  *   {{1}} order number   {{2}} customer name   {{3}} item count
  *   {{4}} order total    {{5}} fulfillment type
  *
- * No buttonValues are sent: the template's "View Order" button is a STATIC URL
- * pointing at the orders board. Sending buttonValues for a button that carries
- * no variable is itself an error. Revisit if the board ever learns to open a
- * specific order from a query param — today it ignores them, so a per-order
- * dynamic URL would look like a deep link while landing on the plain board.
+ * No `buttons` are sent: the template's "View Order" button is a STATIC URL to
+ * the orders board, and a static button takes no runtime parameter. Revisit if
+ * the board ever learns to open a specific order from a query param — today it
+ * ignores them, so a per-order dynamic URL would look like a deep link while
+ * landing on the plain board.
  *
  * Values are deliberately short single-line strings: WhatsApp rejects template
  * parameters containing newlines, tabs or long runs of spaces, which is why the
- * old rich multi-line message cannot be ported here as-is.
+ * rich multi-line message used for SMS cannot be ported here as-is.
+ *
+ * `to` takes the already-normalized international number (no '+'), so unlike
+ * the previous BSP integration there is no country restriction here.
  */
-async function sendViaInterakt(
+async function sendViaInfobip(
   phone: string,
   params: {
     orderNumber: string;
@@ -376,54 +363,72 @@ async function sendViaInterakt(
     orderId: string;
   }
 ): Promise<{ ok: boolean; messageId: string | null }> {
-  if (!INTERAKT_API_KEY) return { ok: false, messageId: null };
-
-  const split = splitPhoneForInterakt(phone);
-  if (!split) {
-    console.error(`Interakt: unsupported phone format ${phone}`);
+  if (!INFOBIP_API_KEY || !INFOBIP_BASE_URL || !INFOBIP_SENDER) {
     return { ok: false, messageId: null };
   }
 
-  const res = await fetch("https://api.interakt.ai/v1/public/message/", {
+  const base = INFOBIP_BASE_URL.replace(/\/+$/, "");
+  const url = `${base.startsWith("http") ? base : `https://${base}`}/whatsapp/1/message/template`;
+
+  const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${INTERAKT_API_KEY}`,
+      // Infobip's own scheme — NOT Bearer and NOT Basic.
+      Authorization: `App ${INFOBIP_API_KEY}`,
       "Content-Type": "application/json",
+      Accept: "application/json",
     },
     body: JSON.stringify({
-      countryCode: split.countryCode,
-      phoneNumber: split.phoneNumber,
-      // Echoed back on the status webhook so a delivery result can be matched
-      // to its sms_logs row without a second lookup.
-      callbackData: params.orderId,
-      type: "Template",
-      template: {
-        name: INTERAKT_TEMPLATE_NAME,
-        languageCode: INTERAKT_TEMPLATE_LANG,
-        bodyValues: [
-          params.orderNumber,
-          params.customerName,
-          String(params.itemCount),
-          formatKoboToNaira(params.totalKobo),
-          params.fulfillmentType === "pickup" ? "Pickup" : "Delivery",
-        ],
-      },
+      messages: [
+        {
+          from: INFOBIP_SENDER,
+          to: normalizePhoneE164(phone),
+          // Our own id, echoed on the delivery-status webhook so a result can
+          // be matched back to its order without a second lookup.
+          messageId: params.orderId,
+          content: {
+            templateName: INFOBIP_TEMPLATE_NAME,
+            language: INFOBIP_TEMPLATE_LANG,
+            templateData: {
+              body: {
+                placeholders: [
+                  params.orderNumber,
+                  params.customerName,
+                  String(params.itemCount),
+                  formatKoboToNaira(params.totalKobo),
+                  params.fulfillmentType === "pickup" ? "Pickup" : "Delivery",
+                ],
+              },
+            },
+          },
+        },
+      ],
     }),
   });
 
   if (res.status === 429) {
-    console.error("Interakt rate limit exceeded");
+    console.error("Infobip rate limit exceeded");
     return { ok: false, messageId: null };
   }
 
   const body = await res.json().catch(() => ({}));
-  if (!res.ok || body.result !== true) {
-    console.error(`Interakt send failed: ${res.status} ${JSON.stringify(body)}`);
+  if (!res.ok) {
+    console.error(`Infobip send failed: ${res.status} ${JSON.stringify(body)}`);
     return { ok: false, messageId: null };
   }
-  // Interakt returns only an accepted-for-delivery id here — the real
-  // Sent/Delivered/Read/Failed outcome arrives later on the status webhook.
-  return { ok: true, messageId: body.id ?? null };
+
+  // Infobip always returns 200 with a per-message status; a REJECTED group
+  // means the send did NOT happen even though the HTTP call succeeded, so the
+  // status has to be inspected rather than trusting res.ok alone.
+  const msg = body.messages?.[0];
+  const group = msg?.status?.groupName;
+  if (group === "REJECTED" || group === "UNDELIVERABLE") {
+    console.error(`Infobip rejected message: ${JSON.stringify(msg?.status)}`);
+    return { ok: false, messageId: null };
+  }
+  // PENDING/ACCEPTED only means accepted for delivery — the real
+  // DELIVERED/EXPIRED/REJECTED outcome arrives later on the status webhook.
+  return { ok: true, messageId: msg?.messageId ?? null };
 }
 
 // ── Helper: log to sms_logs ───────────────────────────────────────────────────
@@ -470,7 +475,7 @@ async function updateLog(
   status: "sent" | "failed",
   provider: string,
   channel: "sms" | "whatsapp",
-  /** Provider-side message id — Interakt's, used to match its status webhook. */
+  /** Provider-side message id — Infobip's, for its delivery-status webhook. */
   providerRef?: string | null
 ) {
   await supabase
@@ -568,7 +573,7 @@ serve(async (req) => {
     let messageToSend: string;
 
     if (whatsappNumber && order) {
-      // WhatsApp via Interakt — an approved template, not free-form text.
+      // WhatsApp via Infobip — an approved template, not free-form text.
       // message_body still records the human-readable summary so the SMS Logs
       // screen stays readable; the wire payload is the template's variables.
       const itemCount = order.order_items.reduce(
@@ -576,19 +581,19 @@ serve(async (req) => {
         0
       );
       messageToSend = buildWhatsAppOrderMessage(order);
-      provider = "interakt";
+      provider = "infobip";
       const logId = await createLog({
         restaurantId,
         orderId,
         phone: whatsappNumber,
         message: messageToSend,
         eventType,
-        provider: "interakt",
+        provider: "infobip",
         channel: "whatsapp",
         status: "queued",
       });
 
-      const result = await sendViaInterakt(whatsappNumber, {
+      const result = await sendViaInfobip(whatsappNumber, {
         orderNumber,
         customerName: order.customer_name ?? "Guest",
         itemCount,
@@ -600,7 +605,7 @@ serve(async (req) => {
       channel = "whatsapp";
 
       if (!sent) {
-        // Template rejected, key missing, or Interakt unreachable — the
+        // Template rejected, config missing, or Infobip unreachable — the
         // merchant still has to learn an order arrived, so drop to SMS on the
         // same number. Provider flips so the log reflects what actually sent.
         const simpleMessage = buildMessage(eventType, orderNumber, restaurantName);
@@ -634,7 +639,7 @@ serve(async (req) => {
       });
 
       // Termii is the only SMS path now — the Twilio fallback was retired with
-      // the Interakt migration. A Termii failure here is terminal for this
+      // the Infobip migration. A Termii failure here is terminal for this
       // send; pg_cron retries cover transient outages.
       sent = await sendViaTermii(recipientPhone, messageToSend);
 
@@ -644,7 +649,7 @@ serve(async (req) => {
     }
 
     // ── Admin copy (fire-and-forget) ──────────────────────────────────────
-    // STILL ON TERMII WHATSAPP, deliberately. Moving this to Interakt needs a
+    // STILL ON TERMII WHATSAPP, deliberately. Moving this to Infobip needs a
     // SECOND approved template (the admin variant is prefixed with the
     // restaurant name, so it has a different variable set) and only one
     // template — the merchant new-order alert — has been submitted. Termii's
