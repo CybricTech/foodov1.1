@@ -55,9 +55,19 @@ Meta error `132000` and the send fails outright.
 | `{{4}}` | order total | `₦21,890` |
 | `{{5}}` | fulfillment type | `Delivery` / `Pickup` |
 
-**Button:** one *dynamic URL* button labelled `View order`, base URL
-`https://kitchyn.app/`. The code supplies the suffix
-`dashboard/frontline/orders?order=<orderId>` as `buttonValues["0"]`.
+**Button:** one **static** URL button labelled `View Order`, pointing at
+`https://kitchyn.app/dashboard/frontline/orders`.
+
+Static, not dynamic, on purpose: the orders board ignores query params, so a
+per-order dynamic URL would look like a deep link while landing on the plain
+board. The code therefore sends **no `buttonValues`** — supplying them for a
+button that carries no variable is itself an error. Upgrade to a dynamic URL
+only once the board can open a specific order from a param.
+
+Also **turn "Enable Button Click Tracking" OFF**. Interakt's own notice says it
+works only for templates sent via Campaigns, not via the API — and we send via
+the API. Leaving it on wraps the URL in a tracking redirect that buys nothing
+and adds a failure mode.
 
 ## 3. Environment variables
 
@@ -68,7 +78,6 @@ Set on the `send-sms` edge function:
 | `INTERAKT_API_KEY` | yes | — | Developer Settings. Sent as `Authorization: Basic <key>` — already base64 from Interakt, do **not** re-encode. |
 | `INTERAKT_TEMPLATE_NAME` | no | `new_order_merchant` | Must match the approved template. |
 | `INTERAKT_TEMPLATE_LANG` | no | `en` | Must match the approved language. |
-| `MERCHANT_DASHBOARD_URL` | no | `https://kitchyn.app` | Button base. |
 
 Removed: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`.
 

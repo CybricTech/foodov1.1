@@ -78,10 +78,8 @@ const TERMII_SENDER_ID = Deno.env.get("TERMII_SENDER_ID") ?? "Foodo";
 const INTERAKT_API_KEY = Deno.env.get("INTERAKT_API_KEY");
 const INTERAKT_TEMPLATE_NAME = Deno.env.get("INTERAKT_TEMPLATE_NAME") ?? "new_order_merchant";
 const INTERAKT_TEMPLATE_LANG = Deno.env.get("INTERAKT_TEMPLATE_LANG") ?? "en";
-// Base for the template's dynamic "View order" button. The approved template
-// owns the static prefix; Interakt appends this suffix as buttonValues[0].
-const MERCHANT_DASHBOARD_URL =
-  Deno.env.get("MERCHANT_DASHBOARD_URL") ?? "https://kitchyn.app";
+// The "View Order" button URL is baked into the approved template as a STATIC
+// link to the orders board, so no button config is needed here.
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -356,7 +354,12 @@ function splitPhoneForInterakt(
  * a count mismatch is Meta error 132000 and the send fails outright. Order:
  *   {{1}} order number   {{2}} customer name   {{3}} item count
  *   {{4}} order total    {{5}} fulfillment type
- * buttonValues[0] carries the dynamic URL suffix for the "View order" button.
+ *
+ * No buttonValues are sent: the template's "View Order" button is a STATIC URL
+ * pointing at the orders board. Sending buttonValues for a button that carries
+ * no variable is itself an error. Revisit if the board ever learns to open a
+ * specific order from a query param — today it ignores them, so a per-order
+ * dynamic URL would look like a deep link while landing on the plain board.
  *
  * Values are deliberately short single-line strings: WhatsApp rejects template
  * parameters containing newlines, tabs or long runs of spaces, which is why the
@@ -404,9 +407,6 @@ async function sendViaInterakt(
           formatKoboToNaira(params.totalKobo),
           params.fulfillmentType === "pickup" ? "Pickup" : "Delivery",
         ],
-        buttonValues: {
-          "0": [`dashboard/frontline/orders?order=${params.orderId}`],
-        },
       },
     }),
   });
