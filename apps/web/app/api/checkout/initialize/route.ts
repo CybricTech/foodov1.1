@@ -71,6 +71,14 @@ const InitializeSchema = z.object({
           ),
         })
       ),
+      /**
+       * Per-item customer note from the storefront item sheet ("no coconut").
+       * Carried through metadata into order_items.special_request. Max matches
+       * the textarea's maxLength=300. This is allergy-bearing text — it must
+       * never be silently dropped, which is exactly what happened while this
+       * field was missing from the schema (z.object strips unknown keys).
+       */
+      specialRequest: z.string().trim().max(300).optional(),
     })
   ),
 });

@@ -97,6 +97,61 @@ export function buildOrderPayloadFromMetadata(
   };
 }
 
+/** A cart line as it round-trips through payment metadata. */
+export interface CheckoutMetadataItem {
+  menuItemId: string;
+  name: string;
+  priceKobo: number;
+  quantity: number;
+  selectedOptions?: Array<{
+    optionId: string;
+    optionName: string;
+    choices: Array<{
+      choiceId: string;
+      choiceName: string;
+      priceModifierKobo: number;
+      quantity?: number;
+    }>;
+  }>;
+  /** Per-item customer note from the storefront item sheet ("no coconut"). */
+  specialRequest?: string;
+}
+
+/**
+ * Build the `order_items` insert rows from a successful payment's metadata.
+ *
+ * Same reasoning as the order payload above, and the same three call sites:
+ * both webhooks and the status poll each kept a hand-written copy of this map.
+ * The copies cost us a customer's safety — `specialRequest` had to be added in
+ * three places to work, so it went into none, and a line-item note reading
+ * "without coconut" never reached the kitchen on an order for someone with a
+ * coconut allergy. One builder means a new per-item field cannot land on two
+ * payment paths out of three.
+ */
+export function buildOrderItemsFromMetadata(
+  meta: CheckoutMetadata,
+  { restaurantId, orderId }: { restaurantId: string; orderId: string }
+) {
+  const items = (meta.items as CheckoutMetadataItem[] | undefined) ?? [];
+
+  return items.map((item) => ({
+    order_id: orderId,
+    restaurant_id: restaurantId,
+    menu_item_id: item.menuItemId,
+    item_name: item.name,
+    item_price: item.priceKobo,
+    item_price_kobo: item.priceKobo,
+    quantity: item.quantity,
+    selected_options: (item.selectedOptions ??
+      []) as unknown as import("@foodo/database").Json,
+    // Trimmed to null so an all-whitespace note doesn't render an empty
+    // "Special request" callout on the kitchen ticket.
+    special_request: item.specialRequest?.trim() || null,
+    line_total: item.priceKobo * item.quantity,
+    line_total_kobo: item.priceKobo * item.quantity,
+  }));
+}
+
 /**
  * Build the `customer_addresses` upsert for a delivery order.
  *

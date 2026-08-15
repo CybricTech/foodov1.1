@@ -1224,6 +1224,7 @@ export type Database = {
           quantity: number
           restaurant_id: string
           selected_options: Json | null
+          special_request: string | null
         }
         Insert: {
           id?: string
@@ -1237,6 +1238,7 @@ export type Database = {
           quantity?: number
           restaurant_id: string
           selected_options?: Json | null
+          special_request?: string | null
         }
         Update: {
           id?: string
@@ -1250,6 +1252,7 @@ export type Database = {
           quantity?: number
           restaurant_id?: string
           selected_options?: Json | null
+          special_request?: string | null
         }
         Relationships: [
           {

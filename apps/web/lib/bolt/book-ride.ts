@@ -30,7 +30,7 @@ import { buildDriverNote } from "@/lib/delivery/driver-note";
  * never the customer's own number. Kept as one constant so it's a single
  * place to change platform-wide.
  */
-const BOLT_RIDER_CONTACT_PHONE = "+2348063662721";
+const BOLT_RIDER_CONTACT_PHONE = "+2347030930037";
 
 /**
  * The name registered alongside BOLT_RIDER_CONTACT_PHONE. Deliberately not

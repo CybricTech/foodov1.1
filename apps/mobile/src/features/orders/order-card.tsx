@@ -1003,6 +1003,38 @@ function OrderDetails({ order }: { order: OrderRow }) {
                   )}
                 </View>
               )}
+              {/*
+                Amber, not grey — these notes carry allergies ("without
+                coconut") and must not blend into the modifier rows above.
+              */}
+              {!!item.special_request && (
+                <View
+                  style={{
+                    marginLeft: 30,
+                    marginTop: 6,
+                    flexDirection: "row",
+                    gap: 6,
+                    backgroundColor: "#FFFBEB",
+                    borderWidth: 1,
+                    borderColor: "#FDE68A",
+                    borderRadius: 8,
+                    paddingHorizontal: 8,
+                    paddingVertical: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: "#D97706" }}>⚠</Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "600",
+                      color: "#78350F",
+                      flex: 1,
+                    }}
+                  >
+                    {item.special_request}
+                  </Text>
+                </View>
+              )}
             </View>
           );
         })}

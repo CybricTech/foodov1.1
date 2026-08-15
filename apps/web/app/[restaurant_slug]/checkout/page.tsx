@@ -686,6 +686,11 @@ export default function CheckoutPage() {
             priceKobo: item.price,
             quantity: item.quantity,
             selectedOptions: item.selectedOptions,
+            // The item sheet's "Special requests" note. Omitting it here is how
+            // "without coconut" reached an allergic customer's plate: the note
+            // rendered in the cart and on this page, so it looked delivered,
+            // but it died at this boundary and never reached the kitchen.
+            specialRequest: item.specialRequest,
           })),
         }),
       });

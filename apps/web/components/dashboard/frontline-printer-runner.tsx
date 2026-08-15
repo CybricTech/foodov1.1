@@ -17,7 +17,7 @@ import { printEngine } from "@/lib/printing/use-printer";
 import { toReceiptOrder, NEW_STAGE_STATUSES } from "@/lib/printing/map-order";
 
 const ORDER_SELECT =
-  "*, order_items (id, item_name, quantity, line_total_kobo, selected_options)";
+  "*, order_items (id, item_name, quantity, line_total_kobo, selected_options, special_request)";
 // Don't print ancient backlog on first setup — only orders from the recent past.
 const CATCH_UP_WINDOW_MS = 2 * 60 * 60 * 1000; // 2h
 const CATCH_UP_INTERVAL_MS = 60_000;

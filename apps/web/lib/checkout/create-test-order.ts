@@ -1,4 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  buildOrderItemsFromMetadata,
+  type CheckoutMetadataItem,
+} from "./order-payload";
 
 /**
  * Create a fully-formed PAID order for a TEST merchant (is_test) without going
@@ -89,31 +93,17 @@ export async function createTestOrder(
     throw new Error(`Test order insert failed: ${error?.message ?? "unknown"}`);
   }
 
-  // Order items snapshot.
-  const items =
-    (meta.items as Array<{
-      menuItemId: string;
-      name: string;
-      priceKobo: number;
-      quantity: number;
-      selectedOptions: unknown;
-    }>) ?? [];
+  // Order items snapshot — same builder as the real payment paths, so a test
+  // order exercises per-item special requests exactly like a live one.
+  const items = (meta.items as CheckoutMetadataItem[] | undefined) ?? [];
 
-  if (items.length > 0) {
-    await supabase.from("order_items").insert(
-      items.map((item) => ({
-        order_id: order.id,
-        restaurant_id: restaurantId,
-        menu_item_id: item.menuItemId,
-        item_name: item.name,
-        item_price: item.priceKobo,
-        item_price_kobo: item.priceKobo,
-        quantity: item.quantity,
-        selected_options: item.selectedOptions as never,
-        line_total: item.priceKobo * item.quantity,
-        line_total_kobo: item.priceKobo * item.quantity,
-      })) as never
-    );
+  const orderItemRows = buildOrderItemsFromMetadata(meta, {
+    restaurantId,
+    orderId: order.id,
+  });
+
+  if (orderItemRows.length > 0) {
+    await supabase.from("order_items").insert(orderItemRows as never);
   }
 
   // Estimated ready time from the longest item prep (+ delivery buffer).

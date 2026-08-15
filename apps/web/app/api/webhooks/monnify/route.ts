@@ -7,7 +7,9 @@ import {
 import { getPostHogClient } from "@/lib/posthog";
 import {
   buildOrderPayloadFromMetadata,
+  buildOrderItemsFromMetadata,
   buildSavedAddressFromMetadata,
+  type CheckoutMetadataItem,
 } from "@/lib/checkout/order-payload";
 
 /**
@@ -215,17 +217,7 @@ async function handleSuccessfulTransaction(
   await posthog.shutdown();
 
   // Order items snapshot
-  const items = (meta.items as Array<{
-    menuItemId: string;
-    name: string;
-    priceKobo: number;
-    quantity: number;
-    selectedOptions: Array<{
-      optionId: string;
-      optionName: string;
-      choices: Array<{ choiceId: string; choiceName: string; priceModifierKobo: number }>;
-    }>;
-  }>) ?? [];
+  const items = (meta.items as CheckoutMetadataItem[] | undefined) ?? [];
 
   const menuItemIds = items.map((i) => i.menuItemId);
   const { data: menuItems } = await supabase
@@ -233,21 +225,12 @@ async function handleSuccessfulTransaction(
     .select("id, price_kobo, prep_time_minutes")
     .in("id", menuItemIds);
 
-  if (items.length > 0) {
-    await supabase.from("order_items").insert(
-      items.map((item) => ({
-        order_id: order.id,
-        restaurant_id: restaurantId,
-        menu_item_id: item.menuItemId,
-        item_name: item.name,
-        item_price: item.priceKobo,
-        item_price_kobo: item.priceKobo,
-        quantity: item.quantity,
-        selected_options: item.selectedOptions as import("@foodo/database").Json,
-        line_total: item.priceKobo * item.quantity,
-        line_total_kobo: item.priceKobo * item.quantity,
-      }))
-    );
+  const orderItemRows = buildOrderItemsFromMetadata(meta, {
+    restaurantId,
+    orderId: order.id,
+  });
+  if (orderItemRows.length > 0) {
+    await supabase.from("order_items").insert(orderItemRows);
   }
 
   const menuPrepMap = new Map(

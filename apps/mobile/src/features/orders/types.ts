@@ -37,6 +37,8 @@ export type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
     quantity: number;
     line_total_kobo: number;
     selected_options: OptionSnapshot[] | null;
+    /** Customer's per-item note ("no coconut") — may carry an allergy. */
+    special_request: string | null;
     // Embedded from menu_items so the accept dialog can default the ETA to the
     // longest item prep time. Null when the menu item was since deleted.
     menu_items?: { prep_time_minutes: number | null } | null;
@@ -129,5 +131,5 @@ export const ORDERS_SELECT = `
   special_instructions, delivery_address, dispatch_type, estimated_delivery_at,
   scheduled_for, activated_at,
   dispatch_state, rider_requested_at,
-  order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))
+  order_items (id, item_name, quantity, line_total_kobo, selected_options, special_request, menu_items (prep_time_minutes))
 `;

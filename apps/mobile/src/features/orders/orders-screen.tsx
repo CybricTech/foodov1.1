@@ -268,7 +268,7 @@ export function OrdersScreen({
             const { data } = await supabase
               .from("orders")
               .select(
-                `*, order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))`
+                `*, order_items (id, item_name, quantity, line_total_kobo, selected_options, special_request, menu_items (prep_time_minutes))`
               )
               .eq("id", (payload.new as { id: string }).id)
               .single();

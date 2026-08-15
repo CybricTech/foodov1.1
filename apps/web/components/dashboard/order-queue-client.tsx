@@ -62,6 +62,8 @@ type OrderRow = Database["public"]["Tables"]["orders"]["Row"] & {
     quantity: number;
     line_total_kobo: number;
     selected_options: OptionSnapshot[] | null;
+    /** Customer's per-item note ("no coconut") — may carry an allergy. */
+    special_request: string | null;
     // Embedded from menu_items so the confirm dialog can default the ETA to the
     // longest item prep time. Null when the menu item was since deleted.
     menu_items?: { prep_time_minutes: number | null } | null;
@@ -185,7 +187,7 @@ export function OrderQueueClient({
           if (payload.eventType === "INSERT") {
             const { data } = await supabase
               .from("orders")
-              .select(`*, order_items (id, item_name, quantity, line_total_kobo, selected_options, menu_items (prep_time_minutes))`)
+              .select(`*, order_items (id, item_name, quantity, line_total_kobo, selected_options, special_request, menu_items (prep_time_minutes))`)
               .eq("id", (payload.new as OrderRow).id)
               .single();
             if (data) {
@@ -993,6 +995,20 @@ function OrderCard({
                           );
                         })
                       )}
+                    </div>
+                  )}
+                  {/*
+                    Deliberately louder than the option rows above. These notes
+                    carry allergies ("without coconut"), so they must not read as
+                    just another muted modifier line the kitchen can skim past.
+                  */}
+                  {item.special_request && (
+                    <div className="ml-7 mt-1.5 flex items-start gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5">
+                      <span aria-hidden="true" className="text-amber-600 text-xs leading-none mt-0.5">⚠</span>
+                      <span className="text-xs font-medium text-amber-900 leading-snug">
+                        <span className="sr-only">Special request: </span>
+                        {item.special_request}
+                      </span>
                     </div>
                   )}
                 </div>

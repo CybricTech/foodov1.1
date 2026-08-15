@@ -10,6 +10,11 @@ export interface ReceiptLineItem {
     optionName: string;
     choices: Array<{ choiceName: string; priceModifierKobo?: number; quantity?: number }>;
   }> | null;
+  /**
+   * Customer's per-item note ("no coconut"). Printed emphasized, because this
+   * is the line an allergy arrives on and the cook is reading it at a glance.
+   */
+  specialRequest?: string | null;
 }
 
 export interface ReceiptOrder {
@@ -134,6 +139,14 @@ export function buildReceiptBytes(order: ReceiptOrder, opts: ReceiptOptions): Ui
         const qty = c.quantity && c.quantity > 1 ? `${c.quantity}x ` : "";
         for (const l of wrap(`+ ${qty}${c.choiceName}`, W - 3)) text("   " + l + "\n");
       }
+    }
+    // Emphasized (ESC ! bold) so it stands off the modifier lines above it —
+    // an allergy note that prints in the same weight as "+ extra cheese" is a
+    // note the kitchen skims past.
+    if (item.specialRequest) {
+      raw(ESC, 0x21, 0x08);
+      for (const l of wrap(`** ${item.specialRequest}`, W - 3)) text("   " + l + "\n");
+      raw(ESC, 0x21, 0x00);
     }
   }
   rule();

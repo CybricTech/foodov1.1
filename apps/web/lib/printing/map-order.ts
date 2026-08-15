@@ -18,6 +18,7 @@ export function toReceiptOrder(o: any): ReceiptOrder {
       name: it.item_name,
       quantity: it.quantity,
       lineTotalKobo: it.line_total_kobo ?? 0,
+      specialRequest: it.special_request ?? null,
       options: (it.selected_options ?? []).map((opt: any) => ({
         optionName: opt.optionName ?? opt.option_name ?? "",
         choices: (opt.choices ?? []).map((c: any) => ({
