@@ -3,15 +3,50 @@ import * as Sentry from "@sentry/nextjs";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { apexOrigin } from "@/lib/site";
 
 export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+const TITLE = "Kitchyn — Online Ordering for Restaurants in Nigeria";
+const DESCRIPTION =
+  "Your own branded storefront for direct online orders. Built for independent restaurants in Nigeria — 1% per order, no aggregator commissions.";
+
 export function generateMetadata(): Metadata {
   return {
-    title: "Kitchyn — White-label Food Ordering Platform",
-    description: "Launch your own branded food ordering platform. Direct orders, zero commissions, full control.",
+    /**
+     * Required for `alternates.canonical` and relative OG image URLs to resolve
+     * to anything at all — without it Next emits them relative to localhost.
+     *
+     * This is the APEX base. Storefront routes override it per merchant in
+     * app/[restaurant_slug]/layout.tsx so their canonical URLs land on the
+     * merchant's own subdomain. That override is the whole mechanism by which
+     * kitchyn.app/<slug> and <slug>.kitchyn.app/<slug> consolidate onto
+     * <slug>.kitchyn.app — see lib/site.ts.
+     */
+    metadataBase: new URL(apexOrigin()),
+    title: {
+      default: TITLE,
+      // Storefront routes replace this template with the merchant's own.
+      template: "%s | Kitchyn",
+    },
+    description: DESCRIPTION,
+    applicationName: "Kitchyn",
+    alternates: { canonical: "/" },
+    openGraph: {
+      type: "website",
+      siteName: "Kitchyn",
+      locale: "en_NG",
+      url: "/",
+      title: TITLE,
+      description: DESCRIPTION,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: TITLE,
+      description: DESCRIPTION,
+    },
     other: {
       ...Sentry.getTraceData(),
     },
@@ -24,7 +59,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en-NG">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link

@@ -18,24 +18,20 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@foodo/database";
 import type { CookieOptions } from "@supabase/ssr";
+import { classifyHost, isHostRootPath } from "@/lib/site";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hostname = request.headers.get("host") ?? "";
 
   // ─── Subdomain routing classification (no Supabase needed) ──────────────────
-  const isDashboardSub = hostname === "dashboard.kitchyn.app";
-  const isAdminSub     = hostname === "admin.kitchyn.app";
-  // Reserved subdomains that are NOT restaurant storefronts. "staging" is the
-  // staging environment and must behave like the apex domain (path-based slug
-  // routing, e.g. /get-drizzys), not be treated as a restaurant named "staging".
-  const isReservedSub  =
-    hostname === "www.kitchyn.app" || hostname === "staging.kitchyn.app";
-  const isStorefrontSub =
-    hostname.endsWith(".kitchyn.app") &&
-    !isDashboardSub &&
-    !isAdminSub &&
-    !isReservedSub;
+  // classifyHost() is shared with robots.ts/sitemap.ts so the reserved-subdomain
+  // list can't drift between "how we route it" and "how we index it".
+  const host = classifyHost(hostname);
+  const isDashboardSub = host.role === "dashboard";
+  const isAdminSub     = host.role === "admin";
+  const isStorefrontSub = host.role === "storefront";
+  const storefrontSlug = host.role === "storefront" ? host.slug : null;
 
   // Only /dashboard and /admin (by path or subdomain) require a session.
   const isProtectedPath =
@@ -52,17 +48,34 @@ export async function middleware(request: NextRequest) {
   const hasAuthCookie = request.cookies
     .getAll()
     .some((c) => c.name.startsWith("sb-"));
+
+  /**
+   * The path a storefront-subdomain request should be rewritten to, or null when
+   * it must be served as-is. Shared by both the fast path and the cookie-bearing
+   * path below so the two can't diverge.
+   *
+   * Exclusions:
+   *   /api      — API routes are host-agnostic
+   *   /ingest   — PostHog reverse proxy (next.config.mjs rewrites). Rewriting it
+   *               to /{slug}/ingest breaks client-side analytics on storefront
+   *               subdomains, so only server-side events would reach PostHog.
+   *   robots.txt / sitemap.xml / manifest.webmanifest — must resolve at the host
+   *               root to be honoured at all (see isHostRootPath).
+   *   /{slug}   — already in storefront form; rewriting would double the prefix.
+   */
+  function storefrontRewritePath(): string | null {
+    if (!storefrontSlug) return null;
+    if (pathname.startsWith("/api")) return null;
+    if (pathname.startsWith("/ingest")) return null;
+    if (isHostRootPath(pathname)) return null;
+    if (pathname.startsWith(`/${storefrontSlug}`)) return null;
+    return pathname === "/" ? `/${storefrontSlug}` : `/${storefrontSlug}${pathname}`;
+  }
+
   if (!needsAuth && !hasAuthCookie) {
-    if (isStorefrontSub) {
-      const slug = hostname.replace(".kitchyn.app", "");
-      if (
-        !pathname.startsWith("/api") &&
-        !pathname.startsWith("/ingest") &&
-        !pathname.startsWith(`/${slug}`)
-      ) {
-        const rewritePath = pathname === "/" ? `/${slug}` : `/${slug}${pathname}`;
-        return NextResponse.rewrite(new URL(rewritePath, request.url));
-      }
+    const rewritePath = storefrontRewritePath();
+    if (rewritePath) {
+      return NextResponse.rewrite(new URL(rewritePath, request.url));
     }
     return NextResponse.next();
   }
@@ -168,18 +181,11 @@ export async function middleware(request: NextRequest) {
     return withSessionCookies(NextResponse.redirect(new URL("/admin", request.url)));
   }
 
-  // slug.kitchyn.app/* → rewrite to /{slug}/*  (but NOT /api/* or /ingest/*
-  // paths). /ingest is the PostHog reverse proxy (see next.config.mjs rewrites)
-  // — rewriting it to /{slug}/ingest breaks client-side analytics on storefront
-  // subdomains, so only server-side events would ever reach PostHog.
+  // slug.kitchyn.app/* → rewrite to /{slug}/*. See storefrontRewritePath() above
+  // for the exclusion list.
   if (isStorefrontSub) {
-    const slug = hostname.replace(".kitchyn.app", "");
-    if (
-      !pathname.startsWith("/api") &&
-      !pathname.startsWith("/ingest") &&
-      !pathname.startsWith(`/${slug}`)
-    ) {
-      const rewritePath = pathname === "/" ? `/${slug}` : `/${slug}${pathname}`;
+    const rewritePath = storefrontRewritePath();
+    if (rewritePath) {
       const rewriteRes = withSessionCookies(NextResponse.rewrite(new URL(rewritePath, request.url)));
       clearPoisonedAuthCookies(rewriteRes);
       return rewriteRes;

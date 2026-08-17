@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -15,6 +16,10 @@ import { MenuSections } from "@/components/storefront/menu-sections";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { getActiveMenuSale } from "@/lib/discounts";
 import { getStorefrontShareMetadata } from "@/lib/storefront-metadata";
+import { JsonLd } from "@/components/seo/json-ld";
+import { breadcrumbJsonLd, menuJsonLd } from "@/lib/seo/json-ld";
+import { buildMenuDescription, buildMenuTitle } from "@/lib/seo/metadata";
+import { storefrontOrigin } from "@/lib/site";
 
 export const revalidate = 60;
 
@@ -22,15 +27,26 @@ interface MenuPageProps {
   params: { restaurant_slug: string };
 }
 
-export async function generateMetadata({ params }: MenuPageProps) {
+export async function generateMetadata({
+  params,
+}: MenuPageProps): Promise<Metadata> {
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) return {};
-  const title = `Menu — ${restaurant.name}`;
-  const description = restaurant.description ?? `Order from ${restaurant.name}`;
+
+  const title = buildMenuTitle(restaurant);
+  const description = buildMenuDescription(restaurant);
+
   return {
-    title,
+    title: { absolute: title },
     description,
-    ...getStorefrontShareMetadata(restaurant, { title, description }),
+    ...getStorefrontShareMetadata(restaurant, {
+      title,
+      description,
+      // Relative to the merchant's own root, resolved against the metadataBase
+      // in ../layout.tsx — so this is <slug>.kitchyn.app/menu even when the
+      // request arrived at kitchyn.app/<slug>/menu.
+      path: "/menu",
+    }),
   };
 }
 
@@ -85,8 +101,28 @@ export default async function MenuPage({ params }: MenuPageProps) {
     (cat) => (availableByCategory.get(cat.id) ?? 0) > 0 || soldOutSet.has(cat.id)
   );
 
+  const origin = storefrontOrigin(params.restaurant_slug);
+
   return (
     <div className="pb-24 bg-white min-h-screen">
+      {/* Menu structured data — the category/item/price tree, plus the site
+          hierarchy so results render "Spicesenz › Menu". Only the categories
+          actually rendered below are described. */}
+      <JsonLd
+        data={[
+          menuJsonLd({
+            restaurant,
+            origin,
+            categories: visibleCategories,
+            items,
+          }),
+          breadcrumbJsonLd(origin, [
+            { name: restaurant.name, path: "/" },
+            { name: "Menu", path: "/menu" },
+          ]),
+        ]}
+      />
+
       {/* Banner */}
       <div className="relative">
         {restaurant.banner_url ? (
@@ -134,8 +170,15 @@ export default async function MenuPage({ params }: MenuPageProps) {
             </div>
           )}
           <div className="flex-1 min-w-0">
+            {/* The visible label stays the bare restaurant name to keep this
+                compact info card unchanged, but the h1 has to say what the PAGE
+                is: the storefront home already uses "<name>" as its h1, and two
+                indexable URLs sharing one h1 gives Google no way to tell them
+                apart. The appended word is exposed to crawlers and screen
+                readers only. */}
             <h1 className="text-base font-bold text-black-900 leading-tight">
               {restaurant.name}
+              <span className="sr-only"> menu</span>
             </h1>
             {restaurant.description && (
               <p className="text-xs text-black-400 mt-0.5 line-clamp-2 leading-relaxed">

@@ -56,10 +56,13 @@ import {
   getRestaurantRatingSummary,
   getMenuItems,
   getMenuCategories,
+  listIndexableStorefronts,
 } from "@foodo/database";
 
 /** Tag for a restaurant's cached record. Revalidate after a settings save. */
 export const restaurantTag = (slug: string) => `restaurant:${slug}`;
+/** Tag for the sitemap's list of indexable storefronts. */
+export const storefrontIndexTag = "storefront-index";
 /** Tag for a restaurant's cached reviews/rating. Revalidate after a new review. */
 export const reviewsTag = (restaurantId: string) => `reviews:${restaurantId}`;
 /** Tag for a restaurant's cached menu (items + categories + availability). */
@@ -75,6 +78,23 @@ export const getCachedRestaurant = cache((slug: string) =>
     async () => getRestaurantBySlug(createServiceClient(), slug),
     ["restaurant-by-slug", slug],
     { tags: [restaurantTag(slug)], revalidate: 300 }
+  )()
+);
+
+/**
+ * Cached list of indexable storefronts for app/sitemap.ts. 1-hour TTL.
+ *
+ * sitemap.ts reads the Host header to decide which sitemap to serve, which opts
+ * the route into dynamic rendering — so without this the DB would be queried on
+ * every crawler hit. The merchant roster changes a few times a month, so an hour
+ * of staleness costs nothing and keeps bots off Supabase (see the 2026-06-11
+ * usage-exhaustion incident).
+ */
+export const getCachedIndexableStorefronts = cache(() =>
+  unstable_cache(
+    async () => listIndexableStorefronts(createServiceClient()),
+    ["indexable-storefronts"],
+    { tags: [storefrontIndexTag], revalidate: 3600 }
   )()
 );
 
