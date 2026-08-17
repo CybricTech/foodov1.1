@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { getPostHogClient } from "@/lib/posthog";
+import { isReservedSlug, storefrontUrl } from "@/lib/site";
 
 const OnboardSchema = z.object({
   name: z.string().min(2).max(100),
@@ -9,7 +10,12 @@ const OnboardSchema = z.object({
     .string()
     .min(2)
     .max(60)
-    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers and hyphens"),
+    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers and hyphens")
+    // The apex serves storefronts under a path prefix, so a slug matching a
+    // real top-level route would be shadowed by it. See lib/site.ts.
+    .refine((s) => !isReservedSlug(s), {
+      message: "That slug is reserved by the platform — pick another",
+    }),
   email: z.string().email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
   city: z.string().max(100).optional(),
@@ -139,7 +145,11 @@ export async function POST(request: NextRequest) {
   });
 
   // Send onboarding email via Edge Function (fire-and-forget)
-  const storefrontUrl = `${process.env.NEXT_PUBLIC_APP_URL}/${slug}`;
+  //
+  // The storefront link is the merchant's own subdomain, not the apex path form
+  // this used to send. That's the canonical URL (see lib/site.ts) and the one
+  // printed on their QR flyer, so the welcome email, the flyer and what Google
+  // indexes all agree — the merchant only ever learns one address for their shop.
   const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`;
 
   fetch(
@@ -157,7 +167,7 @@ export async function POST(request: NextRequest) {
           restaurantName: name,
           email,
           temporaryPassword: password,
-          storefrontUrl,
+          storefrontUrl: storefrontUrl(slug),
           dashboardUrl,
         },
       }),

@@ -126,6 +126,44 @@ export function isHostRootPath(pathname: string): boolean {
   return HOST_ROOT_PATHS.has(pathname);
 }
 
+/**
+ * Slugs a merchant may not take.
+ *
+ * The apex serves storefronts under a path prefix (kitchyn.app/<slug>), so any
+ * real route at the top level shadows a merchant with that slug — Next resolves
+ * a static segment before the [restaurant_slug] dynamic one. A merchant slugged
+ * "restaurants" would silently lose their apex URL to the partners page while
+ * their subdomain kept working, which is a confusing half-broken state to debug.
+ *
+ * Also covers the reserved subdomains, since <slug>.kitchyn.app has to be
+ * addressable too.
+ */
+const RESERVED_SLUGS = new Set([
+  // Top-level app routes
+  "api",
+  "ingest",
+  "admin",
+  "dashboard",
+  "delivery",
+  "logout",
+  "offline",
+  "restaurants",
+  // Host-root files
+  "robots.txt",
+  "sitemap.xml",
+  "manifest.webmanifest",
+  "favicon.ico",
+  "icon.png",
+  // Reserved subdomains
+  "www",
+  "staging",
+]);
+
+/** Whether a slug collides with a platform route or reserved subdomain. */
+export function isReservedSlug(slug: string): boolean {
+  return RESERVED_SLUGS.has(slug.trim().toLowerCase());
+}
+
 // ─── Canonical URL builders ─────────────────────────────────────────────────
 
 /** Origin of the marketing/apex site, e.g. `https://kitchyn.app`. */

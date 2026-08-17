@@ -68,6 +68,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         changeFrequency: "weekly",
         priority: 1,
       },
+      {
+        // The partners page is how crawlers reach the storefront subdomains, so
+        // it needs to be discovered early itself.
+        url: apexUrl("/restaurants"),
+        lastModified: new Date(),
+        changeFrequency: "weekly",
+        priority: 0.8,
+      },
       ...merchants.flatMap((m) => {
         const lastModified = new Date(m.updated_at);
         return [

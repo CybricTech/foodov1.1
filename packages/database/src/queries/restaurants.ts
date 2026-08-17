@@ -59,15 +59,23 @@ export async function getRestaurantBySlug(
   return data as unknown as Restaurant;
 }
 
-/** A publicly indexable storefront, as listed in the apex sitemap. */
+/**
+ * A publicly indexable storefront, as listed in the apex sitemap and on the
+ * /restaurants partners page. Every field here is already public on the
+ * storefront itself — nothing is exposed that a visitor couldn't already see.
+ */
 export interface IndexableStorefront {
   slug: string;
   name: string;
+  description: string | null;
+  logo_url: string | null;
+  city: string | null;
   updated_at: string;
 }
 
 /**
- * Every storefront that belongs in search results. Powers app/sitemap.ts.
+ * Every storefront that belongs in search results. Powers app/sitemap.ts and
+ * the /restaurants partners page.
  *
  * Two exclusions, both deliberate:
  *   - `is_active = false` — matches getRestaurantBySlug, which 404s them, so
@@ -85,7 +93,7 @@ export async function listIndexableStorefronts(
 ): Promise<IndexableStorefront[]> {
   const { data, error } = await client
     .from("restaurants")
-    .select("slug, name, updated_at")
+    .select("slug, name, description, logo_url, city, updated_at")
     .eq("is_active", true)
     .eq("is_test", false)
     .order("name", { ascending: true });

@@ -62,10 +62,30 @@ const STATS = [
   { value: "15+", label: "Restaurants in Abuja using Kitchyn" },
 ];
 
-const FOOTER_LINKS = {
-  Product: ["Platform", "Features", "Pricing", "Integrations"],
-  Company: ["About", "Blog", "Careers", "Press"],
-  Legal: ["Privacy", "Terms", "Contact", "Security"],
+// `href: null` means the destination page doesn't exist yet, and the entry
+// renders as plain text rather than a link. Pointing a real <a> at "#" tells
+// crawlers the site has a dozen internal links that all resolve to the homepage,
+// which is a genuine (if small) drag on how it gets crawled — and it's a dead
+// click for anyone who tries one.
+const FOOTER_LINKS: Record<string, Array<{ label: string; href: string | null }>> = {
+  Product: [
+    { label: "Platform", href: null },
+    { label: "Features", href: null },
+    { label: "Pricing", href: null },
+    { label: "Integrations", href: null },
+  ],
+  Company: [
+    { label: "Restaurants", href: "/restaurants" },
+    { label: "About", href: null },
+    { label: "Blog", href: null },
+    { label: "Careers", href: null },
+  ],
+  Legal: [
+    { label: "Privacy", href: null },
+    { label: "Terms", href: null },
+    { label: "Contact", href: null },
+    { label: "Security", href: null },
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -462,13 +482,17 @@ export default function LandingPage() {
                   </h3>
                   <ul className="space-y-3" role="list">
                     {links.map((item) => (
-                      <li key={item}>
-                        <Link
-                          href="#"
-                          className="text-sm text-white/40 hover:text-white transition-colors duration-200 cursor-pointer"
-                        >
-                          {item}
-                        </Link>
+                      <li key={item.label}>
+                        {item.href ? (
+                          <Link
+                            href={item.href}
+                            className="text-sm text-white/40 hover:text-white transition-colors duration-200 cursor-pointer"
+                          >
+                            {item.label}
+                          </Link>
+                        ) : (
+                          <span className="text-sm text-white/25">{item.label}</span>
+                        )}
                       </li>
                     ))}
                   </ul>

@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/server";
 import { MerchantDetailClient, type AgreementRow } from "@/components/admin/merchant-detail-client";
 import { MerchantSmsSenderCard } from "@/components/admin/merchant-sms-sender-card";
+import { MerchantSeoCard } from "@/components/admin/merchant-seo-card";
 import type { AuditRow } from "@/components/admin/audit-log-client";
+import { storefrontUrl } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -217,16 +219,23 @@ export default async function MerchantDetailPage({
           >
             QR flyer
           </Link>
-          <Link
-            href={`/${restaurant.slug}`}
+          {/* The merchant's canonical subdomain, not the apex path form — so
+              what an admin checks is what a customer and Google both see. */}
+          <a
+            href={storefrontUrl(restaurant.slug)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-purple-500 hover:text-purple-400 border border-purple-200 hover:border-purple-400 px-3 py-1.5 rounded-xl transition-colors"
           >
             View storefront &rarr;
-          </Link>
+          </a>
         </div>
       </div>
+
+      {/* Search readiness — which merchant-supplied fields the storefront's
+          metadata and structured data are missing, plus the off-page actions
+          that decide whether it ranks for the merchant's own name. */}
+      <MerchantSeoCard restaurant={restaurant} />
 
       {/* SMS sender ID management */}
       <MerchantSmsSenderCard
