@@ -1632,6 +1632,7 @@ export type Database = {
           bolt_booking_enabled: boolean
           bolt_booking_shadow: boolean
           bolt_environment: string
+          bolt_rider_contact_phone: string
           delivery_base_fee_kobo: number
           delivery_commission_pct: number
           delivery_max_fee_kobo: number
@@ -1655,6 +1656,7 @@ export type Database = {
           bolt_booking_enabled?: boolean
           bolt_booking_shadow?: boolean
           bolt_environment?: string
+          bolt_rider_contact_phone?: string
           delivery_base_fee_kobo?: number
           delivery_commission_pct?: number
           delivery_max_fee_kobo?: number
@@ -1678,6 +1680,7 @@ export type Database = {
           bolt_booking_enabled?: boolean
           bolt_booking_shadow?: boolean
           bolt_environment?: string
+          bolt_rider_contact_phone?: string
           delivery_base_fee_kobo?: number
           delivery_commission_pct?: number
           delivery_max_fee_kobo?: number

@@ -26,11 +26,12 @@ import {
 import { buildDriverNote } from "@/lib/delivery/driver-note";
 
 /**
- * The phone number registered as the "rider" on every Bolt trip we book —
- * never the customer's own number. Kept as one constant so it's a single
- * place to change platform-wide.
+ * Fallback only — used if `platform_settings.bolt_rider_contact_phone` is
+ * ever unreadable (row missing, query error). The live value is a setting,
+ * editable from admin Settings › Dispatch with no deploy required; see
+ * `readBoltSettings` below.
  */
-const BOLT_RIDER_CONTACT_PHONE = "+2348063662721";
+const DEFAULT_BOLT_RIDER_CONTACT_PHONE = "+2348063662721";
 
 /**
  * The name registered alongside BOLT_RIDER_CONTACT_PHONE. Deliberately not
@@ -53,24 +54,28 @@ export interface BoltSettings {
   enabled: boolean;
   shadow: boolean;
   environment: BoltEnvironment;
+  /** Registered "rider" contact phone for every booking — see BOLT_RIDER_CONTACT_NAME below. */
+  riderPhone: string;
 }
 
 export async function readBoltSettings(supabase: SupabaseClient): Promise<BoltSettings> {
   const { data } = await supabase
     .from("platform_settings")
-    .select("bolt_booking_enabled, bolt_booking_shadow, bolt_environment")
+    .select("bolt_booking_enabled, bolt_booking_shadow, bolt_environment, bolt_rider_contact_phone")
     .single();
 
   const row = data as {
     bolt_booking_enabled?: boolean;
     bolt_booking_shadow?: boolean;
     bolt_environment?: string;
+    bolt_rider_contact_phone?: string;
   } | null;
 
   return {
     enabled: row?.bolt_booking_enabled ?? false,
     shadow: row?.bolt_booking_shadow ?? true,
     environment: row?.bolt_environment === "production" ? "production" : "sandbox",
+    riderPhone: row?.bolt_rider_contact_phone || DEFAULT_BOLT_RIDER_CONTACT_PHONE,
   };
 }
 
@@ -254,7 +259,9 @@ export async function createRideAttempt(
       // customer number for the driver to call on arrival (buildDriverNote).
       // This is the operations line instead, so Bolt's own driver-facing
       // contact and any Bolt-side SMS/calls land in one consistent place.
-      riderPhone: BOLT_RIDER_CONTACT_PHONE,
+      // Sourced from platform_settings (readBoltSettings), not a constant —
+      // editable from admin Settings › Dispatch, takes effect immediately.
+      riderPhone: settings.riderPhone,
       noteToDriver,
     });
   } catch (err) {

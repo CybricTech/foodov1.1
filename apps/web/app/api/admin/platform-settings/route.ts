@@ -64,6 +64,7 @@ export async function PATCH(request: NextRequest) {
     bolt_booking_enabled?: boolean;
     bolt_booking_shadow?: boolean;
     bolt_environment?: string;
+    bolt_rider_contact_phone?: string;
     timed_rider_request_enabled?: boolean;
     rider_request_lead_minutes?: number;
   };
@@ -109,6 +110,20 @@ export async function PATCH(request: NextRequest) {
       );
     }
     allowed.rider_request_lead_minutes = Math.round(lead);
+  }
+  // This is the number Bolt's driver app dials/SMSes on every automated
+  // booking (real money, real driver, once bolt_booking_enabled is live) — a
+  // malformed value must be rejected here, matching the DB CHECK constraint,
+  // not left to fail loudly mid-booking.
+  if (updates.bolt_rider_contact_phone !== undefined) {
+    const phone = updates.bolt_rider_contact_phone.trim();
+    if (!/^\+[0-9]{10,15}$/.test(phone)) {
+      return NextResponse.json(
+        { error: "bolt_rider_contact_phone must be E.164 format, e.g. +2348012345678" },
+        { status: 400 }
+      );
+    }
+    allowed.bolt_rider_contact_phone = phone;
   }
 
   if (Object.keys(allowed).length === 0) {

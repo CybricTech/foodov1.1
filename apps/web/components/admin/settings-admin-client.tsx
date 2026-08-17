@@ -18,6 +18,7 @@ type PlatformSettings = {
   bolt_booking_enabled?: boolean | null;
   bolt_booking_shadow?: boolean | null;
   bolt_environment?: string | null;
+  bolt_rider_contact_phone?: string | null;
   timed_rider_request_enabled?: boolean | null;
   rider_request_lead_minutes?: number | null;
 } | null;
@@ -121,6 +122,9 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
   const [boltEnabled, setBoltEnabled] = useState(settings?.bolt_booking_enabled ?? false);
   const [boltShadow, setBoltShadow] = useState(settings?.bolt_booking_shadow ?? true);
   const [boltEnv, setBoltEnv] = useState(settings?.bolt_environment ?? "sandbox");
+  const [boltRiderPhone, setBoltRiderPhone] = useState(
+    settings?.bolt_rider_contact_phone ?? ""
+  );
   const [savingDispatch, setSavingDispatch] = useState(false);
   const [dispatchSaved, setDispatchSaved] = useState(false);
   const [dispatchError, setDispatchError] = useState("");
@@ -139,6 +143,7 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
           bolt_booking_enabled: boltEnabled,
           bolt_booking_shadow: boltShadow,
           bolt_environment: boltEnv,
+          bolt_rider_contact_phone: boltRiderPhone,
         }),
       });
       const data = await res.json();
@@ -643,6 +648,25 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
               <option value="sandbox">Sandbox (fake rides, no cost)</option>
               <option value="production">Production (real rides, real money)</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-black-500 mb-1">
+              Rider contact number
+            </label>
+            <input
+              type="tel"
+              value={boltRiderPhone}
+              onChange={(e) => setBoltRiderPhone(e.target.value)}
+              placeholder="+2348012345678"
+              className="w-48 border border-black-200 rounded-xl px-3 py-2 text-sm"
+            />
+            <p className="text-[11px] text-black-400 mt-1">
+              Registered as the &ldquo;rider&rdquo; on every automated Bolt
+              booking — never the customer&apos;s number. Bolt calls/SMSes this
+              line directly. Takes effect on the next booking as soon as you
+              save, no deploy needed.
+            </p>
           </div>
 
           {boltEnabled && !boltShadow && boltEnv === "production" && (
