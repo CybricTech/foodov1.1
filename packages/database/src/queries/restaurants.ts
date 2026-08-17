@@ -59,6 +59,41 @@ export async function getRestaurantBySlug(
   return data as unknown as Restaurant;
 }
 
+/** A publicly indexable storefront, as listed in the apex sitemap. */
+export interface IndexableStorefront {
+  slug: string;
+  name: string;
+  updated_at: string;
+}
+
+/**
+ * Every storefront that belongs in search results. Powers app/sitemap.ts.
+ *
+ * Two exclusions, both deliberate:
+ *   - `is_active = false` — matches getRestaurantBySlug, which 404s them, so
+ *     listing them would feed Google URLs that don't resolve.
+ *   - `is_test = true`    — internal test merchants (the-copper-pot) keep a
+ *     fully working storefront by design (migration 069) but must never be
+ *     indexed or shown to a searcher.
+ *
+ * Narrow projection on purpose: this runs on the service client, so selecting
+ * only what the sitemap needs keeps it structurally incapable of leaking the
+ * banking columns that STOREFRONT_RESTAURANT_COLUMNS exists to fence off.
+ */
+export async function listIndexableStorefronts(
+  client: TypedSupabaseClient
+): Promise<IndexableStorefront[]> {
+  const { data, error } = await client
+    .from("restaurants")
+    .select("slug, name, updated_at")
+    .eq("is_active", true)
+    .eq("is_test", false)
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as unknown as IndexableStorefront[];
+}
+
 /**
  * Get a restaurant by its ID.
  * Used in dashboard and admin contexts.

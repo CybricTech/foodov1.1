@@ -6,16 +6,14 @@
  */
 
 /**
- * Public storefront domain. Storefronts live at `{slug}.kitchyn.app` (handled by
- * middleware). Overridable for staging/preview via NEXT_PUBLIC_STOREFRONT_DOMAIN.
+ * Storefront domain/host helpers live in lib/site.ts — the same module the
+ * canonical URLs in page metadata and the sitemap are built from, so the URL a
+ * customer scans off a flyer is by construction the URL Google indexes.
+ * Re-exported here because the flyer components have always imported them from
+ * this module.
  */
-export const STOREFRONT_DOMAIN =
-  process.env.NEXT_PUBLIC_STOREFRONT_DOMAIN?.trim() || "kitchyn.app";
-
-/** Human-readable domain shown as the "Can't scan?" fallback, e.g. `arome.kitchyn.app`. */
-export function storefrontHost(slug: string): string {
-  return `${slug}.${STOREFRONT_DOMAIN}`;
-}
+export { STOREFRONT_DOMAIN, storefrontHost } from "./site";
+import { storefrontHost } from "./site";
 
 /** Absolute URL the QR code encodes. UTM tags let PostHog attribute QR-driven visits. */
 export function storefrontQrUrl(slug: string): string {

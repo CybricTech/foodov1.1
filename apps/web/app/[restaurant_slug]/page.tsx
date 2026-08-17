@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,6 +18,13 @@ import { ReviewsSection } from "@/components/storefront/reviews-section";
 import { LocationSection } from "@/components/storefront/location-section";
 import { ActiveOrderBanner } from "@/components/storefront/active-order-banner";
 import { getStorefrontShareMetadata } from "@/lib/storefront-metadata";
+import { JsonLd } from "@/components/seo/json-ld";
+import { restaurantJsonLd } from "@/lib/seo/json-ld";
+import {
+  buildStorefrontDescription,
+  buildStorefrontTitle,
+} from "@/lib/seo/metadata";
+import { storefrontOrigin } from "@/lib/site";
 
 export const revalidate = 60;
 
@@ -30,15 +38,21 @@ interface StorefrontPageProps {
   params: { restaurant_slug: string };
 }
 
-export async function generateMetadata({ params }: StorefrontPageProps) {
+export async function generateMetadata({
+  params,
+}: StorefrontPageProps): Promise<Metadata> {
   const restaurant = await getCachedRestaurant(params.restaurant_slug);
   if (!restaurant) return {};
-  const title = restaurant.name;
-  const description = restaurant.description ?? `Order from ${restaurant.name}`;
+
+  const title = buildStorefrontTitle(restaurant);
+  const description = buildStorefrontDescription(restaurant);
+
   return {
-    title,
+    // `absolute` bypasses the merchant title template from the layout — this page
+    // owns its whole title string, leading with the restaurant's name.
+    title: { absolute: title },
     description,
-    ...getStorefrontShareMetadata(restaurant, { title, description }),
+    ...getStorefrontShareMetadata(restaurant, { title, description, path: "/" }),
   };
 }
 
@@ -80,8 +94,29 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
     !!restaurant.min_order_amount ||
     singleMethod;
 
+  // Structured data for the Restaurant entity. Built from data already fetched
+  // above — no extra queries. Guarded internally so sparsely-filled merchants
+  // emit a smaller-but-valid node rather than one full of nulls.
+  const origin = storefrontOrigin(params.restaurant_slug);
+
   return (
     <>
+      <JsonLd
+        data={restaurantJsonLd({
+          restaurant,
+          origin,
+          items,
+          rating: ratingSummary,
+          images: {
+            banner: restaurant.banner_url
+              ? transformImage(restaurant.banner_url, { width: 600, height: 315, quality: 80 })
+              : undefined,
+            logo: restaurant.logo_url
+              ? transformImage(restaurant.logo_url, { width: 200, height: 200, quality: 85 })
+              : undefined,
+          },
+        })}
+      />
       <ActiveOrderBanner />
     <div className="min-h-screen bg-white">
       {/* ── Hero ── */}
