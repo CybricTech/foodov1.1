@@ -81,16 +81,20 @@ export const SMS_EVENT_TYPES = [
 export type SmsEventType = (typeof SMS_EVENT_TYPES)[number];
 
 // ─── SMS Providers ───────────────────────────────────────────────────────────
-// "twilio" and "interakt" are retained for historical sms_logs rows only —
-// neither has a live send path. Twilio was dropped when merchant WhatsApp first
-// moved to a BSP (106); Interakt was replaced by Infobip (107).
-// "infobip" is the current WhatsApp BSP and is WhatsApp-only — no SMS.
+// "termii", "twilio" and "interakt" are retained for historical sms_logs rows
+// only — none has a live send path. Twilio was dropped when merchant WhatsApp
+// first moved to a BSP (106); Interakt was replaced by Infobip (107); Termii
+// was removed 2026-08-18 after failing every merchant alert for a day straight.
+// "sendchamp" is the only SMS sender. "infobip" is the eventual WhatsApp BSP
+// (configured by env, currently inert) and "wacli" is the self-hosted WhatsApp
+// bridge carrying merchant alerts today — both are WhatsApp-only, no SMS.
 export const SMS_PROVIDERS = [
   "termii",
   "twilio",
   "sendchamp",
   "interakt",
   "infobip",
+  "wacli",
 ] as const;
 export type SmsProvider = (typeof SMS_PROVIDERS)[number];
 
