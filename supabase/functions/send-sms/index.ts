@@ -58,32 +58,39 @@ const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // this exact value as its bearer, so this is a same-value comparison, not a
 // new credential.
 const CRON_ENGINE_KEY = Deno.env.get("CRON_ENGINE_KEY") ?? SUPABASE_SERVICE_KEY;
+
+// ── Sendchamp (the only SMS provider) ────────────────────────────────────────
+// Termii and Twilio were removed 2026-08-18. Both had been failing 100% of
+// merchant alerts for at least a day before anyone noticed, and neither was
+// worth keeping once wacli covered WhatsApp: Sendchamp already carried every
+// customer notification successfully and now carries the SMS fallback too.
 const SENDCHAMP_API_KEY = Deno.env.get("SENDCHAMP_API_KEY")!;
 const SENDCHAMP_DEFAULT_SENDER_ID = Deno.env.get("SENDCHAMP_DEFAULT_SENDER_ID") ?? "Kitchyn";
 const SENDCHAMP_ROUTE = Deno.env.get("SENDCHAMP_ROUTE") ?? "non_dnd";
-const TERMII_API_KEY = Deno.env.get("TERMII_API_KEY")!;
-const TERMII_SENDER_ID = Deno.env.get("TERMII_SENDER_ID") ?? "Foodo";
 
 // ── Infobip (Meta WhatsApp Business API BSP) ─────────────────────────────────
-// Infobip sends APPROVED TEMPLATES ONLY — free-form text is not accepted for
-// business-initiated messages. Merchant order alerts are business-initiated
-// (the merchant never messaged us first), so the 24-hour customer-service
-// window never applies and a template is mandatory on every send. Switching
-// BSP does not change this: it is a Meta platform rule, not a vendor one.
+// The eventual official path. Currently unconfigured, and while any of these
+// are unset sendViaInfobip returns immediately without a network call — so it
+// costs nothing to leave wired up, and switching to it later is env-only.
 //
-// INFOBIP_BASE_URL is ACCOUNT-SPECIFIC (e.g. xxxxx.api.infobip.com) — there is
-// no shared host to hardcode, so it must be configured per environment.
-// INFOBIP_SENDER is the registered WhatsApp sender number the alert comes from.
-//
-// Until INFOBIP_API_KEY, INFOBIP_BASE_URL and INFOBIP_SENDER are all set the
-// WhatsApp path is skipped and merchants fall through to SMS, so deploying
-// ahead of sender registration and template approval is safe.
+// Infobip sends APPROVED TEMPLATES ONLY: business-initiated WhatsApp messages
+// can't be free-form. That is a Meta platform rule, not a vendor one, and it
+// is the reason the rich multi-line message below can't be sent through it —
+// see docs/infobip-whatsapp-migration.md.
 const INFOBIP_API_KEY = Deno.env.get("INFOBIP_API_KEY");
 const INFOBIP_BASE_URL = Deno.env.get("INFOBIP_BASE_URL");
 const INFOBIP_SENDER = Deno.env.get("INFOBIP_SENDER");
 const INFOBIP_TEMPLATE_NAME =
   Deno.env.get("INFOBIP_TEMPLATE_NAME") ?? "new_order_merchant";
 const INFOBIP_TEMPLATE_LANG = Deno.env.get("INFOBIP_TEMPLATE_LANG") ?? "en";
+
+// ── wacli (self-hosted WhatsApp bridge — the live merchant lane) ─────────────
+// Queues to whatsapp_outbox for a Raspberry Pi running wacli to deliver.
+// DEFAULT ON: this is the only working WhatsApp path today, and a missing env
+// var must not silently disable merchant order alerts. Set explicitly to
+// "false" to fall back to SMS.
+const WACLI_OUTBOX_ENABLED =
+  (Deno.env.get("WACLI_OUTBOX_ENABLED") ?? "").toLowerCase() !== "false";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -248,12 +255,12 @@ function normalizePhoneE164(raw: string): string {
   return digits;
 }
 
-// ── Send via Sendchamp (SMS — customer order notifications) ───────────────────
+// ── Send via Sendchamp (SMS — customers, and the merchant fallback) ───────────
 async function sendViaSendchamp(
   phone: string,
   message: string,
   senderName: string
-): Promise<boolean> {
+): Promise<{ ok: boolean; messageId: string | null }> {
   const res = await fetch("https://api.sendchamp.com/api/v1/sms/send", {
     method: "POST",
     headers: {
@@ -280,77 +287,19 @@ async function sendViaSendchamp(
   return { ok: body.status === "success", messageId };
 }
 
-// ── Send via Termii (SMS — generic channel) ───────────────────────────────────
-async function sendViaTermii(
-  phone: string,
-  message: string
-): Promise<boolean> {
-  const res = await fetch("https://v3.api.termii.com/api/sms/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      to: phone,
-      from: TERMII_SENDER_ID,
-      sms: message,
-      type: "plain",
-      api_key: TERMII_API_KEY,
-      channel: "generic",
-    }),
-  });
-
-  if (res.status === 429) {
-    // Rate limited — exponential backoff handled by pg_cron retry
-    return false;
-  }
-
-  const body = await res.json().catch(() => ({}));
-  return res.ok && body.code !== "err";
-}
-
-// ── Send via Termii (WhatsApp channel) ────────────────────────────────────────
-async function sendViaTermiiWhatsApp(
-  phone: string,
-  message: string
-): Promise<boolean> {
-  const res = await fetch("https://v3.api.termii.com/api/sms/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      to: phone,
-      from: TERMII_SENDER_ID,
-      sms: message,
-      type: "plain",
-      api_key: TERMII_API_KEY,
-      channel: "whatsapp",
-    }),
-  });
-
-  if (res.status === 429) return false;
-  const body = await res.json().catch(() => ({}));
-  return res.ok && body.code !== "err";
-}
-
 // ── Send via Infobip (WhatsApp template) ──────────────────────────────────────
 /**
- * Sends the approved merchant new-order template.
+ * Sends the approved merchant new-order template. Inert until INFOBIP_API_KEY,
+ * INFOBIP_BASE_URL and INFOBIP_SENDER are all set — it returns without a
+ * network call, so the wacli lane below takes over at zero cost.
  *
  * Placeholders are POSITIONAL and must match the approved template exactly — a
  * count mismatch fails the send. Order:
  *   {{1}} order number   {{2}} customer name   {{3}} item count
  *   {{4}} order total    {{5}} fulfillment type
  *
- * No `buttons` are sent: the template's "View Order" button is a STATIC URL to
- * the orders board, and a static button takes no runtime parameter. Revisit if
- * the board ever learns to open a specific order from a query param — today it
- * ignores them, so a per-order dynamic URL would look like a deep link while
- * landing on the plain board.
- *
  * Values are deliberately short single-line strings: WhatsApp rejects template
- * parameters containing newlines, tabs or long runs of spaces, which is why the
- * rich multi-line message used for SMS cannot be ported here as-is.
- *
- * `to` takes the already-normalized international number (no '+'), so unlike
- * the previous BSP integration there is no country restriction here.
+ * parameters containing newlines, tabs or long runs of spaces.
  */
 async function sendViaInfobip(
   phone: string,
@@ -426,9 +375,44 @@ async function sendViaInfobip(
     console.error(`Infobip rejected message: ${JSON.stringify(msg?.status)}`);
     return { ok: false, messageId: null };
   }
-  // PENDING/ACCEPTED only means accepted for delivery — the real
-  // DELIVERED/EXPIRED/REJECTED outcome arrives later on the status webhook.
   return { ok: true, messageId: msg?.messageId ?? null };
+}
+
+// ── Queue for wacli (self-hosted WhatsApp bridge) ────────────────────────────
+// Hands the fully-rendered message to whatsapp_outbox. Unlike every other
+// sender here this does NOT mean "delivered" — a Pi running wacli picks it up
+// within ~10s and reports back through wacli-relay. If that Pi is down, the
+// wacli-health watchdog emails rather than letting the alert vanish silently.
+async function queueForWacli(params: {
+  restaurantId: string;
+  orderId: string;
+  logId: string | null;
+  toNumber: string;
+  message: string;
+}): Promise<boolean> {
+  const { error } = await supabase.from("whatsapp_outbox").insert({
+    restaurant_id: params.restaurantId,
+    order_id: params.orderId,
+    sms_log_id: params.logId,
+    to_number: params.toNumber,
+    message: params.message,
+  });
+
+  if (error) {
+    console.error("[send-sms] whatsapp_outbox insert failed:", error);
+    return false;
+  }
+
+  // Log stays 'queued' — the Pi flips it to sent/failed via wacli-relay once
+  // it has actually delivered. Provider is corrected so the SMS Logs screen
+  // doesn't attribute a queued wacli message to Infobip.
+  if (params.logId) {
+    await supabase
+      .from("sms_logs")
+      .update({ provider: "wacli", channel: "whatsapp" })
+      .eq("id", params.logId);
+  }
+  return true;
 }
 
 // ── Helper: log to sms_logs ───────────────────────────────────────────────────
@@ -475,7 +459,7 @@ async function updateLog(
   status: "sent" | "failed",
   provider: string,
   channel: "sms" | "whatsapp",
-  /** Provider-side message id — Infobip's, for its delivery-status webhook. */
+  /** Provider-side message id, for delivery-status lookups. */
   providerRef?: string | null
 ) {
   await supabase
@@ -521,13 +505,14 @@ serve(async (req) => {
   const restaurantName = restaurant?.name ?? "the restaurant";
 
   // Per-restaurant sender ID — only used when Sendchamp has approved it.
-  // Otherwise fall back to the platform default (e.g. "Foodo").
+  // Otherwise fall back to the platform default (e.g. "Kitchyn").
   const sendchampSender =
     restaurant?.sms_sender_status === "approved" && restaurant?.sms_sender_id
       ? restaurant.sms_sender_id
       : SENDCHAMP_DEFAULT_SENDER_ID;
 
-  // ── Merchant new order alerts: WhatsApp with SMS fallback ───────────────
+  // ── Merchant new order alerts ───────────────────────────────────────────
+  // Ladder: Infobip (when configured) → wacli outbox → Sendchamp SMS.
   if (eventType === "new_order_merchant") {
     // Fetch full order + items for rich message
     const { data: order } = await supabase
@@ -558,7 +543,7 @@ serve(async (req) => {
 
     const whatsappNumber = restaurant?.whatsapp_number;
     let sent = false;
-    let provider = "termii";
+    let provider = "sendchamp";
     let channel: "sms" | "whatsapp" = "sms";
     const recipientPhone = whatsappNumber ?? restaurant?.phone;
 
@@ -569,24 +554,20 @@ serve(async (req) => {
       );
     }
 
-    // Determine which message to build
-    let messageToSend: string;
-
     if (whatsappNumber && order) {
-      // WhatsApp via Infobip — an approved template, not free-form text.
-      // message_body still records the human-readable summary so the SMS Logs
-      // screen stays readable; the wire payload is the template's variables.
+      const richMessage = buildWhatsAppOrderMessage(order);
       const itemCount = order.order_items.reduce(
         (sum, item) => sum + item.quantity,
         0
       );
-      messageToSend = buildWhatsAppOrderMessage(order);
-      provider = "infobip";
+
+      // message_body records the human-readable summary so the SMS Logs screen
+      // stays readable regardless of which lane actually carries it.
       const logId = await createLog({
         restaurantId,
         orderId,
         phone: whatsappNumber,
-        message: messageToSend,
+        message: richMessage,
         eventType,
         provider: "infobip",
         channel: "whatsapp",
@@ -594,69 +575,77 @@ serve(async (req) => {
       });
 
       const result = await sendViaInfobip(whatsappNumber, {
-        orderNumber,
+        orderNumber: String(orderNumber ?? order.order_number),
         customerName: order.customer_name ?? "Guest",
         itemCount,
         totalKobo: order.total_kobo,
         fulfillmentType: order.fulfillment_type,
         orderId,
       });
-      sent = result.ok;
-      channel = "whatsapp";
 
-      if (!sent) {
-        // Template rejected, config missing, or Infobip unreachable — the
-        // merchant still has to learn an order arrived, so drop to SMS on the
-        // same number. Provider flips so the log reflects what actually sent.
-        const simpleMessage = buildMessage(eventType, orderNumber, restaurantName);
-        sent = await sendViaTermii(whatsappNumber, simpleMessage);
-        provider = "termii";
-        channel = "sms";
-        messageToSend = simpleMessage;
-      }
-
-      if (logId) {
-        await updateLog(
+      if (result.ok) {
+        sent = true;
+        provider = "infobip";
+        channel = "whatsapp";
+        if (logId) await updateLog(logId, "sent", provider, channel, result.messageId);
+      } else if (
+        WACLI_OUTBOX_ENABLED &&
+        (await queueForWacli({
+          restaurantId,
+          orderId,
           logId,
-          sent ? "sent" : "failed",
-          provider,
-          channel,
-          result.messageId
+          toNumber: whatsappNumber,
+          message: richMessage,
+        }))
+      ) {
+        // Queued, not delivered — the log deliberately stays 'queued' until
+        // the Pi reports back through wacli-relay.
+        sent = true;
+        provider = "wacli";
+        channel = "whatsapp";
+      } else {
+        // No WhatsApp lane available at all — the merchant still has to learn
+        // an order arrived, so drop to plain SMS on the same number.
+        const simpleMessage = buildMessage(eventType, orderNumber, restaurantName);
+        const smsResult = await sendViaSendchamp(
+          normalizePhoneE164(whatsappNumber),
+          simpleMessage,
+          sendchampSender
         );
+        sent = smsResult.ok;
+        provider = "sendchamp";
+        channel = "sms";
+        if (logId) {
+          await updateLog(logId, sent ? "sent" : "failed", provider, channel, smsResult.messageId);
+        }
       }
     } else {
-      // No WhatsApp number — send SMS on restaurant phone
-      messageToSend = buildMessage(eventType, orderNumber, restaurantName);
+      // No WhatsApp number — SMS on the restaurant phone.
+      const simpleMessage = buildMessage(eventType, orderNumber, restaurantName);
+      const normalized = normalizePhoneE164(recipientPhone);
       const logId = await createLog({
         restaurantId,
         orderId,
-        phone: recipientPhone,
-        message: messageToSend,
+        phone: normalized,
+        message: simpleMessage,
         eventType,
-        provider: "termii",
+        provider: "sendchamp",
         channel: "sms",
         status: "queued",
       });
 
-      // Termii is the only SMS path now — the Twilio fallback was retired with
-      // the Infobip migration. A Termii failure here is terminal for this
-      // send; pg_cron retries cover transient outages.
-      sent = await sendViaTermii(recipientPhone, messageToSend);
+      const smsResult = await sendViaSendchamp(normalized, simpleMessage, sendchampSender);
+      sent = smsResult.ok;
 
       if (logId) {
-        await updateLog(logId, sent ? "sent" : "failed", provider, "sms");
+        await updateLog(logId, sent ? "sent" : "failed", "sendchamp", "sms", smsResult.messageId);
       }
     }
 
     // ── Admin copy (fire-and-forget) ──────────────────────────────────────
-    // STILL ON TERMII WHATSAPP, deliberately. Moving this to Infobip needs a
-    // SECOND approved template (the admin variant is prefixed with the
-    // restaurant name, so it has a different variable set) and only one
-    // template — the merchant new-order alert — has been submitted. Termii's
-    // WhatsApp channel keeps working, so this path is left untouched rather
-    // than pointed at a template that does not exist. Revisit once an admin
-    // template is approved.
-    if (order) {
+    // Rides the same wacli lane as the merchant alert. Never blocks and never
+    // fails the merchant notification.
+    if (order && WACLI_OUTBOX_ENABLED) {
       const { data: platformSettings } = await supabase
         .from("platform_settings")
         .select("admin_whatsapp_number")
@@ -666,21 +655,25 @@ serve(async (req) => {
 
       if (adminWhatsappNumber) {
         const adminMessage = buildAdminWhatsAppOrderMessage(order, restaurantName);
-
-        // Fire-and-forget: send + log
-        sendViaTermiiWhatsApp(adminWhatsappNumber, adminMessage)
-          .then(async (adminSent) => {
-            await createLog({
+        createLog({
+          restaurantId,
+          orderId,
+          phone: adminWhatsappNumber,
+          message: adminMessage,
+          eventType,
+          provider: "wacli",
+          channel: "whatsapp",
+          status: "queued",
+        })
+          .then((adminLogId) =>
+            queueForWacli({
               restaurantId,
               orderId,
-              phone: adminWhatsappNumber,
+              logId: adminLogId,
+              toNumber: adminWhatsappNumber,
               message: adminMessage,
-              eventType,
-              provider: "termii",
-              channel: "whatsapp",
-              status: adminSent ? "sent" : "failed",
-            });
-          })
+            })
+          )
           .catch(console.error);
       }
     }
@@ -729,11 +722,7 @@ serve(async (req) => {
   const { ok: sent, messageId } = await sendViaSendchamp(normalizedPhone, message, sendchampSender);
 
   if (logId) {
-    await updateLog(logId, sent ? "sent" : "failed", "sendchamp", "sms");
-    // Store Sendchamp's message ID for future delivery status lookups
-    if (messageId) {
-      await supabase.from("sms_logs").update({ provider_ref: messageId }).eq("id", logId);
-    }
+    await updateLog(logId, sent ? "sent" : "failed", "sendchamp", "sms", messageId);
   }
 
   return new Response(
