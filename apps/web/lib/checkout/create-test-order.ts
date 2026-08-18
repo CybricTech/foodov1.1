@@ -21,10 +21,12 @@ import {
  * Loyalty accrual (earn + redeem) is recorded via loyalty_accrue_for_order once
  * order_items exist.
  *
- * The ONLY thing a test order skips vs a real order is customer SMS/email — we
- * don't want to spam notifications on every test. Pending balance + settlements
- * are derived from `orders` (recompute_restaurant_wallet + canonical net), so
- * payout figures are correct regardless.
+ * The ONLY thing a test order skips vs a real order is the CUSTOMER SMS/email —
+ * there's no point texting a fake buyer. The MERCHANT alert (WhatsApp/SMS via
+ * send-sms, plus push) DOES fire, so the notification path can be rehearsed
+ * end-to-end from the storefront. Pending balance + settlements are derived
+ * from `orders` (recompute_restaurant_wallet + canonical net), so payout
+ * figures are correct regardless.
  *
  * GATING: callers MUST confirm restaurant.is_test before invoking this. It is
  * never reachable for a real merchant.
@@ -254,6 +256,41 @@ export async function createTestOrder(
   // Accrue loyalty (earn + redeem) now that order_items exist.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (supabase.rpc as any)("loyalty_accrue_for_order", { p_order_id: order.id });
+
+  // ── Merchant alert (NOT the customer's) ─────────────────────────────────
+  // Deliberately fired for test orders too. The customer notification stays
+  // skipped — no point texting a fake buyer — but the merchant alert is the
+  // single most important thing to be able to rehearse, and skipping it left
+  // the WhatsApp/push path with no way to exercise it end-to-end from the
+  // storefront: the only is_test merchant was also the only safe one to order
+  // from. Fire-and-forget; a notification failure must never fail the order.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (supabaseUrl && serviceKey) {
+    const notify = (fn: string, body: Record<string, unknown>) =>
+      fetch(`${supabaseUrl}/functions/v1/${fn}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${serviceKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }).catch(console.error);
+
+    void notify("send-sms", {
+      restaurantId,
+      eventType: "new_order_merchant",
+      orderId: order.id,
+      orderNumber: order.order_number,
+    });
+    void notify("send-push", {
+      restaurantId,
+      orderId: order.id,
+      orderNumber: order.order_number,
+      totalKobo: orderTotalKobo,
+      customerName: str("customer_name") ?? "Test Order",
+    });
+  }
 
   return { orderId: order.id, orderNumber: order.order_number };
 }
