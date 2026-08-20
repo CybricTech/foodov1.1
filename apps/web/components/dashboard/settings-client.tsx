@@ -8,6 +8,7 @@ import { ImagePlus, UserPlus, Trash2, KeyRound, Eye, EyeOff, ExternalLink, Plus,
 import type { Restaurant } from "@foodo/database";
 import { FocalPointPicker, type FocalPoint } from "./focal-point-picker";
 import { AddressPicker, type VerifiedAddress } from "@/components/shared/address-picker";
+import { PickupPointPicker } from "@/components/shared/pickup-point-picker";
 import {
   normalizeSchedulingSettings,
   resolveDispatchPolicy,
@@ -501,6 +502,43 @@ function RestaurantLocationSection({
           {saving ? "Saving…" : saved ? "Saved!" : "Save location"}
         </button>
       </form>
+    </Section>
+  );
+}
+
+/**
+ * Where a rider should stop, as distinct from where the business is.
+ *
+ * Separate from the address section on purpose: the address is what customers
+ * see and what delivery fees are measured from, and merchants understandably
+ * treat it as settled once it's confirmed. Where a motorbike should wait is a
+ * different question — the gate rather than the building, the right side of a
+ * divided road — and it only has an answer once the address exists, which is
+ * why this stays hidden until then.
+ */
+function RiderPickupPointSection({
+  verified,
+  initialLabel,
+  initialIsStorefront,
+}: {
+  verified: boolean;
+  initialLabel: string | null;
+  initialIsStorefront: boolean;
+}) {
+  if (!verified) return null;
+
+  return (
+    <Section title="Rider pickup point">
+      <p className="text-xs text-black-400">
+        Riders are given a street name, not your business name — so if the name they get is the
+        road behind you, they arrive on the wrong side and call to ask. Check what they&apos;re
+        told, and move the pickup to the street your entrance is on.
+      </p>
+      <PickupPointPicker
+        endpoint="/api/merchant/pickup-point"
+        initialLabel={initialLabel}
+        initialIsStorefront={initialIsStorefront}
+      />
     </Section>
   );
 }
@@ -1517,6 +1555,20 @@ export function SettingsClient({
                 .location_verified_at
             }
             initialMaxRadius={r.max_delivery_radius_km ?? null}
+          />
+
+          {/* Rider pickup point */}
+          <RiderPickupPointSection
+            verified={
+              !!(r as RestaurantExtended & { location_verified_at?: string | null })
+                .location_verified_at
+            }
+            initialLabel={
+              (r as RestaurantExtended & { pickup_label?: string | null }).pickup_label ?? null
+            }
+            initialIsStorefront={
+              (r as RestaurantExtended & { pickup_lat?: number | null }).pickup_lat == null
+            }
           />
 
           {/* Staff management */}

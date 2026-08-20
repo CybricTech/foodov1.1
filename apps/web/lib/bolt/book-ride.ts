@@ -154,6 +154,9 @@ interface RestaurantRow {
   latitude: number | null;
   longitude: number | null;
   location_verified_at: string | null;
+  /** Optional override for where the rider stops — see migration 20260820120000. */
+  pickup_lat: number | null;
+  pickup_lng: number | null;
 }
 
 /**
@@ -190,10 +193,18 @@ export async function createRideAttempt(
 
   const { data: restaurantData } = await supabase
     .from("restaurants")
-    .select("name, address, latitude, longitude, location_verified_at")
+    .select("name, address, latitude, longitude, location_verified_at, pickup_lat, pickup_lng")
     .eq("id", order.restaurant_id)
     .single();
   const restaurant = restaurantData as RestaurantRow | null;
+
+  // Where the rider is actually sent. Defaults to the storefront, which is the
+  // venue centroid — correct as a location, but not always where a bike should
+  // stop. A store that has chosen a pickup point overrides it here and only
+  // here: delivery pricing keeps measuring from latitude/longitude, because a
+  // pickup point is allowed to sit tens of metres away.
+  const pickupLat = restaurant?.pickup_lat ?? restaurant?.latitude ?? null;
+  const pickupLng = restaurant?.pickup_lng ?? restaurant?.longitude ?? null;
 
   const attempt = ((attemptRows as { attempt: number }[] | null)?.[0]?.attempt ?? 0) + 1;
 
@@ -216,8 +227,8 @@ export async function createRideAttempt(
       environment: settings.environment,
       state: "PENDING_CREATE",
       note_to_driver: noteToDriver,
-      pickup_lat: restaurant?.latitude ?? null,
-      pickup_lng: restaurant?.longitude ?? null,
+      pickup_lat: pickupLat,
+      pickup_lng: pickupLng,
       dropoff_lat: order.delivery_lat,
       dropoff_lng: order.delivery_lng,
     })
@@ -250,7 +261,7 @@ export async function createRideAttempt(
   };
 
   // ── Pickup must be a confirmed address ────────────────────────────────────
-  if (!restaurant?.location_verified_at || restaurant.latitude == null || restaurant.longitude == null) {
+  if (!restaurant?.location_verified_at || pickupLat == null || pickupLng == null) {
     return fail("store address is not confirmed — set it in Settings › Restaurant location");
   }
   if (order.delivery_lat == null || order.delivery_lng == null) {
@@ -264,7 +275,7 @@ export async function createRideAttempt(
   // Coordinates only — Bolt's schema says not to send `address` unless they've
   // told you to. The human-readable addresses travel in note_to_driver instead.
   const stops: BoltStop[] = [
-    { lat: Number(restaurant.latitude), lng: Number(restaurant.longitude) },
+    { lat: Number(pickupLat), lng: Number(pickupLng) },
     { lat: Number(order.delivery_lat), lng: Number(order.delivery_lng) },
   ];
 

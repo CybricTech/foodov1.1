@@ -415,6 +415,28 @@ export interface BoltLocation {
   bearing?: number;
 }
 
+/**
+ * A named stop inside a Bolt-defined custom area (airport ranks, mall bays).
+ * Curated by Bolt, not something a reseller can populate — the only place in
+ * the whole API where a pickup carries a human name rather than a street.
+ */
+export interface BoltCustomLocation {
+  lat: number;
+  lng: number;
+  address: string;
+  name: string;
+}
+
+export interface BoltPlaceDetails {
+  place: { lat: number; lng: number; address: string };
+  custom_area?: {
+    name: string;
+    /** When true, only the listed points may be used as stops in this zone. */
+    is_restricted: boolean;
+    points?: BoltCustomLocation[];
+  } | null;
+}
+
 export interface BoltHistoryRide {
   ride_id: number;
   created?: string;
@@ -510,6 +532,33 @@ export async function getRideReceipt(
   rideId: number
 ): Promise<BoltReceipt> {
   return boltFetch<BoltReceipt>("/rides/receipt", { env, query: { ride_id: rideId } });
+}
+
+/**
+ * The address Bolt resolves for a coordinate — i.e. what a driver would be told
+ * if we booked a pickup there.
+ *
+ * Bolt has no venue name for any of our stores: all 14 with coordinates
+ * reverse-geocode to a street, none to a business. The label is simply the
+ * nearest road to the point we send, which means it moves with the pin — often
+ * within 30m. That makes this endpoint the feedback loop for choosing a pickup
+ * point: probe a candidate, see what the rider would be told, before committing.
+ *
+ * `is_pickup` is not cosmetic — Bolt evaluates pickup and dropoff areas
+ * differently, and `custom_area` comes back only when the point falls inside a
+ * zone with defined stop points (none of our stores do, as of 2026-08-20).
+ */
+export async function getPlaceDetails(
+  env: BoltEnvironment,
+  lat: number,
+  lng: number,
+  isPickup = true
+): Promise<BoltPlaceDetails> {
+  return boltFetch<BoltPlaceDetails>("/rides/place/details", {
+    env,
+    method: "POST",
+    body: { lat, lng, is_pickup: isPickup, language: "en" },
+  });
 }
 
 /** Cancel a ride. Only possible before the passenger is picked up. */
