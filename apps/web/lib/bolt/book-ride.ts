@@ -19,6 +19,7 @@ import {
   BoltApiError,
   createRide,
   estimateRide,
+  isAddressRejection,
   selectMotorbikeFare,
   type BoltEnvironment,
   type BoltStop,
@@ -268,15 +269,32 @@ export async function createRideAttempt(
     return fail("order has no delivery coordinates");
   }
 
-  // Built once and reused verbatim for both calls: the fare_id is single-use,
-  // expires in 5 minutes, and Bolt rejects a create whose stops differ at all
-  // from the estimate they were quoted against.
-  //
-  // Coordinates only — Bolt's schema says not to send `address` unless they've
-  // told you to. The human-readable addresses travel in note_to_driver instead.
+  // The estimate takes coordinates only — /rides/estimations has no address
+  // field — and the fare_id is single-use and expires in 5 minutes, so this is
+  // built once and the create reuses the same points.
   const stops: BoltStop[] = [
     { lat: Number(pickupLat), lng: Number(pickupLng) },
     { lat: Number(order.delivery_lat), lng: Number(order.delivery_lng) },
+  ];
+
+  // The same points, carrying the addresses a human actually picked from Google
+  // Places — the merchant's confirmed store address, and the one the customer
+  // chose at checkout.
+  //
+  // Left to itself Bolt reverse-geocodes these coordinates, and for deliveries
+  // the result is frequently worthless: the customer's stored address for
+  // DE-2277 is "Paradise I Life Camp Estate, Abuja, Nigeria, Bof 9 unit 2",
+  // while Bolt's own resolution of that exact point is "Abuja 900106" — a
+  // postcode, no street. The driver was being told less than we knew.
+  const stopsWithAddress: BoltStop[] = [
+    {
+      ...stops[0],
+      ...(restaurant.address?.trim() ? { address: restaurant.address.trim() } : {}),
+    },
+    {
+      ...stops[1],
+      ...(order.delivery_address?.trim() ? { address: order.delivery_address.trim() } : {}),
+    },
   ];
 
   let categories;
@@ -311,11 +329,10 @@ export async function createRideAttempt(
   }
 
   // ── Live booking ──────────────────────────────────────────────────────────
-  let ride;
-  try {
-    ride = await createRide(settings.environment, {
-      fareId: fare.fareId,
-      stops,
+  const createWith = (stopsToSend: BoltStop[], fareId: string) =>
+    createRide(settings.environment, {
+      fareId,
+      stops: stopsToSend,
       // Names the store, because Bolt's own pickup label can't — see
       // buildBoltRiderName. This is what stops the driver ringing to ask who
       // they're collecting from.
@@ -331,9 +348,48 @@ export async function createRideAttempt(
       riderPhone: settings.riderPhone,
       noteToDriver,
     });
+
+  let ride;
+  try {
+    ride = await createWith(stopsWithAddress, fare.fareId);
   } catch (err) {
     const e = err as BoltApiError;
-    return fail(`create failed: ${e.message}`, e.code ?? null);
+
+    // `stops[].address` is a field Bolt gates ("not unless advised by us"), and
+    // it judges the address against its own geocoder, which disagrees with
+    // Google on points we know to be correct. So a rejection here says nothing
+    // about the booking being wrong — only that Bolt won't take our addresses.
+    // Retry on coordinates alone rather than dropping a real delivery to the
+    // manual lane over a label.
+    //
+    // Re-estimated because the first fare_id is spent either way: it is
+    // single-use, and we cannot tell from the error whether it was consumed
+    // before or after the address check.
+    if (!isAddressRejection(e)) {
+      return fail(`create failed: ${e.message}`, e.code ?? null);
+    }
+
+    console.warn(
+      `[bolt] addresses rejected order=${order.order_number} (${e.code}) — retrying without them`
+    );
+
+    let retryFare;
+    try {
+      retryFare = selectMotorbikeFare(await estimateRide(settings.environment, stops));
+    } catch (retryErr) {
+      const re = retryErr as BoltApiError;
+      return fail(`re-estimation after address rejection failed: ${re.message}`, re.code ?? null);
+    }
+    if (!retryFare) {
+      return fail("no motorbike available on retry after address rejection");
+    }
+
+    try {
+      ride = await createWith(stops, retryFare.fareId);
+    } catch (retryErr) {
+      const re = retryErr as BoltApiError;
+      return fail(`create failed without addresses: ${re.message}`, re.code ?? null);
+    }
   }
 
   if (!ride?.ride_id) {

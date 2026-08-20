@@ -328,16 +328,39 @@ async function boltFetch<T>(
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * A stop is coordinates only.
+ * A stop: coordinates, and optionally the address a human actually picked.
  *
- * GeoPointWithAddress does define an optional `address`, but its own schema
- * says: "THIS FIELD IS OPTIONAL & YOU SHOULD NOT USE IT UNLESS YOU HAVE BEEN
- * ADVISED BY US TO DO SO." Omitting it also makes the estimate and create
- * payloads trivially identical, which the single-use fare_id requires.
+ * Without `address`, Bolt reverse-geocodes the coordinate and shows the driver
+ * whatever that returns — which for our deliveries is often useless. The
+ * customer's stored address for order DE-2277 is "Paradise I Life Camp Estate,
+ * Abuja, Nigeria, Bof 9 unit 2"; Bolt's reverse geocode of the very same point
+ * is "Abuja 900106", a bare postcode with no street at all.
+ *
+ * Sending it is safe with respect to the fare: only `/rides/create` takes
+ * GeoPointWithMetadata, while `/rides/estimations` takes a plain GeoPoint with
+ * no address field — so the "stops identical to the estimate" rule the
+ * single-use fare_id enforces can only mean the coordinates, and adding an
+ * address cannot invalidate it.
+ *
+ * It is NOT unconditionally safe with respect to acceptance. The schema says
+ * "YOU SHOULD NOT USE IT UNLESS YOU HAVE BEEN ADVISED BY US TO DO SO", and
+ * create documents RIDE_BOOKER_API_MISMATCHING_ADDRESS_AND_COORDINATES for an
+ * address too far from its point — judged by Bolt's geocoder, not Google's, and
+ * the two demonstrably disagree (same coordinate: Google "260 Adamu Ciroma
+ * Cres", Bolt "Bala Sokoto Way"). Callers must therefore be able to fall back;
+ * see the retry in lib/bolt/book-ride.ts.
  */
 export interface BoltStop {
   lat: number;
   lng: number;
+  /** The picked address for this point. Omitted when unknown. */
+  address?: string;
+}
+
+/** True when Bolt rejected a create because of the addresses we attached. */
+export function isAddressRejection(err: unknown): boolean {
+  const code = (err as BoltApiError)?.code;
+  return typeof code === "string" && code.includes("ADDRESS");
 }
 
 export interface BoltEstimationPrice {
