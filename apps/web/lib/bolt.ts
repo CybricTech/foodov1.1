@@ -482,13 +482,37 @@ export async function estimateRide(
   env: BoltEnvironment,
   stops: BoltStop[]
 ): Promise<BoltCategoryEstimate[]> {
-  const data = await boltFetch<{ categories?: BoltCategoryEstimate[] }>("/rides/estimations", {
+  return (await estimateRideDetailed(env, stops)).categories;
+}
+
+/**
+ * As estimateRide, but also returns Bolt's own resolution of each stop.
+ *
+ * The response carries `stops[]` as GeoPointWithAddress — Bolt's reverse
+ * geocode of the coordinates we sent, i.e. exactly what a driver would be shown
+ * if we attached no address of our own. That was previously discarded, which
+ * made the gap between what a customer typed and what a rider saw invisible
+ * until somebody phoned. It costs nothing to keep: same call, same response.
+ */
+export async function estimateRideDetailed(
+  env: BoltEnvironment,
+  stops: BoltStop[]
+): Promise<{ categories: BoltCategoryEstimate[]; resolved: (string | null)[] }> {
+  const data = await boltFetch<{
+    categories?: BoltCategoryEstimate[];
+    stops?: { address?: string }[];
+  }>("/rides/estimations", {
     env,
     method: "POST",
     version: "v2",
-    body: { stops, payment_methods: ["business"] },
+    // Coordinates only: the v2 estimate schema takes a plain GeoPoint, so an
+    // address cannot travel here even when we have one.
+    body: { stops: stops.map(({ lat, lng }) => ({ lat, lng })), payment_methods: ["business"] },
   });
-  return data?.categories ?? [];
+  return {
+    categories: data?.categories ?? [],
+    resolved: (data?.stops ?? []).map((s) => s?.address ?? null),
+  };
 }
 
 /**

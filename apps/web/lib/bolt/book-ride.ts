@@ -19,11 +19,17 @@ import {
   BoltApiError,
   createRide,
   estimateRide,
+  estimateRideDetailed,
   isAddressRejection,
   selectMotorbikeFare,
   type BoltEnvironment,
   type BoltStop,
 } from "@/lib/bolt";
+import {
+  composeDeliveryAddress,
+  isDispatchableAddress,
+  tidyAddress,
+} from "@foodo/utils";
 import { buildDriverNote } from "@/lib/delivery/driver-note";
 
 /**
@@ -144,7 +150,12 @@ interface OrderRow {
   restaurant_id: string;
   customer_name: string | null;
   customer_phone: string | null;
+  /** The glued display string. Fallback for orders predating the components. */
   delivery_address: string | null;
+  /** Google formatted address of the picked place — migration 20260820140000. */
+  delivery_base_address: string | null;
+  /** Apartment / floor as typed, kept out of the address itself. */
+  delivery_apt_unit: string | null;
   delivery_lat: number | null;
   delivery_lng: number | null;
 }
@@ -177,7 +188,7 @@ export async function createRideAttempt(
     supabase
       .from("orders")
       .select(
-        "id, order_number, restaurant_id, customer_name, customer_phone, delivery_address, delivery_lat, delivery_lng"
+        "id, order_number, restaurant_id, customer_name, customer_phone, delivery_address, delivery_base_address, delivery_apt_unit, delivery_lat, delivery_lng"
       )
       .eq("id", orderId)
       .single(),
@@ -277,33 +288,54 @@ export async function createRideAttempt(
     { lat: Number(order.delivery_lat), lng: Number(order.delivery_lng) },
   ];
 
-  // The same points, carrying the addresses a human actually picked from Google
-  // Places — the merchant's confirmed store address, and the one the customer
-  // chose at checkout.
+  // The addresses a human actually picked, composed rather than parsed: the
+  // merchant's confirmed store address, and the customer's checkout address
+  // rebuilt from its components (falling back to the glued column for orders
+  // that predate them).
   //
-  // Left to itself Bolt reverse-geocodes these coordinates, and for deliveries
-  // the result is frequently worthless: the customer's stored address for
-  // DE-2277 is "Paradise I Life Camp Estate, Abuja, Nigeria, Bof 9 unit 2",
-  // while Bolt's own resolution of that exact point is "Abuja 900106" — a
-  // postcode, no street. The driver was being told less than we knew.
+  // Left to itself Bolt reverse-geocodes the coordinates, and for deliveries
+  // that is frequently worthless — the customer's address for DE-2277 is
+  // "Paradise I Life Camp Estate, Abuja, Nigeria, Bof 9 unit 2" while Bolt's
+  // own resolution of that exact point is "Abuja 900106", a postcode with no
+  // street. Verified 2026-08-20 against a real prebooked create: Bolt accepts
+  // these addresses and the stop coordinates come back unchanged, 0m on both.
+  //
+  // A plus-code is withheld deliberately. isDispatchableAddress rejects it
+  // because it is a coordinate wearing a costume: it tells a rider nothing
+  // their map isn't already showing, while risking a rejection of the whole
+  // booking for an address Bolt cannot resolve.
+  const pickupAddress = isDispatchableAddress(restaurant.address)
+    ? tidyAddress(restaurant.address)
+    : null;
+
+  const composedDropoff = composeDeliveryAddress({
+    baseAddress: order.delivery_base_address,
+    aptUnit: order.delivery_apt_unit,
+    legacyAddress: order.delivery_address,
+  });
+  const dropoffAddress = isDispatchableAddress(composedDropoff) ? composedDropoff : null;
+
   const stopsWithAddress: BoltStop[] = [
-    {
-      ...stops[0],
-      ...(restaurant.address?.trim() ? { address: restaurant.address.trim() } : {}),
-    },
-    {
-      ...stops[1],
-      ...(order.delivery_address?.trim() ? { address: order.delivery_address.trim() } : {}),
-    },
+    { ...stops[0], ...(pickupAddress ? { address: pickupAddress } : {}) },
+    { ...stops[1], ...(dropoffAddress ? { address: dropoffAddress } : {}) },
   ];
+  const sendingAddresses = Boolean(pickupAddress || dropoffAddress);
 
   let categories;
+  let resolved: (string | null)[] = [];
   try {
-    categories = await estimateRide(settings.environment, stops);
+    ({ categories, resolved } = await estimateRideDetailed(settings.environment, stops));
   } catch (err) {
     const e = err as BoltApiError;
     return fail(`estimation failed: ${e.message}`, e.code ?? null);
   }
+
+  // What Bolt would have shown on its own. Recorded whether or not we override
+  // it, so the gap between the two stays measurable.
+  const boltLabels = {
+    pickup_label_bolt: resolved[0] ?? null,
+    dropoff_label_bolt: resolved[1] ?? null,
+  };
 
   const fare = selectMotorbikeFare(categories);
   if (!fare) {
@@ -319,6 +351,7 @@ export async function createRideAttempt(
         estimate_kobo: fare.estimateKobo,
         vehicle_category: fare.categoryName,
         eta_seconds: fare.etaSeconds,
+        ...boltLabels,
         updated_at: new Date().toISOString(),
       })
       .eq("id", rideRowId);
@@ -350,6 +383,10 @@ export async function createRideAttempt(
     });
 
   let ride;
+  let addressMode: "with_address" | "coordinates_only" = sendingAddresses
+    ? "with_address"
+    : "coordinates_only";
+
   try {
     ride = await createWith(stopsWithAddress, fare.fareId);
   } catch (err) {
@@ -357,10 +394,10 @@ export async function createRideAttempt(
 
     // `stops[].address` is a field Bolt gates ("not unless advised by us"), and
     // it judges the address against its own geocoder, which disagrees with
-    // Google on points we know to be correct. So a rejection here says nothing
-    // about the booking being wrong — only that Bolt won't take our addresses.
-    // Retry on coordinates alone rather than dropping a real delivery to the
-    // manual lane over a label.
+    // Google on points we know to be correct. A live prebooked create on
+    // 2026-08-20 was accepted with these exact strings and left both stop
+    // coordinates untouched, so rejection is not expected — but a single
+    // malformed address must not cost a real delivery, so it stays survivable.
     //
     // Re-estimated because the first fare_id is spent either way: it is
     // single-use, and we cannot tell from the error whether it was consumed
@@ -386,6 +423,7 @@ export async function createRideAttempt(
 
     try {
       ride = await createWith(stops, retryFare.fareId);
+      addressMode = "coordinates_only";
     } catch (retryErr) {
       const re = retryErr as BoltApiError;
       return fail(`create failed without addresses: ${re.message}`, re.code ?? null);
@@ -404,13 +442,21 @@ export async function createRideAttempt(
       estimate_kobo: fare.estimateKobo,
       vehicle_category: fare.categoryName,
       eta_seconds: fare.etaSeconds,
+      // What the rider was actually told, beside what Bolt would have said on
+      // its own. Both together are what make the gap measurable rather than
+      // anecdotal — see migration 20260820140000.
+      ...boltLabels,
+      address_mode: addressMode,
+      pickup_address_sent: addressMode === "with_address" ? pickupAddress : null,
+      dropoff_address_sent: addressMode === "with_address" ? dropoffAddress : null,
       booked_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", rideRowId);
 
   console.log(
-    `[bolt] booked order=${order.order_number} ride=${ride.ride_id} attempt=${attempt} source=${source}`
+    `[bolt] booked order=${order.order_number} ride=${ride.ride_id} attempt=${attempt} ` +
+      `mode=${addressMode} source=${source}`
   );
 
   return { outcome: "booked", rideId: ride.ride_id, boltRideId: ride.ride_id };

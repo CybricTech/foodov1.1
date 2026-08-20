@@ -64,6 +64,13 @@ export function buildOrderPayloadFromMetadata(
     customer_email: (meta.customer_email as string) || null,
     fulfillment_type: meta.fulfillment_type as "delivery" | "pickup",
     delivery_address: (meta.delivery_address as string) || null,
+    // The parts delivery_address was glued from. Stored separately so dispatch
+    // can compose the address deliberately rather than parse a string back
+    // apart, and so a bad pick is detectable — see @foodo/utils
+    // composeDeliveryAddress and migration 20260820140000.
+    delivery_base_address: (meta.delivery_base_address as string) || null,
+    delivery_apt_unit: (meta.delivery_apt_unit as string) || null,
+    delivery_place_id: (meta.delivery_place_id as string) || null,
     special_instructions: (meta.special_instructions as string) || null,
     // Pre-order slot (087): stamped onto the order; activated_at stays NULL so
     // the order sits in the Scheduled bucket until the activation cron (or a
