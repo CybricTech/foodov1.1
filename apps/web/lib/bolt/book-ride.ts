@@ -33,12 +33,70 @@ import { buildDriverNote } from "@/lib/delivery/driver-note";
  */
 const DEFAULT_BOLT_RIDER_CONTACT_PHONE = "+2348063662721";
 
+/* ── The passenger name the driver sees ───────────────────────────────────── */
+
 /**
- * The name registered alongside BOLT_RIDER_CONTACT_PHONE. Deliberately not
- * the customer's name — the driver sees this name and number as a pair, and
- * the real customer contact lives in note_to_driver, not here.
+ * Bolt shows the driver a street address for the pickup, never a business name.
+ * That isn't Bolt losing the name — we never send it. Stops are coordinates
+ * only, so Bolt reverse-geocodes them, and a reverse geocode returns a road.
+ * Confirmed across all 14 stores with coordinates on 2026-08-20: every one
+ * resolved to a street, none to a venue. By Sophie's Confectionary comes back
+ * as "Bala Sokoto Way".
+ *
+ * There is no way to fix that on the stop itself. The Ride Booker API has no
+ * forward place search (unlike the Bolt consumer app, which resolves the same
+ * venue by name), and `stops[].address` is gated behind Bolt's approval. So
+ * this 50-character field is the only channel that can tell a driver which
+ * business they're collecting from.
+ *
+ * It previously held a fixed "Check message for ride details", which spent the
+ * one prominent slot on a signpost rather than the answer — leaving drivers to
+ * phone the ops line just to ask whose food they were picking up.
+ *
+ * Still deliberately not the customer's name: the registered phone is the ops
+ * line, and the real customer contact travels in note_to_driver (buildDriverNote).
  */
-const BOLT_RIDER_CONTACT_NAME = "Check message for ride details";
+const BOLT_RIDER_NAME_PREFIX = "BOLT FOOD: ";
+const BOLT_RIDER_NAME_SUFFIX = " (see note)";
+/** Bolt's documented cap on `user.name`. Exceeding it is rejected, not trimmed. */
+const BOLT_RIDER_NAME_MAX = 50;
+
+/**
+ * Builds the passenger name for a booking: `BOLT FOOD: <store> (see note)`.
+ *
+ * The fixed parts cost 22 of the 50 characters, leaving 28 for the store name —
+ * which the longest active store ("Brews and Bites by Spicesenz") fills exactly.
+ * A longer name therefore has to lose characters from the name itself; letting
+ * the whole string run past the cap would either be rejected outright or cut the
+ * "(see note)" pointer off the end, which is the part the driver needs most.
+ */
+export function buildBoltRiderName(restaurantName: string | null | undefined): string {
+  const name = (restaurantName ?? "").trim();
+  if (!name) return "BOLT FOOD: see note";
+
+  const bytes = (s: string) => new TextEncoder().encode(s).length;
+
+  // Bolt documents the cap as "max length: 50" without saying whether it counts
+  // characters or bytes, and the two diverge as soon as a name is truncated —
+  // the ellipsis is one character but three bytes, and "Café" is already four
+  // characters in five bytes. Satisfying both readings is the only way to be
+  // sure; overshooting the real limit means a rejected create, which drops the
+  // order to the manual Telegram lane for the sake of a cosmetic label.
+  const charBudget = BOLT_RIDER_NAME_MAX - BOLT_RIDER_NAME_PREFIX.length - BOLT_RIDER_NAME_SUFFIX.length;
+  const byteBudget = BOLT_RIDER_NAME_MAX - bytes(BOLT_RIDER_NAME_PREFIX) - bytes(BOLT_RIDER_NAME_SUFFIX);
+
+  let fitted = name;
+  if (name.length > charBudget || bytes(name) > byteBudget) {
+    const ellipsis = "…";
+    fitted = name.slice(0, Math.max(0, charBudget - ellipsis.length)).trimEnd();
+    while (fitted && bytes(fitted) + bytes(ellipsis) > byteBudget) {
+      fitted = fitted.slice(0, -1).trimEnd();
+    }
+    fitted += ellipsis;
+  }
+
+  return `${BOLT_RIDER_NAME_PREFIX}${fitted}${BOLT_RIDER_NAME_SUFFIX}`;
+}
 
 export type BookingOutcome =
   /** Ride is booked with Bolt; humans need not be paged. */
@@ -54,7 +112,7 @@ export interface BoltSettings {
   enabled: boolean;
   shadow: boolean;
   environment: BoltEnvironment;
-  /** Registered "rider" contact phone for every booking — see BOLT_RIDER_CONTACT_NAME below. */
+  /** Registered "rider" contact phone for every booking — see buildBoltRiderName above. */
   riderPhone: string;
 }
 
@@ -247,12 +305,10 @@ export async function createRideAttempt(
     ride = await createRide(settings.environment, {
       fareId: fare.fareId,
       stops,
-      // Fixed, same reasoning as the phone below: showing the real customer's
-      // name next to an ops phone number is its own source of confusion — the
-      // driver would see a name that doesn't match whoever picks up when they
-      // call. Pointed at the note_to_driver field instead, which actually has
-      // the real name, phone and address together.
-      riderName: BOLT_RIDER_CONTACT_NAME,
+      // Names the store, because Bolt's own pickup label can't — see
+      // buildBoltRiderName. This is what stops the driver ringing to ask who
+      // they're collecting from.
+      riderName: buildBoltRiderName(restaurant.name),
       // The registered "rider" contact on every Bolt trip — deliberately NOT
       // the customer's own phone. The customer is never the one talking to
       // the driver; the note_to_driver instruction already carries the real
