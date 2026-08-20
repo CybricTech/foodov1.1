@@ -663,6 +663,7 @@ export default function CheckoutPage() {
               : selectedPlaceAddress
             : undefined,
           deliveryBaseAddress: selectedPlaceAddress || undefined,
+          deliveryAptUnit: aptSuiteFloor.trim() || undefined,
           deliveryPlaceId:
             fulfillmentType === "delivery" && selectedPlaceId
               ? selectedPlaceId

@@ -328,16 +328,39 @@ async function boltFetch<T>(
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * A stop is coordinates only.
+ * A stop: coordinates, and optionally the address a human actually picked.
  *
- * GeoPointWithAddress does define an optional `address`, but its own schema
- * says: "THIS FIELD IS OPTIONAL & YOU SHOULD NOT USE IT UNLESS YOU HAVE BEEN
- * ADVISED BY US TO DO SO." Omitting it also makes the estimate and create
- * payloads trivially identical, which the single-use fare_id requires.
+ * Without `address`, Bolt reverse-geocodes the coordinate and shows the driver
+ * whatever that returns — which for our deliveries is often useless. The
+ * customer's stored address for order DE-2277 is "Paradise I Life Camp Estate,
+ * Abuja, Nigeria, Bof 9 unit 2"; Bolt's reverse geocode of the very same point
+ * is "Abuja 900106", a bare postcode with no street at all.
+ *
+ * Sending it is safe with respect to the fare: only `/rides/create` takes
+ * GeoPointWithMetadata, while `/rides/estimations` takes a plain GeoPoint with
+ * no address field — so the "stops identical to the estimate" rule the
+ * single-use fare_id enforces can only mean the coordinates, and adding an
+ * address cannot invalidate it.
+ *
+ * It is NOT unconditionally safe with respect to acceptance. The schema says
+ * "YOU SHOULD NOT USE IT UNLESS YOU HAVE BEEN ADVISED BY US TO DO SO", and
+ * create documents RIDE_BOOKER_API_MISMATCHING_ADDRESS_AND_COORDINATES for an
+ * address too far from its point — judged by Bolt's geocoder, not Google's, and
+ * the two demonstrably disagree (same coordinate: Google "260 Adamu Ciroma
+ * Cres", Bolt "Bala Sokoto Way"). Callers must therefore be able to fall back;
+ * see the retry in lib/bolt/book-ride.ts.
  */
 export interface BoltStop {
   lat: number;
   lng: number;
+  /** The picked address for this point. Omitted when unknown. */
+  address?: string;
+}
+
+/** True when Bolt rejected a create because of the addresses we attached. */
+export function isAddressRejection(err: unknown): boolean {
+  const code = (err as BoltApiError)?.code;
+  return typeof code === "string" && code.includes("ADDRESS");
 }
 
 export interface BoltEstimationPrice {
@@ -415,6 +438,28 @@ export interface BoltLocation {
   bearing?: number;
 }
 
+/**
+ * A named stop inside a Bolt-defined custom area (airport ranks, mall bays).
+ * Curated by Bolt, not something a reseller can populate — the only place in
+ * the whole API where a pickup carries a human name rather than a street.
+ */
+export interface BoltCustomLocation {
+  lat: number;
+  lng: number;
+  address: string;
+  name: string;
+}
+
+export interface BoltPlaceDetails {
+  place: { lat: number; lng: number; address: string };
+  custom_area?: {
+    name: string;
+    /** When true, only the listed points may be used as stops in this zone. */
+    is_restricted: boolean;
+    points?: BoltCustomLocation[];
+  } | null;
+}
+
 export interface BoltHistoryRide {
   ride_id: number;
   created?: string;
@@ -437,13 +482,37 @@ export async function estimateRide(
   env: BoltEnvironment,
   stops: BoltStop[]
 ): Promise<BoltCategoryEstimate[]> {
-  const data = await boltFetch<{ categories?: BoltCategoryEstimate[] }>("/rides/estimations", {
+  return (await estimateRideDetailed(env, stops)).categories;
+}
+
+/**
+ * As estimateRide, but also returns Bolt's own resolution of each stop.
+ *
+ * The response carries `stops[]` as GeoPointWithAddress — Bolt's reverse
+ * geocode of the coordinates we sent, i.e. exactly what a driver would be shown
+ * if we attached no address of our own. That was previously discarded, which
+ * made the gap between what a customer typed and what a rider saw invisible
+ * until somebody phoned. It costs nothing to keep: same call, same response.
+ */
+export async function estimateRideDetailed(
+  env: BoltEnvironment,
+  stops: BoltStop[]
+): Promise<{ categories: BoltCategoryEstimate[]; resolved: (string | null)[] }> {
+  const data = await boltFetch<{
+    categories?: BoltCategoryEstimate[];
+    stops?: { address?: string }[];
+  }>("/rides/estimations", {
     env,
     method: "POST",
     version: "v2",
-    body: { stops, payment_methods: ["business"] },
+    // Coordinates only: the v2 estimate schema takes a plain GeoPoint, so an
+    // address cannot travel here even when we have one.
+    body: { stops: stops.map(({ lat, lng }) => ({ lat, lng })), payment_methods: ["business"] },
   });
-  return data?.categories ?? [];
+  return {
+    categories: data?.categories ?? [],
+    resolved: (data?.stops ?? []).map((s) => s?.address ?? null),
+  };
 }
 
 /**
@@ -510,6 +579,33 @@ export async function getRideReceipt(
   rideId: number
 ): Promise<BoltReceipt> {
   return boltFetch<BoltReceipt>("/rides/receipt", { env, query: { ride_id: rideId } });
+}
+
+/**
+ * The address Bolt resolves for a coordinate — i.e. what a driver would be told
+ * if we booked a pickup there.
+ *
+ * Bolt has no venue name for any of our stores: all 14 with coordinates
+ * reverse-geocode to a street, none to a business. The label is simply the
+ * nearest road to the point we send, which means it moves with the pin — often
+ * within 30m. That makes this endpoint the feedback loop for choosing a pickup
+ * point: probe a candidate, see what the rider would be told, before committing.
+ *
+ * `is_pickup` is not cosmetic — Bolt evaluates pickup and dropoff areas
+ * differently, and `custom_area` comes back only when the point falls inside a
+ * zone with defined stop points (none of our stores do, as of 2026-08-20).
+ */
+export async function getPlaceDetails(
+  env: BoltEnvironment,
+  lat: number,
+  lng: number,
+  isPickup = true
+): Promise<BoltPlaceDetails> {
+  return boltFetch<BoltPlaceDetails>("/rides/place/details", {
+    env,
+    method: "POST",
+    body: { lat, lng, is_pickup: isPickup, language: "en" },
+  });
 }
 
 /** Cancel a ride. Only possible before the passenger is picked up. */

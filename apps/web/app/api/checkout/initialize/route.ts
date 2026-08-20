@@ -39,7 +39,10 @@ const InitializeSchema = z.object({
   customerEmail: z.string().email().optional().or(z.literal("")),
   fulfillmentType: z.enum(["delivery", "pickup"]),
   deliveryAddress: z.string().optional(),
+  /** The picked place's formatted address, without the apartment text. */
   deliveryBaseAddress: z.string().optional(),
+  /** Apartment / suite / floor as typed. Kept apart from the address itself. */
+  deliveryAptUnit: z.string().max(200).optional(),
   /** Google place_id of the picked autocomplete prediction (exact destination). */
   deliveryPlaceId: z.string().max(300).optional(),
   /** Exact destination coordinates (resolved suggestion or device GPS). */
@@ -637,6 +640,15 @@ export async function POST(request: NextRequest) {
     customer_email: data.customerEmail || null,
     fulfillment_type: data.fulfillmentType,
     delivery_address: data.deliveryAddress || null,
+    // The components behind delivery_address. Both were already computed here
+    // for the Distance Matrix call and then discarded, which left the glued
+    // string above as the only record — unparseable, and the source of most of
+    // the malformed addresses riders were being sent (see migration
+    // 20260820140000). Carried through metadata so every order-creation path
+    // that reads this object persists them.
+    delivery_base_address: data.deliveryBaseAddress || null,
+    delivery_apt_unit: data.deliveryAptUnit || null,
+    delivery_place_id: data.deliveryPlaceId || null,
     special_instructions: data.specialInstructions || null,
     // Pre-order slot (validated above). Read back by every order-creation
     // path (webhooks, status poll, test orders) into orders.scheduled_for.

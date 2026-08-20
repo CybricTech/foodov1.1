@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { MerchantDetailClient, type AgreementRow } from "@/components/admin/merchant-detail-client";
 import { MerchantSmsSenderCard } from "@/components/admin/merchant-sms-sender-card";
 import { MerchantSeoCard } from "@/components/admin/merchant-seo-card";
+import { MerchantPickupPointCard } from "@/components/admin/merchant-pickup-point-card";
 import type { AuditRow } from "@/components/admin/audit-log-client";
 import { storefrontUrl } from "@/lib/site";
 
@@ -236,6 +237,19 @@ export default async function MerchantDetailPage({
           metadata and structured data are missing, plus the off-page actions
           that decide whether it ranks for the merchant's own name. */}
       <MerchantSeoCard restaurant={restaurant} />
+
+      {/* Where riders are actually sent to collect — distinct from the address,
+          which is what customers see and what delivery fees measure from. */}
+      <MerchantPickupPointCard
+        restaurantId={restaurant.id}
+        locationVerified={!!restaurant.location_verified_at}
+        pickupLabel={
+          (restaurant as { pickup_label?: string | null }).pickup_label ?? null
+        }
+        hasPickupPoint={
+          (restaurant as { pickup_lat?: number | null }).pickup_lat != null
+        }
+      />
 
       {/* SMS sender ID management */}
       <MerchantSmsSenderCard
