@@ -23,6 +23,19 @@ import { storefrontOrigin } from "@/lib/site";
 
 export const revalidate = 60;
 
+/**
+ * Alpha-suffixed hex stops (bottom → top) for the banner scrim, in the
+ * merchant's own brand color. Tailwind's opacity modifiers (`from-primary/90`)
+ * silently produce no CSS here — `primary` resolves to `var(--brand-color)`,
+ * a value Tailwind can't parse at build time to inject an alpha channel into
+ * — so the alpha is baked into the hex string instead and applied via an
+ * inline `linear-gradient`.
+ */
+function heroScrimStops(hexColor: string | null): [string, string] | null {
+  if (!hexColor || !/^#[0-9a-fA-F]{6}$/.test(hexColor)) return null;
+  return [`${hexColor}99`, `${hexColor}1a`];
+}
+
 interface MenuPageProps {
   params: { restaurant_slug: string };
 }
@@ -136,7 +149,15 @@ export default async function MenuPage({ params }: MenuPageProps) {
               priority
               unoptimized
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-black/10" />
+            {(() => {
+              const scrim = heroScrimStops(restaurant.primary_color);
+              return (
+                <div
+                  className={scrim ? "absolute inset-0" : "absolute inset-0 bg-gradient-to-t from-black/60 to-black/10"}
+                  style={scrim ? { backgroundImage: `linear-gradient(to top, ${scrim[0]}, ${scrim[1]})` } : undefined}
+                />
+              );
+            })()}
           </div>
         ) : (
           <div className="w-full h-32 bg-gradient-to-br from-primary/25 to-primary/10" />

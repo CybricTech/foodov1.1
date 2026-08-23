@@ -34,6 +34,19 @@ function clampPct(value: number | null | undefined): number {
   return Math.min(100, Math.max(0, value));
 }
 
+/**
+ * Alpha-suffixed hex stops (bottom → top) for the hero scrim, in the
+ * merchant's own brand color. Tailwind's opacity modifiers (`from-primary/90`)
+ * silently produce no CSS here — `primary` resolves to `var(--brand-color)`,
+ * a value Tailwind can't parse at build time to inject an alpha channel into
+ * — so the alpha is baked into the hex string instead and applied via an
+ * inline `linear-gradient`.
+ */
+function heroScrimStops(hexColor: string | null): [string, string, string] | null {
+  if (!hexColor || !/^#[0-9a-fA-F]{6}$/.test(hexColor)) return null;
+  return [`${hexColor}e6`, `${hexColor}4d`, `${hexColor}66`];
+}
+
 interface StorefrontPageProps {
   params: { restaurant_slug: string };
 }
@@ -150,8 +163,30 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
           <div className="absolute inset-0 bg-gradient-to-br from-primary/90 via-primary/70 to-black/80" />
         )}
 
-        {/* Gradient layers — bottom-heavy for text legibility */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-black/40" />
+        {/* Gradient layers — bottom-heavy for text legibility. Over a real photo
+            this is tinted with the merchant's own brand color (matching what
+            they'd get from a professionally shot hero image); the no-photo
+            fallback above is already brand-colored, so it keeps a neutral
+            black scrim instead of double-tinting. */}
+        {(() => {
+          const scrim = restaurant.banner_url
+            ? heroScrimStops(restaurant.primary_color)
+            : null;
+          return (
+            <div
+              className={
+                scrim
+                  ? "absolute inset-0"
+                  : "absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-black/40"
+              }
+              style={
+                scrim
+                  ? { backgroundImage: `linear-gradient(to top, ${scrim[0]}, ${scrim[1]}, ${scrim[2]})` }
+                  : undefined
+              }
+            />
+          );
+        })()}
 
         {/* Top bar — logo + track order */}
         <div className="absolute top-0 inset-x-0 z-20 px-5 pt-5 flex items-center justify-between">
