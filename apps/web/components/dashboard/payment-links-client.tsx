@@ -10,9 +10,9 @@ const statusLabel = { awaiting_payment: "Awaiting payment", payment_started: "Pa
 /** Still usable: the customer can pay (or pay again) and staff can still cancel. */
 const isOpen = (status: keyof typeof statusLabel) => status === "awaiting_payment" || status === "payment_failed";
 
-export function PaymentLinksClient({ frontline = false }: { frontline?: boolean }) {
+export function PaymentLinksClient({ frontline = false, startCreating = false }: { frontline?: boolean; startCreating?: boolean }) {
   const [data, setData] = useState<MerchantPaymentLinksData | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(startCreating);
   const [lines, setLines] = useState<PaymentLinkLine[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [search, setSearch] = useState("");

@@ -30,6 +30,8 @@ import {
   CalendarClock,
   Zap,
   Users,
+  Plus,
+  Link2,
 } from "lucide-react";
 import type { Database } from "@foodo/database";
 import { ScheduleSlotPicker } from "@/components/storefront/schedule-slot-picker";
@@ -559,11 +561,12 @@ export function OrderQueueClient({
 
   return (
     <div className="min-h-screen bg-black-50">
-      <div className="flex justify-end border-b border-black-100 bg-white px-4 py-2"><Link href="/dashboard/payment-links" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">Create order / Payment links</Link></div>
       {/* ── Page header ─────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-black-100 px-6 py-5">
-        <div className="flex items-center justify-between">
-          <div>
+      {/* No bottom border: the header and the tab strip are one white block,
+          and the tabs' own border closes it. */}
+      <div className="bg-white px-4 md:px-6 pt-5 pb-4">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+          <div className="min-w-0">
             <div className="flex items-center gap-2.5">
               <h1 className="text-xl font-bold text-black-900 tracking-tight">Orders</h1>
               {counts.new > 0 && (
@@ -573,31 +576,57 @@ export function OrderQueueClient({
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <Clock size={12} className="text-black-400" />
-              <p className="text-xs text-black-400">{today}</p>
+            {/* Date and counts read as context under the heading rather than
+                competing with the actions for the right edge. */}
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-black-400">
+              <span className="inline-flex items-center gap-1">
+                <Clock size={12} />
+                {today}
+              </span>
+              {counts.scheduled > 0 && (
+                <>
+                  <span className="w-px h-3 bg-black-200" />
+                  <span className="inline-flex items-center gap-1">
+                    <CalendarClock size={12} />
+                    {counts.scheduled} scheduled
+                  </span>
+                </>
+              )}
+              <span className="w-px h-3 bg-black-200" />
+              <span>{counts.new + counts.in_progress} active</span>
+              <span className="w-px h-3 bg-black-200" />
+              <span>{counts.completed} completed today</span>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-3 text-xs text-black-400">
-            {counts.scheduled > 0 && (
-              <>
-                <span className="inline-flex items-center gap-1">
-                  <CalendarClock size={12} />
-                  {counts.scheduled} scheduled
-                </span>
-                <span className="w-px h-3 bg-black-200" />
-              </>
-            )}
-            <span>{counts.new + counts.in_progress} active</span>
-            <span className="w-px h-3 bg-black-200" />
-            <span>{counts.completed} completed today</span>
+
+          {/* Turning an enquiry into a prepared order is the action; tracking
+              what has not been paid yet is the quieter companion to it. */}
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/payment-links"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-black-200 bg-white px-3 text-sm font-semibold text-black-700 hover:bg-black-50 transition-colors duration-150"
+            >
+              <Link2 size={14} />
+              Payment links
+            </Link>
+            <Link
+              href="/dashboard/payment-links?new=1"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity duration-150"
+            >
+              <Plus size={16} />
+              Create order
+            </Link>
           </div>
         </div>
       </div>
 
       {/* ── Tabs ─────────────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-black-100 px-4 md:px-6">
-        <div className="flex gap-0">
+        {/* Spacing comes from the gap, not per-tab padding, so the first tab
+            starts on the same left edge as the heading and the list below.
+            Scrolls within the page padding so a narrow screen never pushes the
+            whole page sideways. */}
+        <div className="flex gap-6 overflow-x-auto scrollbar-hide">
           {(
             [
               ...(showScheduledTab
@@ -612,7 +641,7 @@ export function OrderQueueClient({
               key={key}
               onClick={() => setActiveTab(key)}
               className={cn(
-                "flex items-center gap-2 px-4 py-3.5 text-sm font-semibold border-b-2 transition-colors duration-150 cursor-pointer whitespace-nowrap",
+                "flex items-center gap-2 py-3.5 text-sm font-semibold border-b-2 transition-colors duration-150 cursor-pointer whitespace-nowrap",
                 activeTab === key
                   ? "border-purple-600 text-purple-600"
                   : "border-transparent text-black-400 hover:text-black-700"

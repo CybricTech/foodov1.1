@@ -37,6 +37,8 @@ import {
   Printer,
   CalendarClock,
   Zap,
+  Plus,
+  Link2,
 } from "lucide-react";
 import type { Database } from "@foodo/database";
 import { printEngine } from "@/lib/printing/use-printer";
@@ -760,10 +762,9 @@ export function FrontlineOrdersClient({
 
   return (
     <div className="min-h-screen bg-black-50">
-      <div className="flex justify-end border-b border-black-100 bg-white px-4 py-2"><Link href="/dashboard/frontline/payment-links" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">Create order / Payment links</Link></div>
       {/* Header */}
       <div className="bg-white border-b border-black-100 px-4 md:px-6 py-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-xl font-bold text-black-900 tracking-tight">
@@ -785,12 +786,14 @@ export function FrontlineOrdersClient({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Utility toggles stay quiet at text-xs; the two order actions carry
+              the weight. Shared h-9 keeps the row level however it wraps. */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {/* Sound toggle */}
             <button
               onClick={() => setSoundEnabled((s) => !s)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors duration-150 cursor-pointer border",
+                "flex h-9 items-center gap-1.5 px-3 rounded-xl text-xs font-medium transition-colors duration-150 cursor-pointer border",
                 soundEnabled
                   ? "bg-purple-50 text-purple-600 border-purple-200"
                   : "bg-black-50 text-black-400 border-black-200"
@@ -810,12 +813,28 @@ export function FrontlineOrdersClient({
             {/* Refresh */}
             <button
               onClick={() => window.location.reload()}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-black-500 bg-white border border-black-200 hover:bg-black-50 transition-colors duration-150 cursor-pointer"
+              className="flex h-9 items-center gap-1.5 px-3 rounded-xl text-xs font-medium text-black-500 bg-white border border-black-200 hover:bg-black-50 transition-colors duration-150 cursor-pointer"
               aria-label="Refresh orders"
             >
               <RefreshCw size={14} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
+
+            <Link
+              href="/dashboard/frontline/payment-links"
+              aria-label="Payment links"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-black-200 bg-white px-3 text-sm font-semibold text-black-700 hover:bg-black-50 transition-colors duration-150"
+            >
+              <Link2 size={14} />
+              <span className="hidden sm:inline">Payment links</span>
+            </Link>
+            <Link
+              href="/dashboard/frontline/payment-links?new=1"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity duration-150"
+            >
+              <Plus size={16} />
+              Create order
+            </Link>
           </div>
         </div>
       </div>
