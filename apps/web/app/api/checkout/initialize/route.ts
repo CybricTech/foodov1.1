@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { paymentLinkUrl, readPaymentLink, verifyPaymentLinkItems } from "@/lib/payment-links";
 import { createServiceClient } from "@/lib/supabase/server";
 import { resolveDiscount } from "@/lib/discounts";
 import { createTestOrder } from "@/lib/checkout/create-test-order";
+import { initMonnifyTransaction } from "@/lib/monnify";
 import { getPostHogClient } from "@/lib/posthog";
 import {
   DELIVERY_BASE_FEE_KOBO,
@@ -34,6 +36,7 @@ function isWithinOpeningHours(hours: OpeningHours): boolean {
 
 const InitializeSchema = z.object({
   restaurantId: z.string().uuid(),
+  paymentLinkToken: z.string().uuid().optional(),
   customerName: z.string().min(2).max(100),
   customerPhone: z.string().min(10).max(20),
   customerEmail: z.string().email().optional().or(z.literal("")),
@@ -105,10 +108,27 @@ export async function POST(request: NextRequest) {
   const data = parsed.data;
   const supabase = createServiceClient();
 
+  let paymentLinkId: string | null = null;
+  if (data.paymentLinkToken) {
+    try {
+      const found = await readPaymentLink(supabase, data.paymentLinkToken, data.restaurantId);
+      if (!found) return NextResponse.json({ error: "Payment link not found." }, { status: 404 });
+      if (found.payment) return NextResponse.json({ error: "Payment has already started. Reopen this link to resume or check its status.", reopenPaymentLink: true }, { status: 409 });
+      // payment_failed reaches here too: every previous attempt was refused, so
+      // this issues a genuinely new reference rather than resuming a dead one.
+      if (found.status !== "awaiting_payment" && found.status !== "payment_failed") return NextResponse.json({ error: "This payment link has expired or been cancelled. Please ask the restaurant for a new one." }, { status: 410 });
+      // A prepared order cannot be altered by substituting a browser cart.
+      data.items = await verifyPaymentLinkItems(supabase, found.link);
+      paymentLinkId = found.link.id;
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to check payment link." }, { status: 409 });
+    }
+  }
+
   // Verify restaurant exists and accepts orders
   const { data: restaurant, error: restError } = await supabase
     .from("restaurants")
-    .select("id, name, accepts_orders, accepts_delivery, accepts_pickup, min_order_amount, delivery_fee, is_test")
+    .select("id, name, slug, accepts_orders, accepts_delivery, accepts_pickup, min_order_amount, delivery_fee, is_test")
     .eq("id", data.restaurantId)
     .eq("is_active", true)
     .single();
@@ -164,7 +184,8 @@ export async function POST(request: NextRequest) {
   const { data: menuItems } = await supabase
     .from("menu_items")
     .select("id, price_kobo, is_available, is_made_to_order, made_to_order_lead_hours, track_inventory, stock_quantity")
-    .in("id", menuItemIds);
+    .in("id", menuItemIds)
+    .eq("restaurant_id", data.restaurantId);
 
   // ── Made to Order (088) ─────────────────────────────────────────────────────
   // An item flagged Made to Order forces the WHOLE order into the scheduled
@@ -405,6 +426,10 @@ export async function POST(request: NextRequest) {
     return { ...item, priceKobo: verifiedUnitPrice };
   });
 
+  if (paymentLinkId && verifiedItems.some((item, index) => item.priceKobo !== data.items[index].priceKobo)) {
+    return NextResponse.json({ error: "The menu price has changed. Please ask the restaurant for a new payment link." }, { status: 409 });
+  }
+
   // Delivery fee — dynamic distance-based pricing
   let deliveryFeeKobo = 0;
 
@@ -632,9 +657,10 @@ export async function POST(request: NextRequest) {
     process.env.PAYMENT_PROVIDER === "paystack" ? "paystack" : "monnify";
 
   // Reference format kept identical across providers for log readability.
-  const paymentRef = `FD-${data.restaurantId.slice(0, 8)}-${Date.now()}`;
+  const paymentRef = `FD-${data.restaurantId.slice(0, 8)}-${crypto.randomUUID()}`;
 
   const sharedMetadata = {
+    payment_link_id: paymentLinkId,
     customer_name: data.customerName,
     customer_phone: data.customerPhone,
     customer_email: data.customerEmail || null,
@@ -701,16 +727,29 @@ export async function POST(request: NextRequest) {
   const { data: payment, error: paymentError } = await supabase
     .from("payments")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .insert(paymentInsert as any)
+    .insert({ ...paymentInsert, payment_link_id: paymentLinkId } as any)
     .select("id")
     .single();
 
   if (paymentError || !payment) {
+    if (paymentLinkId && ["23505", "23514"].includes(paymentError?.code ?? "")) {
+      return NextResponse.json({ error: "This link is already in use or no longer available. Reopen it to check its status.", reopenPaymentLink: true }, { status: 409 });
+    }
     console.error("Payment insert error:", paymentError);
     return NextResponse.json(
       { error: "Failed to create payment record" },
       { status: 500 }
     );
+  }
+
+  async function checkoutResponse(payload: Record<string, unknown>) {
+    if (paymentLinkId) {
+      const { error } = await supabase.from("merchant_payment_links")
+        .update({ checkout_response: payload as import("@foodo/database").Json })
+        .eq("id", paymentLinkId).eq("restaurant_id", data.restaurantId);
+      if (error) console.error("[checkout] Unable to save payment-link session:", error.message);
+    }
+    return NextResponse.json(payload);
   }
 
   // ── Test merchant (is_test): no real charge ───────────────────────────────
@@ -726,7 +765,7 @@ export async function POST(request: NextRequest) {
         restaurantId: data.restaurantId,
         meta: sharedMetadata as Record<string, unknown>,
       });
-      return NextResponse.json({
+      return checkoutResponse({
         provider: "test",
         orderId,
         orderNumber,
@@ -764,6 +803,10 @@ export async function POST(request: NextRequest) {
   });
   await posthog.shutdown();
 
+  const linkReturnUrl = data.paymentLinkToken
+    ? new URL(`/${restaurant.slug}/orders/pending?ref=${encodeURIComponent(paymentRef)}&provider=${provider}`, paymentLinkUrl(request, restaurant.slug, data.paymentLinkToken)).toString()
+    : undefined;
+
   if (provider === "paystack") {
     // Server-side init — binds the reference to our payment row before the
     // SDK opens. The client then calls resumeTransaction(access_code).
@@ -777,6 +820,7 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           reference: paymentRef,
+          ...(linkReturnUrl ? { callback_url: linkReturnUrl } : {}),
           amount: totalKobo,
           email:
             data.customerEmail ||
@@ -803,9 +847,10 @@ export async function POST(request: NextRequest) {
 
     const paystackData = await paystackRes.json();
 
-    return NextResponse.json({
+    return checkoutResponse({
       provider: "paystack",
       accessCode: paystackData.data.access_code,
+      ...(paymentLinkId ? { checkoutUrl: paystackData.data.authorization_url } : {}),
       paystackRef: paymentRef,
       paymentId: payment.id,
       totalKobo,
@@ -819,7 +864,27 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  return NextResponse.json({
+  let checkoutUrl: string | undefined;
+  if (paymentLinkId) {
+    try {
+      // A merchant link resumes a hosted transaction. Never call the SDK's
+      // initialize again: it can issue a different Monnify reference.
+      const initialized = await initMonnifyTransaction({
+        amount: totalKobo / 100, paymentReference: paymentRef,
+        customerName: data.customerName,
+        customerEmail: data.customerEmail || `${data.customerPhone.replace(/\D/g, "")}@foodo.ng`,
+        paymentDescription: `Order at ${restaurant.name}`, redirectUrl: linkReturnUrl,
+        metaData: { paymentId: payment.id },
+      });
+      checkoutUrl = initialized.checkoutUrl;
+    } catch (error) {
+      console.error("[checkout] payment-link gateway setup failed:", error);
+      return NextResponse.json({ error: "Payment setup could not be completed. Reopen this link to check its status.", reopenPaymentLink: true }, { status: 502 });
+    }
+  }
+
+  return checkoutResponse({
+    ...(checkoutUrl ? { checkoutUrl } : {}),
     provider: "monnify",
     monnifyRef: paymentRef,
     paymentId: payment.id,

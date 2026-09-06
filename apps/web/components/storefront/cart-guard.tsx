@@ -1,5 +1,7 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+
 import { useEffect } from "react";
 import { useRestaurant } from "./restaurant-context";
 import { useCartStore } from "@/lib/stores/cart";
@@ -9,15 +11,16 @@ import { useCartStore } from "@/lib/stores/cart";
  * The cart store only clears on addItem() from a new restaurant, not on navigation.
  */
 export function CartGuard() {
+  const isPaymentLink = usePathname().includes("/pay/");
   const { restaurant } = useRestaurant();
   const restaurantId = useCartStore((s) => s.restaurantId);
   const clear = useCartStore((s) => s.clear);
 
   useEffect(() => {
-    if (restaurantId && restaurantId !== restaurant.id) {
+    if (!isPaymentLink && restaurantId && restaurantId !== restaurant.id) {
       clear();
     }
-  }, [restaurant.id, restaurantId, clear]);
+  }, [restaurant.id, restaurantId, clear, isPaymentLink]);
 
   return null;
 }

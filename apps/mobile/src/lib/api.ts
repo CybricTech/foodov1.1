@@ -15,6 +15,17 @@
  */
 import { getSupabase } from "./supabase";
 import { env } from "./env";
+import type { MerchantPaymentLinksData, PaymentLinkLine } from "@foodo/utils";
+
+export function fetchPaymentLinks(): Promise<MerchantPaymentLinksData> {
+  return apiGet("/api/dashboard/payment-links");
+}
+export function createPaymentLink(payload: { requestKey: string; customerName: string; items: PaymentLinkLine[] }): Promise<{ id: string; url: string }> {
+  return apiPost("/api/dashboard/payment-links", payload);
+}
+export function cancelPaymentLink(id: string): Promise<{ success: true }> {
+  return apiSend("DELETE", `/api/dashboard/payment-links/${id}`);
+}
 
 export class ApiError extends Error {
   status: number;

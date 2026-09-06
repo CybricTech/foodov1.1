@@ -1,5 +1,7 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+
 import { useEffect, useState } from "react";
 import { X, Clock, CalendarClock } from "lucide-react";
 import {
@@ -11,6 +13,7 @@ import {
 import { useRestaurant } from "./restaurant-context";
 
 export function ClosedNotice() {
+  const isPaymentLink = usePathname().includes("/pay/");
   const { restaurant } = useRestaurant();
   const extended = restaurant as unknown as {
     opening_hours?: OpeningHours | null;
@@ -60,7 +63,9 @@ export function ClosedNotice() {
   // Hard-closed modals cannot be dismissed — only schedule-based ones can
   const canDismiss = !hardClosed;
 
-  if (!closed || (dismissed && canDismiss)) return null;
+  // A previously issued payment must remain reachable even after the store closes.
+  // New prepared checkouts still enforce availability on the server.
+  if (isPaymentLink || !closed || (dismissed && canDismiss)) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm">

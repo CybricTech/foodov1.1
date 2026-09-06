@@ -26,7 +26,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { useFocusEffect, useSegments } from "expo-router";
+import { router, useFocusEffect, useSegments } from "expo-router";
 
 import {
   laneForPolicy,
@@ -577,6 +577,9 @@ export function OrdersScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.black[50] }}>
+      <Pressable onPress={() => router.push("/payment-links")} accessibilityRole="button" style={{ backgroundColor: theme.colors.brand, paddingHorizontal: 16, paddingVertical: 12 }}>
+        <Text style={{ color: "#fff", fontWeight: "700", textAlign: "center" }}>Create order / Payment links</Text>
+      </Pressable>
       {/* Header — compact vertical padding in landscape to give the board room */}
       <View
         style={{
