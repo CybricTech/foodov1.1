@@ -1498,8 +1498,54 @@ export type Database = {
           },
         ]
       }
+      merchant_payment_links: {
+        Row: {
+          id: string
+          restaurant_id: string
+          created_by: string
+          token: string
+          request_key: string
+          customer_name: string
+          items: Json
+          subtotal_kobo: number
+          created_at: string
+          expires_at: string
+          cancelled_at: string | null
+          checkout_response: Json | null
+        }
+        Insert: {
+          id?: string
+          restaurant_id: string
+          created_by: string
+          token?: string
+          request_key: string
+          customer_name?: string
+          items: Json
+          subtotal_kobo: number
+          created_at?: string
+          expires_at?: string
+          cancelled_at?: string | null
+          checkout_response?: Json | null
+        }
+        Update: {
+          id?: string
+          restaurant_id?: string
+          created_by?: string
+          token?: string
+          request_key?: string
+          customer_name?: string
+          items?: Json
+          subtotal_kobo?: number
+          created_at?: string
+          expires_at?: string
+          cancelled_at?: string | null
+          checkout_response?: Json | null
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
+          payment_link_id: string | null
           amount_kobo: number
           channel: string | null
           created_at: string
@@ -1517,6 +1563,7 @@ export type Database = {
           restaurant_id: string
         }
         Insert: {
+          payment_link_id?: string | null
           amount_kobo: number
           channel?: string | null
           created_at?: string
@@ -1534,6 +1581,7 @@ export type Database = {
           restaurant_id: string
         }
         Update: {
+          payment_link_id?: string | null
           amount_kobo?: number
           channel?: string | null
           created_at?: string

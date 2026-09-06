@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useConnection } from "@/lib/connection-context";
@@ -758,6 +760,7 @@ export function FrontlineOrdersClient({
 
   return (
     <div className="min-h-screen bg-black-50">
+      <div className="flex justify-end border-b border-black-100 bg-white px-4 py-2"><Link href="/dashboard/frontline/payment-links" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white">Create order / Payment links</Link></div>
       {/* Header */}
       <div className="bg-white border-b border-black-100 px-4 md:px-6 py-4">
         <div className="flex items-center justify-between">

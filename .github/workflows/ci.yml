@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: npx turbo run lint
 
+      - name: Test
+        run: npx turbo run test
+
       - name: Build
         run: npx turbo run build --filter=@foodo/web
         env:
