@@ -4,7 +4,8 @@
  */
 import { Linking } from "react-native";
 
-export const WEB_URL = "https://kitchyn.app";
+// www is the canonical host: the apex 307-redirects here.
+export const WEB_URL = "https://www.kitchyn.app";
 export const PRIVACY_URL = `${WEB_URL}/privacy`;
 export const TERMS_URL = `${WEB_URL}/terms`;
 export const SUPPORT_URL = `${WEB_URL}/support`;
