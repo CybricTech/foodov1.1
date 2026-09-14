@@ -38,10 +38,10 @@ interface MenuItem {
 interface MenuScreenProps {
   restaurantId: string;
   accountName?: string;
-  onSignOut?: () => void;
+  onOpenAccount?: () => void;
 }
 
-export function MenuScreen({ restaurantId, accountName, onSignOut }: MenuScreenProps) {
+export function MenuScreen({ restaurantId, accountName, onOpenAccount }: MenuScreenProps) {
   const supabase = getSupabase();
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<MenuCategory[]>([]);
@@ -142,9 +142,9 @@ export function MenuScreen({ restaurantId, accountName, onSignOut }: MenuScreenP
               {availableCount} available · {unavailableCount} unavailable
             </Text>
           </View>
-          {onSignOut && (
+          {onOpenAccount && (
             <Pressable
-              onPress={onSignOut}
+              onPress={onOpenAccount}
               style={({ pressed }) => ({
                 paddingHorizontal: 12,
                 paddingVertical: 8,
@@ -155,7 +155,7 @@ export function MenuScreen({ restaurantId, accountName, onSignOut }: MenuScreenP
               })}
             >
               <Text style={{ fontSize: 12, fontWeight: "700", color: theme.colors.black[500] }}>
-                Sign out
+                Account
               </Text>
             </Pressable>
           )}

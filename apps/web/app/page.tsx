@@ -81,9 +81,9 @@ const FOOTER_LINKS: Record<string, Array<{ label: string; href: string | null }>
     { label: "Careers", href: null },
   ],
   Legal: [
-    { label: "Privacy", href: null },
-    { label: "Terms", href: null },
-    { label: "Contact", href: null },
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
+    { label: "Support", href: "/support" },
     { label: "Security", href: null },
   ],
 };

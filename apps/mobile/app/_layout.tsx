@@ -32,6 +32,10 @@ import { theme } from "../src/theme";
 // + crash-guarded (see src/lib/fonts.ts).
 applyBrandFontPatch();
 
+// Matches the native splash background (app.config.ts ICON_BACKGROUND) so the
+// hand-off from native splash to this font-loading screen is seamless.
+const SPLASH_BACKGROUND = "#440B8C";
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useBrandFonts();
 
@@ -62,11 +66,11 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) {
     return (
       <SafeAreaProvider>
-        <StatusBar style="light" backgroundColor={theme.colors.brand} />
+        <StatusBar style="light" backgroundColor={SPLASH_BACKGROUND} />
         <View
           style={{
             flex: 1,
-            backgroundColor: theme.colors.brand,
+            backgroundColor: SPLASH_BACKGROUND,
             alignItems: "center",
             justifyContent: "center",
           }}

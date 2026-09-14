@@ -277,19 +277,6 @@ export function fetchBanking(restaurantId: string): Promise<BankingInfo> {
   return apiGet(`/api/merchant/banking?restaurantId=${encodeURIComponent(restaurantId)}`);
 }
 
-/** POST /api/merchant/banking — verifies via Monnify then saves. */
-export function saveBanking(
-  restaurantId: string,
-  bankCode: string,
-  accountNumber: string
-): Promise<BankingInfo> {
-  return apiPost("/api/merchant/banking", {
-    restaurant_id: restaurantId,
-    bank_code: bankCode,
-    account_number: accountNumber,
-  });
-}
-
 /** PATCH /api/merchant/delivery-pricing */
 export function saveDeliveryPricing(payload: {
   restaurant_base_fee_kobo: number | null;
@@ -364,20 +351,12 @@ export function unregisterPushToken(token: string): Promise<{ success: true }> {
   return apiPost("/api/merchant/notifications/unregister", { token });
 }
 
-/* ───────────────────────── Marketing ────────────────────────────── */
+/* ───────────────────────── Account ──────────────────────────────── */
 
-/** Result envelope returned by the SMS-campaign route. */
-export interface SmsCampaignResult {
-  ok: true;
-  total: number;
-  sent: number;
-  failed: number;
-}
-
-/** POST /api/dashboard/marketing/sms-campaign */
-export function sendSmsCampaign(
-  audience: "all" | "inactive_30" | "vip",
-  message: string
-): Promise<SmsCampaignResult> {
-  return apiPost("/api/dashboard/marketing/sms-campaign", { audience, message });
+/**
+ * POST /api/merchant/account/deletion-request — idempotent: repeat calls return
+ * the already-pending request.
+ */
+export function requestAccountDeletion(): Promise<{ ok: true; requestedAt: string }> {
+  return apiPost("/api/merchant/account/deletion-request", {});
 }
