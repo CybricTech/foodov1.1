@@ -9,6 +9,7 @@
  *   - Marketing   → built (Phase 2b-ii)
  *   - Settings    → built (Phase 2b-ii)
  *   - Frontline mode → jumps into the existing (frontline) staff queue
+ *   - Account & help → support, privacy, terms, delete account
  *   - Sign out
  */
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -17,6 +18,7 @@ import {
   UtensilsCrossed,
   Megaphone,
   Settings,
+  LifeBuoy,
   LogOut,
   LayoutDashboard,
   ChevronRight,
@@ -41,6 +43,7 @@ interface MoreScreenProps {
   onOpenMarketing: () => void;
   onOpenSettings: () => void;
   onEnterFrontline: () => void;
+  onOpenAccount: () => void;
   onSignOut: () => void;
 }
 
@@ -51,6 +54,7 @@ export function MoreScreen({
   onOpenMarketing,
   onOpenSettings,
   onEnterFrontline,
+  onOpenAccount,
   onSignOut,
 }: MoreScreenProps) {
   const sections: { title: string; links: MoreLink[] }[] = [
@@ -97,6 +101,12 @@ export function MoreScreen({
     {
       title: "Account",
       links: [
+        {
+          label: "Account & help",
+          description: "Support, privacy, terms, delete account",
+          icon: LifeBuoy,
+          onPress: onOpenAccount,
+        },
         {
           label: "Sign out",
           description: accountName,

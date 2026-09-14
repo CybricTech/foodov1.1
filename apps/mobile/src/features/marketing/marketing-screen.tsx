@@ -1,8 +1,7 @@
 /**
- * Owner Marketing — RN port of the web `MarketingClient` (full parity).
+ * Owner Marketing — RN port of the web `MarketingClient`.
  *
  * Read components/dashboard/marketing-client.tsx for the canonical behaviour.
- * Two tabs, exactly like web:
  *
  *   Offers — promo codes & automatic discounts. Full CRUD against the
  *     `discounts` table via the authed `getSupabase()` client (RLS):
@@ -11,13 +10,10 @@
  *         sets archived_at + is_active=false so history/orders are preserved —
  *         never a hard delete, matching web).
  *
- *   SMS Campaigns — the composer is built and wired to the Bearer'd
- *     `/api/dashboard/marketing/sms-campaign` route (audience + message,
- *     recipient counts, confirm-before-send). BUT, exactly like web, SMS
- *     campaigns are gated "coming soon" — the web tab shows a coming-soon
- *     overlay and the server returns 503 until the targeting work ships. We
- *     mirror that here so behaviour matches; flip `SMS_COMING_SOON` when the
- *     server backstop is lifted.
+ *   Loyalty — stamp card config (LoyaltyConfig).
+ *
+ * Web's SMS Campaigns tab is intentionally NOT ported: it is gated "coming
+ * soon", and unfinished screens get apps rejected in store review.
  *
  * Money is rendered with `formatKobo` from @foodo/utils — no kobo math here.
  */
@@ -50,11 +46,6 @@ import { theme } from "../../theme";
 import { ScreenHeader } from "../../components/screen-header";
 import { DiscountForm } from "./discount-form";
 import { LoyaltyConfig } from "./loyalty-config";
-import { SmsComposer } from "./sms-composer";
-
-// Mirrors the web/server "coming soon" gate for SMS campaigns. The web tab is
-// overlaid and the route returns 503 until targeting ships; keep parity here.
-const SMS_COMING_SOON = true;
 
 type DiscountStatus = "active" | "paused" | "scheduled" | "expired" | "used_up" | "archived";
 
@@ -100,20 +91,12 @@ function describeValue(d: Discount): string {
 
 interface MarketingScreenProps {
   restaurantId: string;
-  customerCounts: { all: number; inactive30: number; vip: number };
-  senderStatus: "pending" | "approved" | "rejected" | null;
-  senderName: string | null;
 }
 
-export function MarketingScreen({
-  restaurantId,
-  customerCounts,
-  senderStatus,
-  senderName,
-}: MarketingScreenProps) {
+export function MarketingScreen({ restaurantId }: MarketingScreenProps) {
   const supabase = getSupabase();
 
-  const [tab, setTab] = useState<"offers" | "loyalty" | "sms">("offers");
+  const [tab, setTab] = useState<"offers" | "loyalty">("offers");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
@@ -220,7 +203,7 @@ export function MarketingScreen({
         subtitle={
           tab === "offers"
             ? `${discounts.length} offer${discounts.length === 1 ? "" : "s"} · ${activeCount} active`
-            : `${customerCounts.all} customer${customerCounts.all === 1 ? "" : "s"} reachable`
+            : "Reward repeat customers"
         }
         onBack={() => router.back()}
         right={
@@ -240,7 +223,6 @@ export function MarketingScreen({
       <View style={styles.tabBar}>
         <TabBtn label="Offers" active={tab === "offers"} onPress={() => setTab("offers")} />
         <TabBtn label="Loyalty" active={tab === "loyalty"} onPress={() => setTab("loyalty")} />
-        <TabBtn label="SMS" active={tab === "sms"} onPress={() => setTab("sms")} />
       </View>
 
       {tab === "offers" ? (
@@ -359,15 +341,8 @@ export function MarketingScreen({
             })}
           </ScrollView>
         )
-      ) : tab === "loyalty" ? (
-        <LoyaltyConfig restaurantId={restaurantId} />
       ) : (
-        <SmsComposer
-          comingSoon={SMS_COMING_SOON}
-          customerCounts={customerCounts}
-          senderStatus={senderStatus}
-          senderName={senderName}
-        />
+        <LoyaltyConfig restaurantId={restaurantId} />
       )}
 
       {(creating || editing) && (

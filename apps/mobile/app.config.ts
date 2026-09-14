@@ -5,16 +5,23 @@ import { join } from "path";
 /**
  * Expo app configuration for the Kitchyn Merchant app.
  *
- * Phase 0: app identity, Android package id, brand splash/icon, Expo Router +
- * NativeWind plugins, and Sentry/PostHog env placeholders wired through `extra`.
- * Permissions are kept MINIMAL — POST_NOTIFICATIONS / FCM are deferred to
- * Phase 1 (push). Do not add them here yet.
+ * Store-review notes:
+ *   - Permissions are kept to what the app actually uses: notifications (new
+ *     orders) and the photo library (menu/store images). Plugins that would
+ *     otherwise inject camera / microphone / Face ID strings or Android audio
+ *     recording + legacy storage permissions are explicitly opted out, and any
+ *     stragglers are stripped via `android.blockedPermissions`.
+ *   - The UI is light-only, so `userInterfaceStyle` is pinned to "light".
  *
  * Secrets are NEVER hardcoded — they come from `EXPO_PUBLIC_*` env vars at
- * build/runtime (see `.env.example`).
+ * build/runtime (see `.env.example`; EAS builds read them from EAS env vars).
  */
 
+// Accent used for notification tint.
 const KITCHYN_PURPLE = "#7B2CBF";
+// Background of the app icon artwork — shared by splash + adaptive icon so the
+// launch transition is seamless.
+const ICON_BACKGROUND = "#440B8C";
 
 // Firebase config for Android FCM (delivery of Expo pushes on Android). The
 // file is provided out-of-band by the build operator and is REQUIRED for a real
@@ -29,29 +36,39 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: "Kitchyn Merchant",
   slug: "kitchyn-merchant",
   scheme: "kitchyn",
-  version: "0.1.0",
+  version: "1.0.0",
   // "default" lets the OS permit rotation so the frontline Kitchen Display can
   // go landscape. App-wide portrait is then enforced in JS at the router root
   // (app/_layout.tsx locks PORTRAIT_UP), and the frontline orders screen alone
   // unlocks on focus / re-locks on blur. See expo-screen-orientation usage.
+  // NOTE: iPad apps that support multitasking ignore orientation locks, so
+  // every screen must also lay out correctly in iPad landscape.
   orientation: "default",
   icon: "./assets/icon.png",
-  userInterfaceStyle: "automatic",
+  userInterfaceStyle: "light",
   newArchEnabled: true,
-  splash: {
-    image: "./assets/splash.png",
-    resizeMode: "contain",
-    backgroundColor: KITCHYN_PURPLE,
-  },
   assetBundlePatterns: ["**/*"],
   android: {
     package: "com.kitchyn.merchant",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: KITCHYN_PURPLE,
+      monochromeImage: "./assets/monochrome-icon.png",
+      backgroundColor: ICON_BACKGROUND,
     },
     // Push: Android 13+ requires POST_NOTIFICATIONS for runtime prompts.
     permissions: ["POST_NOTIFICATIONS"],
+    // Injected by dependencies/templates but never used: the image picker uses
+    // the system Photo Picker (no storage permission), and audio is playback
+    // only (the new-order chime).
+    blockedPermissions: [
+      "android.permission.RECORD_AUDIO",
+      "android.permission.CAMERA",
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.READ_MEDIA_IMAGES",
+      "android.permission.READ_MEDIA_VIDEO",
+      "android.permission.SYSTEM_ALERT_WINDOW",
+    ],
     // FCM delivers Expo pushes on Android. Only set when the file exists so
     // config evaluation (expo export / tsc) doesn't fail in a fresh clone;
     // the operator must drop google-services.json here before an EAS build.
@@ -60,22 +77,23 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     bundleIdentifier: "com.kitchyn.merchant",
     supportsTablet: true,
-    infoPlist: {
-      // Required so the menu manager can pick item photos from the library.
-      NSPhotoLibraryUsageDescription:
-        "Kitchyn needs access to your photos so you can add images to your menu items.",
+    config: {
+      // HTTPS only via the OS networking stack — exempt from export compliance.
+      usesNonExemptEncryption: false,
     },
   },
   plugins: [
     "expo-router",
-    "expo-secure-store",
+    // Sessions are stored in the keychain without biometrics.
+    ["expo-secure-store", { faceIDPermission: false }],
     "expo-font",
-    "expo-audio",
+    // Playback only (new-order chime) — no recording.
+    ["expo-audio", { microphonePermission: false, recordAudioAndroid: false }],
     [
       "expo-notifications",
       {
-        // Monochrome status-bar icon + brand purple accent (Android).
-        icon: "./assets/icon.png",
+        // Android status-bar icon must be a white silhouette on transparent.
+        icon: "./assets/notification-icon.png",
         color: KITCHYN_PURPLE,
         // Bundle the custom new-order chime so the "orders" channel / iOS alert
         // can use it. Falls back to the system default sound if unsupported.
@@ -88,15 +106,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "expo-image-picker",
       {
         photosPermission:
-          "Kitchyn needs access to your photos so you can add images to your menu items.",
+          "Kitchyn uses your photo library so you can choose images for your menu items and store profile.",
+        cameraPermission: false,
+        microphonePermission: false,
       },
     ],
     [
       "expo-splash-screen",
       {
-        image: "./assets/splash.png",
+        image: "./assets/splash-icon.png",
+        imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: KITCHYN_PURPLE,
+        backgroundColor: ICON_BACKGROUND,
       },
     ],
   ],

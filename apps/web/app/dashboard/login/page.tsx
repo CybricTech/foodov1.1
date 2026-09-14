@@ -75,9 +75,14 @@ function MerchantLoginForm() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-black-500 mb-1">
-              Password
-            </label>
+            <div className="flex items-baseline justify-between mb-1">
+              <label className="block text-sm font-medium text-black-500">
+                Password
+              </label>
+              <a href="/forgot-password" className="text-xs font-semibold text-purple-500 hover:underline">
+                Forgot password?
+              </a>
+            </div>
             <input
               type="password"
               value={password}

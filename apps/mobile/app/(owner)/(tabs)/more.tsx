@@ -20,6 +20,7 @@ export default function OwnerMoreRoute() {
       onOpenMarketing={() => router.push("/(owner)/marketing")}
       onOpenSettings={() => router.push("/(owner)/settings")}
       onEnterFrontline={() => router.push("/(frontline)/orders")}
+      onOpenAccount={() => router.push("/account")}
       onSignOut={async () => {
         await signOut();
         router.replace("/login");

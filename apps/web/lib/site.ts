@@ -127,6 +127,13 @@ export function isHostRootPath(pathname: string): boolean {
 }
 
 /**
+ * Public support mailbox. The ONE place it is spelled — used by /support,
+ * /privacy, /terms and /delete-account, which the Kitchyn Merchant app and the
+ * App Store / Google Play listings link to.
+ */
+export const SUPPORT_EMAIL = "admin@kitchyn.app";
+
+/**
  * Slugs a merchant may not take.
  *
  * The apex serves storefronts under a path prefix (kitchyn.app/<slug>), so any
@@ -148,6 +155,15 @@ const RESERVED_SLUGS = new Set([
   "logout",
   "offline",
   "restaurants",
+  // Public legal / account pages — linked from the Kitchyn Merchant app and the
+  // app-store listings at these exact paths.
+  "privacy",
+  "terms",
+  "support",
+  "delete-account",
+  "forgot-password",
+  "reset-password",
+  "auth",
   // Host-root files
   "robots.txt",
   "sitemap.xml",

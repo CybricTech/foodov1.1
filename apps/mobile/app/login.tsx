@@ -21,6 +21,7 @@ import {
 import { router } from "expo-router";
 
 import { useAuth } from "../src/lib/auth";
+import { FORGOT_PASSWORD_URL, PRIVACY_URL, TERMS_URL, WEB_URL, openLink } from "../src/lib/links";
 import { theme } from "../src/theme";
 
 export default function LoginScreen() {
@@ -147,11 +148,59 @@ export default function LoginScreen() {
               <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700" }}>Sign in</Text>
             )}
           </Pressable>
+
+          <Pressable
+            onPress={() => openLink(FORGOT_PASSWORD_URL)}
+            hitSlop={8}
+            accessibilityRole="link"
+            style={{ alignSelf: "center" }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "600", color: theme.colors.brand }}>
+              Forgot password?
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* No in-app sign-up: explain where logins come from. */}
+        <Text
+          style={{
+            fontSize: 13,
+            color: theme.colors.black[400],
+            textAlign: "center",
+            marginTop: 20,
+            lineHeight: 19,
+          }}
+        >
+          Kitchyn Merchant is for restaurants on Kitchyn. Your login is created when your
+          restaurant joins, and staff logins are added by the restaurant owner.{" "}
+          <Text
+            onPress={() => openLink(WEB_URL)}
+            accessibilityRole="link"
+            style={{ color: theme.colors.brand, fontWeight: "600" }}
+          >
+            Learn more at kitchyn.app
+          </Text>
+        </Text>
+
+        <View style={{ flexDirection: "row", justifyContent: "center", gap: 20, marginTop: 16 }}>
+          <Text onPress={() => openLink(PRIVACY_URL)} accessibilityRole="link" style={legalLinkStyle}>
+            Privacy Policy
+          </Text>
+          <Text onPress={() => openLink(TERMS_URL)} accessibilityRole="link" style={legalLinkStyle}>
+            Terms of Service
+          </Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
+
+const legalLinkStyle = {
+  fontSize: 12,
+  fontWeight: "600",
+  color: theme.colors.black[500],
+  textDecorationLine: "underline",
+} as const;
 
 const inputStyle = {
   borderWidth: 1,
