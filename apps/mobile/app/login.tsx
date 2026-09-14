@@ -21,7 +21,7 @@ import {
 import { router } from "expo-router";
 
 import { useAuth } from "../src/lib/auth";
-import { FORGOT_PASSWORD_URL, PRIVACY_URL, TERMS_URL, WEB_URL, openLink } from "../src/lib/links";
+import { FORGOT_PASSWORD_URL, MARKETING_URL, PRIVACY_URL, TERMS_URL, openLink } from "../src/lib/links";
 import { theme } from "../src/theme";
 
 export default function LoginScreen() {
@@ -174,7 +174,7 @@ export default function LoginScreen() {
           Kitchyn Merchant is for restaurants on Kitchyn. Your login is created when your
           restaurant joins, and staff logins are added by the restaurant owner.{" "}
           <Text
-            onPress={() => openLink(WEB_URL)}
+            onPress={() => openLink(MARKETING_URL)}
             accessibilityRole="link"
             style={{ color: theme.colors.brand, fontWeight: "600" }}
           >

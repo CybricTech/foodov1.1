@@ -91,7 +91,7 @@ export default function AccountScreen() {
       rows: [
         {
           label: "Help & support",
-          description: "kitchyn.app/support",
+          description: "Guides and ways to reach us",
           icon: LifeBuoy,
           onPress: () => openLink(SUPPORT_URL),
         },

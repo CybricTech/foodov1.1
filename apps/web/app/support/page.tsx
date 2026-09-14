@@ -48,7 +48,7 @@ export default function SupportPage() {
         </ul>
         <h3>Can&apos;t sign in?</h3>
         <p>
-          Reset your password at <Link href="/forgot-password">kitchyn.app/forgot-password</Link>.
+          Reset it on our <Link href="/forgot-password">password reset page</Link>.
           We&apos;ll email you a link that works on any device. The new password works in both the
           Kitchyn Merchant app and the web dashboard.
         </p>

@@ -133,7 +133,7 @@ export default function TermsPage() {
           </li>
           <li>
             If you forget your password, you can reset it at{" "}
-            <Link href="/forgot-password">kitchyn.app/forgot-password</Link>.
+            our <Link href="/forgot-password">password reset page</Link>.
           </li>
           <li>
             You can ask us to close your account at any time. See{" "}

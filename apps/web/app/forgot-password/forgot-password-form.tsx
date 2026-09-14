@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
-import { apexOrigin } from "@/lib/site";
 
 /**
  * Where the reset email sends people. /auth/confirm verifies the token_hash
@@ -12,7 +11,9 @@ import { apexOrigin } from "@/lib/site";
  * asked for it. Absolute and on the apex, because the request may come from a
  * storefront host or localhost while the email is opened elsewhere.
  */
-const RESET_REDIRECT = `${apexOrigin()}/auth/confirm?next=/reset-password`;
+// Built from the serving origin: this app runs on dashboard.kitchyn.app, while
+// the apex (apexOrigin) is the separate marketing site and would 404.
+const RESET_CONFIRM_PATH = "/auth/confirm?next=/reset-password";
 
 export function ForgotPasswordForm() {
   const searchParams = useSearchParams();
@@ -30,7 +31,7 @@ export function ForgotPasswordForm() {
 
     const { error: resetError } = await createBrowserClient().auth.resetPasswordForEmail(
       email.trim(),
-      { redirectTo: RESET_REDIRECT }
+      { redirectTo: `${window.location.origin}${RESET_CONFIRM_PATH}` }
     );
 
     setLoading(false);
