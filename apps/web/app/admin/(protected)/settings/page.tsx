@@ -1,17 +1,42 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { SettingsAdminClient } from "@/components/admin/settings-admin-client";
+import type { RiderContactStoreRow } from "@/components/admin/rider-contact-store-list";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminSettingsPage() {
   const supabase = createServiceClient();
 
-  const { data: settings } = await supabase
-    .from("platform_settings")
-    .select(
-      "service_charge_pct, service_charge_fixed_kobo, merchant_charge_pct, settlement_hold_hours, delivery_base_fee_kobo, delivery_per_km_rate_kobo, delivery_max_radius_km, delivery_max_fee_kobo, delivery_commission_pct, admin_whatsapp_number, admin_alert_email, bolt_booking_enabled, bolt_booking_shadow, bolt_environment, bolt_rider_contact_phone, timed_rider_request_enabled, rider_request_lead_minutes"
-    )
-    .single();
+  // `*` rather than a column list: naming a column a newer migration hasn't
+  // added yet fails the whole read, and this form then renders defaults. Saving
+  // from that state would write those defaults back over the real settings
+  // (booking switches included). With `*`, an absent column just shows its
+  // default until the migration lands. Singleton row, super-admin-only page.
+  const [{ data: settings }, { data: storeData, error: storeErr }] = await Promise.all([
+    supabase.from("platform_settings").select("*").single(),
+    // The "use this store's number" list under Dispatch. Named columns only.
+    // These rows are handed to a client component, so bank details and the
+    // rest of the restaurants row must not ride along.
+    supabase
+      .from("restaurants")
+      .select("id, name, is_test, whatsapp_number, rider_contact_phone, rider_contact_selected")
+      .eq("is_active", true)
+      .order("name"),
+  ]);
+
+  // null (not []) when the read fails, so the list can say why instead of
+  // looking like there are no stores. The usual cause is the rider-contact
+  // migration not having run yet.
+  const riderContactStores: RiderContactStoreRow[] | null = storeErr
+    ? null
+    : (storeData ?? []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        isTest: r.is_test === true,
+        whatsappNumber: r.whatsapp_number,
+        customPhone: r.rider_contact_phone,
+        selected: r.rider_contact_selected === true,
+      }));
 
   return (
     <div className="p-6 pb-24">
@@ -22,7 +47,7 @@ export default async function AdminSettingsPage() {
         </p>
       </div>
 
-      <SettingsAdminClient settings={settings} />
+      <SettingsAdminClient settings={settings} riderContactStores={riderContactStores} />
     </div>
   );
 }

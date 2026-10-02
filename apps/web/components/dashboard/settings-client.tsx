@@ -10,10 +10,15 @@ import { FocalPointPicker, type FocalPoint } from "./focal-point-picker";
 import { AddressPicker, type VerifiedAddress } from "@/components/shared/address-picker";
 import { PickupPointPicker } from "@/components/shared/pickup-point-picker";
 import {
+  formatPhoneDisplay,
+  normalizeNigerianMobile,
   normalizeSchedulingSettings,
+  parseRiderContactInput,
   resolveDispatchPolicy,
+  resolveMerchantRiderPhone,
   SCHEDULING_DEFAULTS,
   type DispatchPolicy,
+  type RiderContactStatus,
   type SchedulingSettings,
   type PausedRange,
 } from "@foodo/utils";
@@ -543,6 +548,226 @@ function RiderPickupPointSection({
   );
 }
 
+/**
+ * The number a Kitchyn rider calls when they arrive to collect.
+ *
+ * Bolt gives a ride one contact, and the driver treats it as the person at the
+ * pickup. Until this existed that was always Kitchyn's ops line, so riders rang
+ * ops, and ops rang the merchant. This makes it the merchant, defaulting to
+ * their WhatsApp alert number because that's already a number they watch during
+ * service.
+ *
+ * Saves on its own (PATCH /api/merchant/rider-contact) rather than with the
+ * sticky "Save changes" bar. It's validated server-side against the same rules
+ * the booking path uses, and the mobile app shares the route. The WhatsApp
+ * option previews the live value from the Notifications field, so a merchant
+ * editing that number sees the effect here before saving.
+ */
+function RiderContactSection({
+  initialStatus,
+  whatsappNumber,
+}: {
+  initialStatus: RiderContactStatus | null;
+  whatsappNumber: string;
+}) {
+  const [status, setStatus] = useState(initialStatus);
+  const [choice, setChoice] = useState<"whatsapp" | "custom">(
+    initialStatus?.customPhone ? "custom" : "whatsapp"
+  );
+  const [customDraft, setCustomDraft] = useState(
+    initialStatus?.customPhone ? formatPhoneDisplay(initialStatus.customPhone) : ""
+  );
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  // Status only fails to load if the store row can't be read. Better to leave
+  // the section out than show a control that can't save.
+  if (!status) return null;
+
+  const parsedCustom = parseRiderContactInput(customDraft);
+  const customBlank = !customDraft.trim();
+  // What would be saved: null = follow WhatsApp; undefined = not saveable yet.
+  const target: string | null | undefined =
+    choice === "whatsapp" ? null : parsedCustom.ok && !customBlank ? parsedCustom.phone : undefined;
+  const dirty = target !== undefined && target !== status.customPhone;
+
+  const preview = resolveMerchantRiderPhone({
+    customPhone: choice === "custom" ? (customBlank ? null : customDraft) : null,
+    whatsappNumber,
+  });
+  const whatsappPhone = normalizeNigerianMobile(whatsappNumber);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (target === undefined) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/merchant/rider-contact", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: target }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Couldn't save your rider contact");
+      } else {
+        const next = data as RiderContactStatus;
+        setStatus(next);
+        setChoice(next.customPhone ? "custom" : "whatsapp");
+        setCustomDraft(next.customPhone ? formatPhoneDisplay(next.customPhone) : "");
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch {
+      setError("Network error");
+    }
+    setSaving(false);
+  }
+
+  const optionCls = (selected: boolean) =>
+    cn(
+      "flex items-start gap-3 rounded-xl border px-3.5 py-3 cursor-pointer transition-colors",
+      selected ? "border-purple-500 bg-purple-50" : "border-black-200 hover:border-black-400"
+    );
+
+  return (
+    <Section title="Rider contact">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-black-400 leading-relaxed">
+          When a Kitchyn rider arrives to collect an order, this is the number they call. The
+          customer&apos;s number is already in the rider&apos;s instructions for the drop-off, so
+          you&apos;ll only hear from riders about pickups.
+        </p>
+        <span
+          className={cn(
+            "shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium",
+            status.live ? "bg-viridian-100 text-viridian-500" : "bg-black-100 text-black-500"
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block w-1.5 h-1.5 rounded-full",
+              status.live ? "bg-viridian-500" : "bg-black-400"
+            )}
+          />
+          {status.live ? "Active" : "Coming soon"}
+        </span>
+      </div>
+
+      {!status.live && (
+        <p className="text-xs text-black-500 bg-black-50 rounded-xl px-3 py-2.5 leading-relaxed">
+          For now, riders call Kitchyn and we pass the message on. Set your number now and
+          we&apos;ll start using it as soon as your store is switched over.
+        </p>
+      )}
+
+      <form onSubmit={handleSave} className="space-y-3">
+        <div role="radiogroup" aria-label="Number riders call" className="space-y-2">
+          <label className={optionCls(choice === "whatsapp")}>
+            <input
+              type="radio"
+              name="rider-contact"
+              checked={choice === "whatsapp"}
+              onChange={() => setChoice("whatsapp")}
+              className="mt-0.5 w-4 h-4 accent-purple-500 cursor-pointer"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-black-900">
+                My WhatsApp alert number
+              </span>
+              <span
+                className={cn(
+                  "block text-xs mt-0.5",
+                  whatsappPhone
+                    ? "text-black-500 tabular-nums"
+                    : whatsappNumber.trim()
+                      ? "text-cinnabar-500"
+                      : "text-black-400"
+                )}
+              >
+                {whatsappPhone
+                  ? formatPhoneDisplay(whatsappPhone)
+                  : whatsappNumber.trim()
+                    ? `${whatsappNumber.trim()} isn't a Nigerian mobile number`
+                    : "Not set yet. Add it under Notifications above."}
+              </span>
+            </span>
+          </label>
+
+          <label className={optionCls(choice === "custom")}>
+            <input
+              type="radio"
+              name="rider-contact"
+              checked={choice === "custom"}
+              onChange={() => setChoice("custom")}
+              className="mt-0.5 w-4 h-4 accent-purple-500 cursor-pointer"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-black-900">A different number</span>
+              <span className="block text-xs text-black-400 mt-0.5">
+                Like your kitchen or front-desk phone
+              </span>
+              {choice === "custom" && (
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={customDraft}
+                  onChange={(e) => setCustomDraft(e.target.value)}
+                  placeholder="0803 123 4567"
+                  aria-label="Number riders should call"
+                  aria-invalid={!customBlank && !parsedCustom.ok}
+                  className={cn(
+                    inputCls,
+                    "mt-2 bg-white",
+                    !customBlank && !parsedCustom.ok && "border-cinnabar-500 focus:border-cinnabar-500"
+                  )}
+                />
+              )}
+            </span>
+          </label>
+        </div>
+
+        {/* What riders will actually get, given the choice above. */}
+        {choice === "custom" && !customBlank && !parsedCustom.ok ? (
+          <p className="text-xs text-cinnabar-500">{parsedCustom.error}</p>
+        ) : choice === "custom" && customBlank ? (
+          <p className="text-xs text-black-400">Enter the number riders should call.</p>
+        ) : preview.ok ? (
+          <p className="text-xs text-black-500">
+            Riders will call{" "}
+            <span className="font-semibold text-black-900 tabular-nums">
+              {formatPhoneDisplay(preview.phone)}
+            </span>
+            {status.live ? "." : " once your store is switched over."}
+          </p>
+        ) : (
+          <p className="text-xs text-black-900 bg-dixie-100 border border-dixie-500/40 rounded-xl px-3 py-2">
+            Without a working number, riders will keep calling Kitchyn. Add a WhatsApp number above
+            or choose a different number.
+          </p>
+        )}
+
+        <p className="text-[11px] text-black-400 leading-relaxed">
+          Choose a phone someone answers during opening hours. Riders call when they arrive, or if
+          they can&apos;t find you. Bolt may also text this number about the rider.
+        </p>
+
+        {error && <p className="text-xs text-cinnabar-500">{error}</p>}
+        <button
+          type="submit"
+          disabled={saving || !dirty}
+          className="bg-purple-500 hover:bg-purple-400 disabled:opacity-60 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+        >
+          {saving ? "Saving…" : saved ? "Saved!" : "Save rider contact"}
+        </button>
+      </form>
+    </Section>
+  );
+}
+
 type DayHours = { enabled: boolean; open: string; close: string };
 type OpeningHours = Record<string, DayHours>;
 
@@ -585,9 +810,11 @@ type RestaurantExtended = Restaurant & {
 export function SettingsClient({
   restaurant,
   agreement,
+  riderContact,
 }: {
   restaurant: Restaurant;
   agreement: MerchantAgreementRow | null;
+  riderContact: RiderContactStatus | null;
 }) {
   const supabase = createBrowserClient();
   const r = restaurant as RestaurantExtended;
@@ -1088,6 +1315,14 @@ export function SettingsClient({
                   No WhatsApp number set — alerts will be sent via SMS
                 </p>
               )}
+              {/* Only once it's true. Before the rollout reaches this store,
+                  riders still call Kitchyn whatever this field says. */}
+              {riderContact?.live && !riderContact.customPhone && (
+                <p className="text-xs text-black-400 mt-1">
+                  Riders collecting your orders also call this number, unless you choose a
+                  different one under Rider contact below.
+                </p>
+              )}
             </Field>
           </Section>
 
@@ -1570,6 +1805,9 @@ export function SettingsClient({
               (r as RestaurantExtended & { pickup_lat?: number | null }).pickup_lat == null
             }
           />
+
+          {/* Who riders call when they arrive to collect */}
+          <RiderContactSection initialStatus={riderContact} whatsappNumber={whatsappNumber} />
 
           {/* Staff management */}
           <StaffManagementSection restaurantId={r.id} />

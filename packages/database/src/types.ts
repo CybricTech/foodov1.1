@@ -225,6 +225,8 @@ export type Database = {
           pickup_lat: number | null
           pickup_lng: number | null
           restaurant_id: string
+          rider_contact_phone: string | null
+          rider_contact_source: string | null
           state: string
           tracking_url: string | null
           updated_at: string
@@ -261,6 +263,8 @@ export type Database = {
           pickup_lat?: number | null
           pickup_lng?: number | null
           restaurant_id: string
+          rider_contact_phone?: string | null
+          rider_contact_source?: string | null
           state?: string
           tracking_url?: string | null
           updated_at?: string
@@ -297,6 +301,8 @@ export type Database = {
           pickup_lat?: number | null
           pickup_lng?: number | null
           restaurant_id?: string
+          rider_contact_phone?: string | null
+          rider_contact_source?: string | null
           state?: string
           tracking_url?: string | null
           updated_at?: string
@@ -1680,6 +1686,7 @@ export type Database = {
           bolt_booking_enabled: boolean
           bolt_booking_shadow: boolean
           bolt_environment: string
+          bolt_rider_contact_mode: string
           bolt_rider_contact_phone: string
           delivery_base_fee_kobo: number
           delivery_commission_pct: number
@@ -1704,6 +1711,7 @@ export type Database = {
           bolt_booking_enabled?: boolean
           bolt_booking_shadow?: boolean
           bolt_environment?: string
+          bolt_rider_contact_mode?: string
           bolt_rider_contact_phone?: string
           delivery_base_fee_kobo?: number
           delivery_commission_pct?: number
@@ -1728,6 +1736,7 @@ export type Database = {
           bolt_booking_enabled?: boolean
           bolt_booking_shadow?: boolean
           bolt_environment?: string
+          bolt_rider_contact_mode?: string
           bolt_rider_contact_phone?: string
           delivery_base_fee_kobo?: number
           delivery_commission_pct?: number
@@ -1837,6 +1846,8 @@ export type Database = {
           restaurant_base_fee_kobo: number | null
           restaurant_max_fee_kobo: number | null
           restaurant_per_km_rate_kobo: number | null
+          rider_contact_phone: string | null
+          rider_contact_selected: boolean
           rider_request_lead_minutes: number | null
           scheduling_settings: Json | null
           slug: string
@@ -1899,6 +1910,8 @@ export type Database = {
           restaurant_base_fee_kobo?: number | null
           restaurant_max_fee_kobo?: number | null
           restaurant_per_km_rate_kobo?: number | null
+          rider_contact_phone?: string | null
+          rider_contact_selected?: boolean
           rider_request_lead_minutes?: number | null
           scheduling_settings?: Json | null
           slug: string
@@ -1961,6 +1974,8 @@ export type Database = {
           restaurant_base_fee_kobo?: number | null
           restaurant_max_fee_kobo?: number | null
           restaurant_per_km_rate_kobo?: number | null
+          rider_contact_phone?: string | null
+          rider_contact_selected?: boolean
           rider_request_lead_minutes?: number | null
           scheduling_settings?: Json | null
           slug?: string

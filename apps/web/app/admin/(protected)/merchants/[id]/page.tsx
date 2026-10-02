@@ -6,6 +6,9 @@ import { MerchantDetailClient, type AgreementRow } from "@/components/admin/merc
 import { MerchantSmsSenderCard } from "@/components/admin/merchant-sms-sender-card";
 import { MerchantSeoCard } from "@/components/admin/merchant-seo-card";
 import { MerchantPickupPointCard } from "@/components/admin/merchant-pickup-point-card";
+import { MerchantRiderContactCard } from "@/components/admin/merchant-rider-contact-card";
+import { readBoltSettings } from "@/lib/bolt/book-ride";
+import { getRiderContactStatus } from "@/lib/delivery/rider-contact";
 import type { AuditRow } from "@/components/admin/audit-log-client";
 import { storefrontUrl } from "@/lib/site";
 
@@ -36,6 +39,8 @@ export default async function MerchantDetailPage({
     { data: agreement },
     { data: recentSettlements },
     { data: recentActivity },
+    riderContactStatus,
+    boltSettings,
   ] = await Promise.all([
     supabase
       .from("restaurants")
@@ -132,6 +137,10 @@ export default async function MerchantDetailPage({
       .eq("restaurant_id", id)
       .order("created_at", { ascending: false })
       .limit(100),
+
+    getRiderContactStatus(supabase, id),
+
+    readBoltSettings(supabase),
   ]);
 
   if (!restaurant) {
@@ -249,6 +258,18 @@ export default async function MerchantDetailPage({
         hasPickupPoint={
           (restaurant as { pickup_lat?: number | null }).pickup_lat != null
         }
+      />
+
+      {/* Whose phone a Bolt driver gets at the pickup — the store's or ours. */}
+      <MerchantRiderContactCard
+        restaurantId={restaurant.id}
+        restaurantName={restaurant.name}
+        initialStatus={riderContactStatus}
+        initialSelected={
+          (restaurant as { rider_contact_selected?: boolean | null }).rider_contact_selected === true
+        }
+        mode={boltSettings.riderContactMode}
+        opsPhone={boltSettings.riderPhone}
       />
 
       {/* SMS sender ID management */}
