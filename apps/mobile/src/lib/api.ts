@@ -15,7 +15,7 @@
  */
 import { getSupabase } from "./supabase";
 import { env } from "./env";
-import type { MerchantPaymentLinksData, PaymentLinkLine } from "@foodo/utils";
+import type { MerchantPaymentLinksData, PaymentLinkLine, RiderContactStatus } from "@foodo/utils";
 
 export function fetchPaymentLinks(): Promise<MerchantPaymentLinksData> {
   return apiGet("/api/dashboard/payment-links");
@@ -294,6 +294,16 @@ export function saveLocation(payload: {
   max_delivery_radius_km: number | null;
 }): Promise<{ success: true }> {
   return apiSend("PATCH", "/api/merchant/location", payload);
+}
+
+/** GET /api/merchant/rider-contact — the number riders call at pickup, and whether it's live yet. */
+export function fetchRiderContact(): Promise<RiderContactStatus> {
+  return apiGet("/api/merchant/rider-contact");
+}
+
+/** PATCH /api/merchant/rider-contact — a number, or null to follow the WhatsApp alert number. */
+export function saveRiderContact(phone: string | null): Promise<RiderContactStatus> {
+  return apiSend("PATCH", "/api/merchant/rider-contact", { phone });
 }
 
 /* ───────────────────────── Staff ────────────────────────────────── */

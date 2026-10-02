@@ -14,8 +14,8 @@
  *   - Social links, "close store" toggle + closure message, and per-day
  *     operating hours (the same `opening_hours` JSON shape web writes).
  *   - Password change via `getSupabase().auth.updateUser({ password })`.
- *   - Bank account, delivery pricing, location and staff are their own sections
- *     (delivery/location/staff/bank go through Bearer'd routes).
+ *   - Bank account, delivery pricing, location, rider contact and staff are
+ *     their own sections (all go through Bearer'd routes).
  *
  * Money fields are entered/stored in naira → kobo with the same `* 100` web
  * uses; no kobo math is hand-rolled beyond that.
@@ -65,6 +65,7 @@ import {
 } from "./ui";
 import { BankSection } from "./bank-section";
 import { StaffSection } from "./staff-section";
+import { RiderContactSection } from "./rider-contact-section";
 
 type DayHours = { enabled: boolean; open: string; close: string };
 type OpeningHours = Record<string, DayHours>;
@@ -841,6 +842,9 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
             busy={locSaving}
           />
         </Section>
+
+        {/* Who riders call when they arrive to collect */}
+        <RiderContactSection whatsappNumber={whatsappNumber} />
 
         {/* Staff */}
         <StaffSection />

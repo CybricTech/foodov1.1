@@ -28,9 +28,12 @@ import {
 import {
   composeDeliveryAddress,
   isDispatchableAddress,
+  resolveRiderContactMode,
   tidyAddress,
+  type RiderContactMode,
 } from "@foodo/utils";
 import { buildDriverNote } from "@/lib/delivery/driver-note";
+import { loadRiderContact } from "@/lib/delivery/rider-contact";
 
 /**
  * Fallback only — used if `platform_settings.bolt_rider_contact_phone` is
@@ -60,8 +63,11 @@ const DEFAULT_BOLT_RIDER_CONTACT_PHONE = "+2348063662721";
  * one prominent slot on a signpost rather than the answer — leaving drivers to
  * phone the ops line just to ask whose food they were picking up.
  *
- * Still deliberately not the customer's name: the registered phone is the ops
- * line, and the real customer contact travels in note_to_driver (buildDriverNote).
+ * Still deliberately not the customer's name. The registered phone belongs to
+ * the store (or the ops line, as fallback), never the customer. The customer's
+ * contact travels in note_to_driver (buildDriverNote). So the name and the
+ * number in the driver's app describe the same party: the place they're
+ * collecting from.
  */
 const BOLT_RIDER_NAME_PREFIX = "BOLT FOOD: ";
 const BOLT_RIDER_NAME_SUFFIX = " (see note)";
@@ -119,21 +125,30 @@ export interface BoltSettings {
   enabled: boolean;
   shadow: boolean;
   environment: BoltEnvironment;
-  /** Registered "rider" contact phone for every booking — see buildBoltRiderName above. */
+  /**
+   * Kitchyn's ops line. The registered contact on every booking while the
+   * rider-contact rollout is off, and the fallback for any store without a
+   * usable number once it's on. See loadRiderContact.
+   */
   riderPhone: string;
+  /** Whose phone drivers get at pickup: ops | selected | merchant (migration 20261002120000). */
+  riderContactMode: RiderContactMode;
 }
 
 export async function readBoltSettings(supabase: SupabaseClient): Promise<BoltSettings> {
-  const { data } = await supabase
-    .from("platform_settings")
-    .select("bolt_booking_enabled, bolt_booking_shadow, bolt_environment, bolt_rider_contact_phone")
-    .single();
+  // `*` rather than a column list, on purpose. Naming a column that doesn't
+  // exist yet fails the whole read, and a failed read here means
+  // `enabled: false`, which silently turns automated booking off. With `*`, a
+  // column added by a newer migration is simply absent until that migration
+  // lands, and resolves to its safe default below. Singleton row, server-only.
+  const { data } = await supabase.from("platform_settings").select("*").single();
 
   const row = data as {
     bolt_booking_enabled?: boolean;
     bolt_booking_shadow?: boolean;
     bolt_environment?: string;
     bolt_rider_contact_phone?: string;
+    bolt_rider_contact_mode?: string;
   } | null;
 
   return {
@@ -141,6 +156,7 @@ export async function readBoltSettings(supabase: SupabaseClient): Promise<BoltSe
     shadow: row?.bolt_booking_shadow ?? true,
     environment: row?.bolt_environment === "production" ? "production" : "sandbox",
     riderPhone: row?.bolt_rider_contact_phone || DEFAULT_BOLT_RIDER_CONTACT_PHONE,
+    riderContactMode: resolveRiderContactMode(row?.bolt_rider_contact_mode),
   };
 }
 
@@ -220,6 +236,12 @@ export async function createRideAttempt(
 
   const attempt = ((attemptRows as { attempt: number }[] | null)?.[0]?.attempt ?? 0) + 1;
 
+  // Whose phone the driver gets for the pickup: the store's, once the rollout
+  // includes it, otherwise the ops line. Resolved per attempt rather than
+  // cached on the order, so a rebook after the merchant fixes their number
+  // picks up the fix. Never throws; worst case is the ops line.
+  const contact = await loadRiderContact(supabase, order.restaurant_id, settings);
+
   const noteToDriver = buildDriverNote({
     orderNumber: order.order_number,
     restaurantName: restaurant?.name,
@@ -257,6 +279,19 @@ export async function createRideAttempt(
   }
 
   const rideRowId = (created as { id: string }).id;
+
+  // Recorded in its own write, apart from the claim above and the booking
+  // update below. Those two carry the attempt latch and bolt_ride_id, and a
+  // column missing on a database this migration hasn't reached would fail them
+  // outright. That would mean either no booking or, worse, a booked ride with
+  // no id recorded. This one is diagnostic, so it's allowed to fail alone.
+  const { error: contactErr } = await supabase
+    .from("bolt_rides")
+    .update({ rider_contact_source: contact.source, rider_contact_phone: contact.phone })
+    .eq("id", rideRowId);
+  if (contactErr) {
+    console.warn(`[bolt] could not record rider contact ride=${rideRowId}: ${contactErr.message}`);
+  }
 
   const fail = async (reason: string, code: string | null = null): Promise<BookingOutcome> => {
     await supabase
@@ -370,15 +405,13 @@ export async function createRideAttempt(
       // buildBoltRiderName. This is what stops the driver ringing to ask who
       // they're collecting from.
       riderName: buildBoltRiderName(restaurant.name),
-      // The registered "rider" contact on every Bolt trip — deliberately NOT
-      // the customer's own phone. The customer is never the one talking to
-      // the driver; the note_to_driver instruction already carries the real
-      // customer number for the driver to call on arrival (buildDriverNote).
-      // This is the operations line instead, so Bolt's own driver-facing
-      // contact and any Bolt-side SMS/calls land in one consistent place.
-      // Sourced from platform_settings (readBoltSettings), not a constant —
-      // editable from admin Settings › Dispatch, takes effect immediately.
-      riderPhone: settings.riderPhone,
+      // Bolt's single contact slot, which is the person the driver expects at
+      // the pickup. That's the store once the rollout includes it, so "I'm at
+      // the gate" reaches the people holding the food rather than ops relaying
+      // it. The ops line otherwise, and as the fallback. Never the customer:
+      // their number travels in note_to_driver for the drop-off. Bolt Send in
+      // the consumer app works the same way, with the restaurant as sender.
+      riderPhone: contact.phone,
       noteToDriver,
     });
 
@@ -456,7 +489,8 @@ export async function createRideAttempt(
 
   console.log(
     `[bolt] booked order=${order.order_number} ride=${ride.ride_id} attempt=${attempt} ` +
-      `mode=${addressMode} source=${source}`
+      `mode=${addressMode} contact=${contact.source}` +
+      `${contact.fallbackReason ? `(${contact.fallbackReason})` : ""} source=${source}`
   );
 
   return { outcome: "booked", rideId: ride.ride_id, boltRideId: ride.ride_id };

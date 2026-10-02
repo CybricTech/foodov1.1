@@ -11,3 +11,4 @@ export * from "./order-buckets";
 export * from "./dispatch-policy";
 export * from "./delivery-address";
 export * from "./payment-links";
+export * from "./rider-contact";

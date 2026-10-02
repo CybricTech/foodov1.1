@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { RIDER_CONTACT_MODES } from "@foodo/utils";
 
 async function requireSuperAdmin() {
   const supabase = await createServerClient();
@@ -65,6 +66,7 @@ export async function PATCH(request: NextRequest) {
     bolt_booking_shadow?: boolean;
     bolt_environment?: string;
     bolt_rider_contact_phone?: string;
+    bolt_rider_contact_mode?: string;
     timed_rider_request_enabled?: boolean;
     rider_request_lead_minutes?: number;
   };
@@ -124,6 +126,18 @@ export async function PATCH(request: NextRequest) {
       );
     }
     allowed.bolt_rider_contact_phone = phone;
+  }
+  // Decides whose phone strangers are handed on every booking, so like the two
+  // above it's constrained here and not left to the DB check. See migration
+  // 20261002120000 and packages/utils/src/rider-contact.ts.
+  if (updates.bolt_rider_contact_mode !== undefined) {
+    if (!(RIDER_CONTACT_MODES as readonly string[]).includes(updates.bolt_rider_contact_mode)) {
+      return NextResponse.json(
+        { error: "bolt_rider_contact_mode must be 'ops', 'selected' or 'merchant'" },
+        { status: 400 }
+      );
+    }
+    allowed.bolt_rider_contact_mode = updates.bolt_rider_contact_mode;
   }
 
   if (Object.keys(allowed).length === 0) {

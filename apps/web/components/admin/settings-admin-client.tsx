@@ -1,6 +1,33 @@
 "use client";
 
 import { useState } from "react";
+import { resolveRiderContactMode, type RiderContactMode } from "@foodo/utils";
+import {
+  RiderContactStoreList,
+  type RiderContactStoreRow,
+} from "@/components/admin/rider-contact-store-list";
+
+/** The three settings for whose phone a Bolt driver gets at pickup. */
+const RIDER_CONTACT_MODE_OPTIONS: { value: RiderContactMode; title: string; detail: string }[] = [
+  {
+    value: "ops",
+    title: "Kitchyn line for every store",
+    detail:
+      "Every driver calls the dispatch line below, whatever's switched on in the list. Use this to turn the feature off everywhere at once.",
+  },
+  {
+    value: "selected",
+    title: "Selected stores call the merchant",
+    detail:
+      "Only the stores switched on below give drivers their own number. Everyone else stays on the Kitchyn line.",
+  },
+  {
+    value: "merchant",
+    title: "Every store calls the merchant",
+    detail:
+      "Each store's rider number, or their WhatsApp number if they haven't set one. Stores with no usable number fall back to the Kitchyn line.",
+  },
+];
 
 type PlatformSettings = {
   service_charge_pct: number;
@@ -19,15 +46,18 @@ type PlatformSettings = {
   bolt_booking_shadow?: boolean | null;
   bolt_environment?: string | null;
   bolt_rider_contact_phone?: string | null;
+  bolt_rider_contact_mode?: string | null;
   timed_rider_request_enabled?: boolean | null;
   rider_request_lead_minutes?: number | null;
 } | null;
 
 interface SettingsAdminClientProps {
   settings: PlatformSettings;
+  /** Active stores for the "use this store's number" list. null = couldn't load. */
+  riderContactStores: RiderContactStoreRow[] | null;
 }
 
-export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
+export function SettingsAdminClient({ settings, riderContactStores }: SettingsAdminClientProps) {
   // Test-order helper (dev tool) — drops a fake new order on CopperPot.
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -125,6 +155,13 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
   const [boltRiderPhone, setBoltRiderPhone] = useState(
     settings?.bolt_rider_contact_phone ?? ""
   );
+  // Absent until migration 20261002120000 runs. Until then the choice is shown
+  // disabled and never sent: PATCHing a column that doesn't exist would fail
+  // the whole Dispatch save, booking switches included.
+  const riderContactAvailable = settings?.bolt_rider_contact_mode != null;
+  const [riderContactMode, setRiderContactMode] = useState<RiderContactMode>(
+    resolveRiderContactMode(settings?.bolt_rider_contact_mode)
+  );
   const [savingDispatch, setSavingDispatch] = useState(false);
   const [dispatchSaved, setDispatchSaved] = useState(false);
   const [dispatchError, setDispatchError] = useState("");
@@ -144,6 +181,7 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
           bolt_booking_shadow: boltShadow,
           bolt_environment: boltEnv,
           bolt_rider_contact_phone: boltRiderPhone,
+          ...(riderContactAvailable ? { bolt_rider_contact_mode: riderContactMode } : {}),
         }),
       });
       const data = await res.json();
@@ -650,9 +688,65 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
             </select>
           </div>
 
+          <hr className="border-black-100" />
+
+          {/* Bolt gives a ride one contact, the person the driver expects at
+              the pickup. Whose phone that is: ours, selected stores', or every
+              store's. */}
+          <fieldset disabled={!riderContactAvailable} className="disabled:opacity-60">
+            <legend className="block text-sm font-semibold text-black-900">
+              Who drivers call at pickup
+            </legend>
+            <p className="text-xs text-black-400 mt-0.5 mb-3 leading-relaxed">
+              Bolt gives each ride a single contact, and the driver treats it as
+              the person at the pickup. Making that the merchant means &ldquo;I&apos;m
+              outside&rdquo; reaches the people holding the food, not ops. The
+              customer&apos;s number is always in the driver note for the drop-off.
+              This applies only to rides we book automatically through Bolt&apos;s
+              API — the Telegram note for hand bookings is unchanged.
+            </p>
+            <div className="space-y-2">
+              {RIDER_CONTACT_MODE_OPTIONS.map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex items-start gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${
+                    riderContactMode === opt.value
+                      ? "border-purple-500 bg-purple-50"
+                      : "border-black-200 hover:border-black-400"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="rider-contact-mode"
+                    value={opt.value}
+                    checked={riderContactMode === opt.value}
+                    onChange={() => setRiderContactMode(opt.value)}
+                    className="mt-0.5 w-4 h-4 accent-purple-500 cursor-pointer"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-black-900">{opt.title}</span>
+                    <span className="block text-xs text-black-400 mt-0.5 leading-relaxed">
+                      {opt.detail}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {!riderContactAvailable && (
+              <p className="text-xs text-black-500 bg-black-50 rounded-xl px-3 py-2 mt-2">
+                Available once migration 20261002120000 has been applied. Until then every driver
+                calls the Kitchyn line.
+              </p>
+            )}
+          </fieldset>
+
+          {riderContactAvailable && (
+            <RiderContactStoreList stores={riderContactStores} mode={riderContactMode} />
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-black-500 mb-1">
-              Rider contact number
+              Kitchyn dispatch line
             </label>
             <input
               type="tel"
@@ -662,10 +756,11 @@ export function SettingsAdminClient({ settings }: SettingsAdminClientProps) {
               className="w-48 border border-black-200 rounded-xl px-3 py-2 text-sm"
             />
             <p className="text-[11px] text-black-400 mt-1">
-              Registered as the &ldquo;rider&rdquo; on every automated Bolt
-              booking — never the customer&apos;s number. Bolt calls/SMSes this
-              line directly. Takes effect on the next booking as soon as you
-              save, no deploy needed.
+              {riderContactMode === "ops"
+                ? "Registered as the contact on every Bolt booking, never the customer's number. Bolt calls and texts this line directly."
+                : "The fallback for any store without a usable number of its own" +
+                  (riderContactMode === "selected" ? ", and the contact for every store not switched on above." : ".")}{" "}
+              Takes effect on the next booking as soon as you save, no deploy needed.
             </p>
           </div>
 
