@@ -9,11 +9,15 @@
  *     `/api/dashboard/customers/[id]/orders` (src/lib/api.ts), the same endpoint
  *     web uses — expandable order rows with items + price breakdown + address.
  *
- * No CSV export (that's Phase 2b). Money via formatKobo from @foodo/utils.
+ *   - Export CSV: same columns as web's /api/merchant/customers/export, built
+ *     from the already-loaded (RLS-scoped) list and handed to the share sheet.
+ *
+ * Money via formatKobo from @foodo/utils.
  */
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   ScrollView,
@@ -33,15 +37,42 @@ import {
   ChevronUp,
 } from "lucide-react-native";
 
-import { formatKobo } from "@foodo/utils";
+import { formatKobo, koboToNGN } from "@foodo/utils";
 import type { Database } from "@foodo/database";
 
 import { getSupabase } from "../../lib/supabase";
 import { fetchCustomerOrders, ApiError, type CustomerOrder } from "../../lib/api";
 import { theme } from "../../theme";
 import { ScreenHeader } from "../../components/screen-header";
+import { File, Paths } from "expo-file-system";
+import * as Sharing from "expo-sharing";
 
 type CustomerRow = Database["public"]["Tables"]["customers"]["Row"];
+
+/** CSV in the same shape as the web export route. */
+function customersCsv(rows: CustomerRow[]): string {
+  const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const header = "Name,Phone,Email,Total Orders,Total Spent (NGN),First Order,Last Order,Notes\n";
+  return (
+    header +
+    rows
+      .map((c) =>
+        [
+          c.full_name ?? "",
+          c.phone,
+          c.email ?? "",
+          c.total_orders.toString(),
+          koboToNGN(c.total_spent_kobo).toFixed(2),
+          c.first_order_at ? new Date(c.first_order_at).toLocaleDateString() : "",
+          c.last_order_at ? new Date(c.last_order_at).toLocaleDateString() : "",
+          (c.notes ?? "").replace(/,/g, ";"),
+        ]
+          .map(cell)
+          .join(",")
+      )
+      .join("\n")
+  );
+}
 type SortKey = "total_spent_kobo" | "total_orders" | "last_order_at" | "first_order_at";
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -89,6 +120,29 @@ export function CustomersScreen({ restaurantId }: CustomersScreenProps) {
   const supabase = getSupabase();
 
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const file = new File(Paths.cache, `customers-${Date.now()}.csv`);
+      file.create();
+      file.write(customersCsv(customers));
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: "text/csv",
+          UTI: "public.comma-separated-values-text",
+          dialogTitle: "Export customers",
+        });
+      } else {
+        Alert.alert("Export unavailable", "Sharing isn't available on this device.");
+      }
+    } catch (e) {
+      Alert.alert("Export failed", (e as Error).message ?? "Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CustomerRow | null>(null);
   const [search, setSearch] = useState("");
@@ -145,6 +199,25 @@ export function CustomersScreen({ restaurantId }: CustomersScreenProps) {
         title="Customers"
         subtitle={`${customers.length} total`}
         onBack={() => router.back()}
+        right={
+          <Pressable
+            onPress={handleExport}
+            disabled={exporting || customers.length === 0}
+            accessibilityRole="button"
+            style={{
+              borderWidth: 1,
+              borderColor: theme.colors.brand,
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 7,
+              opacity: exporting || customers.length === 0 ? 0.5 : 1,
+            }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "600", color: theme.colors.brand }}>
+              {exporting ? "Exporting…" : "Export CSV"}
+            </Text>
+          </Pressable>
+        }
       />
 
       {/* Search + sort */}

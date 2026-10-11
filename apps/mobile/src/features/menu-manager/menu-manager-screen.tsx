@@ -280,6 +280,14 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
     [items, activeCategory]
   );
 
+  // Add-on items + their reserved category, fed to the item form so option
+  // choices can link to (or create) reusable add-ons — same as web.
+  const addonCategory = categories.find((c) => c.is_addon_group) ?? null;
+  const addonItems = useMemo(
+    () => items.filter((i) => i.is_addon_only).map((i) => ({ id: i.id, name: i.name })),
+    [items]
+  );
+
   // ── Item save handler shared by add/edit ─────────────────────────────────────
   function handleItemSaved(saved: MenuItemWithOptions) {
     setItems((prev) =>
@@ -487,9 +495,18 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
                     <Text style={styles.offBadgeText}>Off</Text>
                   </View>
                 )}
+                {item.is_addon_only && (
+                  <View style={[styles.offBadge, { backgroundColor: theme.colors.primary[100] }]}>
+                    <Text style={[styles.offBadgeText, { color: theme.colors.brandDark }]}>Add-on</Text>
+                  </View>
+                )}
               </View>
               <Text style={styles.itemPrice}>
-                {item.price_kobo === 0 ? "Multiple sizes" : formatKobo(item.price_kobo)}
+                {item.is_addon_only
+                  ? "Add-on only"
+                  : item.price_kobo === 0
+                  ? "Multiple sizes"
+                  : formatKobo(item.price_kobo)}
               </Text>
               {/* Stock control — only for inventory-tracked items (091). */}
               {item.track_inventory && (
@@ -557,11 +574,15 @@ export function MenuManagerScreen({ restaurantId }: MenuManagerScreenProps) {
           item={editingItem}
           defaultCategoryId={activeCategory}
           schedulingEnabled={schedulingEnabled}
+          addons={addonItems}
+          addonCategory={addonCategory}
           onClose={() => {
             setShowAddItem(false);
             setEditingItem(null);
           }}
           onSave={handleItemSaved}
+          onAddonCreated={(created) => setItems((prev) => [...prev, created])}
+          onCategoryCreated={(cat) => setCategories((prev) => [...prev, cat])}
         />
       )}
 

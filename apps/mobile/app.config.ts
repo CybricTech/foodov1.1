@@ -81,6 +81,31 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       // HTTPS only via the OS networking stack — exempt from export compliance.
       usesNonExemptEncryption: false,
     },
+    // App Store "required reason" API declarations for the app target. React
+    // Native, AsyncStorage (session/flags), expo-file-system (image upload, CSV
+    // export) and expo-constants touch these; Sentry and PostHog ship their own
+    // manifests. No tracking, so no tracking domains.
+    privacyManifests: {
+      NSPrivacyTracking: false,
+      NSPrivacyAccessedAPITypes: [
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+          NSPrivacyAccessedAPITypeReasons: ["CA92.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
+          NSPrivacyAccessedAPITypeReasons: ["C617.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
+          NSPrivacyAccessedAPITypeReasons: ["35F9.1"],
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryDiskSpace",
+          NSPrivacyAccessedAPITypeReasons: ["E174.1"],
+        },
+      ],
+    },
   },
   plugins: [
     "expo-router",
