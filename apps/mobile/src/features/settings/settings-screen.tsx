@@ -13,9 +13,15 @@
  *     validation as web).
  *   - Social links, "close store" toggle + closure message, and per-day
  *     operating hours (the same `opening_hours` JSON shape web writes).
+ *   - "How your deliveries are handled" (`dispatch_policy`, read-only once an
+ *     admin locks it) and Pre-orders (`scheduling_settings`), saved with the
+ *     profile like web.
  *   - Password change via `getSupabase().auth.updateUser({ password })`.
- *   - Bank account, delivery pricing, location, rider contact and staff are
- *     their own sections (all go through Bearer'd routes).
+ *   - Bank account, merchant agreement, delivery pricing, location (Google
+ *     place picker), rider pickup point, rider contact and staff are their own
+ *     sections (all go through Bearer'd routes). The address is NOT part of the
+ *     profile save: it's written by the location route together with the
+ *     coordinates it was resolved from.
  *
  * Money fields are entered/stored in naira → kobo with the same `* 100` web
  * uses; no kobo math is hand-rolled beyond that.
@@ -40,7 +46,6 @@ import {
   Power,
   Clock,
   Banknote,
-  MapPin,
   Lock,
   ImagePlus,
   Bike,
@@ -49,10 +54,16 @@ import {
 import { router } from "expo-router";
 
 import type { Restaurant } from "@foodo/database";
+import {
+  normalizeSchedulingSettings,
+  resolveDispatchPolicy,
+  type DispatchPolicy,
+  type SchedulingSettings,
+} from "@foodo/utils";
 
 import { getSupabase } from "../../lib/supabase";
 import { ScreenHeader } from "../../components/screen-header";
-import { saveDeliveryPricing, saveLocation, ApiError } from "../../lib/api";
+import { saveDeliveryPricing, ApiError } from "../../lib/api";
 import { theme } from "../../theme";
 import { pickMenuImage, uploadMenuImage } from "../menu-manager/image-upload";
 import {
@@ -66,6 +77,29 @@ import {
 import { BankSection } from "./bank-section";
 import { StaffSection } from "./staff-section";
 import { RiderContactSection } from "./rider-contact-section";
+import { AgreementSection } from "./agreement-section";
+import { LocationSection } from "./location-section";
+import { PickupPointSection } from "./pickup-point-section";
+import { SchedulingSection } from "./scheduling-section";
+
+/** What each dispatch policy actually means for the merchant's day (web copy). */
+const DISPATCH_POLICY_OPTIONS: { value: DispatchPolicy; label: string; hint: string }[] = [
+  {
+    value: "platform",
+    label: "Kitchyn delivers for me",
+    hint: "We send you a rider automatically, timed to arrive as the food is ready. You just cook and mark it ready.",
+  },
+  {
+    value: "in_house",
+    label: "I use my own riders",
+    hint: "Your own riders take every delivery. We never send you one, and you won't be asked who's delivering.",
+  },
+  {
+    value: "hybrid",
+    label: "Both — I choose per order",
+    hint: "You pick who delivers each order when you mark it ready — your rider, or one of ours.",
+  },
+];
 
 type DayHours = { enabled: boolean; open: string; close: string };
 type OpeningHours = Record<string, DayHours>;
@@ -97,13 +131,17 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [stateField, setStateField] = useState("");
   const [primaryColor, setPrimaryColor] = useState("#7B2CBF");
   const [minOrderNgn, setMinOrderNgn] = useState("");
   const [vatPercentage, setVatPercentage] = useState("");
-  const [logisticsDefault, setLogisticsDefault] = useState("platform_rider");
+  const [dispatchPolicy, setDispatchPolicy] = useState<DispatchPolicy>("platform");
+  // Admins can freeze the policy; the API enforces it too.
+  const [dispatchPolicyLocked, setDispatchPolicyLocked] = useState(false);
+  const [schedulingSettings, setSchedulingSettings] = useState<SchedulingSettings>(
+    normalizeSchedulingSettings(null)
+  );
   const [acceptsOrders, setAcceptsOrders] = useState(true);
   const [acceptsDelivery, setAcceptsDelivery] = useState(true);
   const [acceptsPickup, setAcceptsPickup] = useState(true);
@@ -139,14 +177,12 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
   const [pricingSaved, setPricingSaved] = useState(false);
   const [pricingError, setPricingError] = useState("");
 
-  // Location
-  const [lat, setLat] = useState("");
-  const [lng, setLng] = useState("");
-  const [locRadius, setLocRadius] = useState("");
-  const [locSaving, setLocSaving] = useState(false);
-  const [locSaved, setLocSaved] = useState(false);
-  const [locError, setLocError] = useState("");
-  const [hasLocation, setHasLocation] = useState(false);
+  // Location — a newly confirmed address resets the pickup point (DB trigger),
+  // so the pickup section remounts from this state when it changes.
+  const [locationVerified, setLocationVerified] = useState(false);
+  const [pickupLabel, setPickupLabel] = useState<string | null>(null);
+  const [pickupIsStorefront, setPickupIsStorefront] = useState(true);
+  const [locationVersion, setLocationVersion] = useState(0);
 
   // Password
   const [pw1, setPw1] = useState("");
@@ -179,18 +215,25 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
       restaurant_base_fee_kobo?: number | null;
       restaurant_per_km_rate_kobo?: number | null;
       restaurant_max_fee_kobo?: number | null;
+      dispatch_policy?: string | null;
+      dispatch_policy_locked_at?: string | null;
+      scheduling_settings?: unknown;
+      location_verified_at?: string | null;
+      pickup_label?: string | null;
+      pickup_lat?: number | null;
     };
     setR(row);
     setName(row.name ?? "");
     setDescription(row.description ?? "");
     setPhone(row.phone ?? "");
-    setAddress(row.address ?? "");
     setCity(row.city ?? "");
     setStateField(row.state ?? "");
     setPrimaryColor(row.primary_color ?? "#7B2CBF");
     setMinOrderNgn(row.min_order_amount ? String(row.min_order_amount / 100) : "");
     setVatPercentage(row.vat_percentage != null ? String(row.vat_percentage) : "");
-    setLogisticsDefault(row.logistics_default ?? "platform_rider");
+    setDispatchPolicy(resolveDispatchPolicy(row.dispatch_policy));
+    setDispatchPolicyLocked(Boolean(row.dispatch_policy_locked_at));
+    setSchedulingSettings(normalizeSchedulingSettings(row.scheduling_settings));
     setAcceptsOrders(row.accepts_orders);
     setAcceptsDelivery(row.accepts_delivery ?? true);
     setAcceptsPickup(row.accepts_pickup ?? true);
@@ -210,10 +253,9 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
     setMaxFeeNgn(toNgn(row.restaurant_max_fee_kobo));
     setPricingRadius(row.max_delivery_radius_km != null ? String(row.max_delivery_radius_km) : "");
 
-    setHasLocation(row.latitude != null && row.longitude != null);
-    setLat(row.latitude != null ? String(row.latitude) : "");
-    setLng(row.longitude != null ? String(row.longitude) : "");
-    setLocRadius(row.max_delivery_radius_km != null ? String(row.max_delivery_radius_km) : "");
+    setLocationVerified(Boolean(row.location_verified_at));
+    setPickupLabel(row.pickup_label ?? null);
+    setPickupIsStorefront(row.pickup_lat == null);
 
     setLoading(false);
   }, [restaurantId, supabase]);
@@ -242,10 +284,21 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         prefix: kind === "logo" ? "logo-" : "banner-",
         maxEdge: kind === "banner" ? 2000 : undefined,
       });
-      const column = kind === "logo" ? "logo_url" : "banner_url";
+      // A new hero photo makes the old focal point meaningless, so it resets
+      // to center on both breakpoints along with the URL (same as web).
+      const update =
+        kind === "logo"
+          ? { logo_url: url }
+          : {
+              banner_url: url,
+              banner_focal_x: 50,
+              banner_focal_y: 50,
+              banner_focal_x_mobile: 50,
+              banner_focal_y_mobile: 50,
+            };
       const { error: dbErr } = await supabase
         .from("restaurants")
-        .update({ [column]: url })
+        .update(update)
         .eq("id", restaurantId);
       if (dbErr) {
         setImageError(dbErr.message);
@@ -284,18 +337,21 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         name,
         description: description || null,
         phone: phone || null,
-        address: address || null,
+        // address is owned by LocationSection / /api/merchant/location, which
+        // writes it atomically with the coordinates it was resolved from.
         city: city || null,
         state: stateField || null,
         primary_color: primaryColor,
         min_order_amount: minOrderNgn ? Math.round(parseFloat(minOrderNgn) * 100) : null,
         vat_percentage: vatPercentage ? parseFloat(vatPercentage) : null,
-        logistics_default: logisticsDefault,
+        // A locked policy is left out so the save can't trip the server guard.
+        ...(dispatchPolicyLocked ? {} : { dispatch_policy: dispatchPolicy }),
         accepts_orders: acceptsOrders,
         accepts_delivery: acceptsDelivery,
         accepts_pickup: acceptsPickup,
         closure_message: closureMessage || null,
         opening_hours: openingHours,
+        scheduling_settings: schedulingSettings,
         instagram_url: instagramUrl || null,
         facebook_url: facebookUrl || null,
         twitter_url: twitterUrl || null,
@@ -331,31 +387,6 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
       setPricingError(e instanceof ApiError ? e.message : "Failed to save delivery pricing.");
     } finally {
       setPricingSaving(false);
-    }
-  }
-
-  async function handleSaveLocation() {
-    const parsedLat = parseFloat(lat);
-    const parsedLng = parseFloat(lng);
-    if (isNaN(parsedLat) || isNaN(parsedLng)) {
-      setLocError("Enter valid latitude and longitude values.");
-      return;
-    }
-    setLocSaving(true);
-    setLocError("");
-    try {
-      await saveLocation({
-        latitude: parsedLat,
-        longitude: parsedLng,
-        max_delivery_radius_km: locRadius ? parseInt(locRadius, 10) : null,
-      });
-      setHasLocation(true);
-      setLocSaved(true);
-      setTimeout(() => setLocSaved(false), 3000);
-    } catch (e) {
-      setLocError(e instanceof ApiError ? e.message : "Failed to save location.");
-    } finally {
-      setLocSaving(false);
     }
   }
 
@@ -447,9 +478,6 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
               keyboardType="phone-pad"
               placeholder="+2348012345678"
             />
-          </Field>
-          <Field label="Address" hint="Street address shown on your storefront">
-            <Input value={address} onChangeText={setAddress} multiline placeholder="e.g. 14 Adeola Hopewell Street, Maitama" />
           </Field>
           <View style={{ flexDirection: "row", gap: 12 }}>
             <View style={{ flex: 1 }}>
@@ -600,23 +628,24 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
           <Field label="VAT (%)" hint="Applied to the order subtotal. Leave blank if you don't charge VAT.">
             <Input value={vatPercentage} onChangeText={setVatPercentage} keyboardType="numeric" placeholder="e.g. 7.5" />
           </Field>
-          <Field label="Default logistics mode">
-            <View style={{ gap: 8 }}>
-              {(
-                [
-                  { value: "platform_rider", label: "Platform Rider" },
-                  { value: "own_rider", label: "Own Rider" },
-                  { value: "third_party", label: "Third-Party (Kwik etc.)" },
-                ] as const
-              ).map((opt) => (
+          <Field label="How your deliveries are handled">
+            <View style={{ gap: 8, opacity: dispatchPolicyLocked ? 0.6 : 1 }}>
+              {DISPATCH_POLICY_OPTIONS.map((opt) => (
                 <RadioRow
                   key={opt.value}
                   label={opt.label}
-                  selected={logisticsDefault === opt.value}
-                  onPress={() => setLogisticsDefault(opt.value)}
+                  selected={dispatchPolicy === opt.value}
+                  onPress={() => {
+                    if (!dispatchPolicyLocked) setDispatchPolicy(opt.value);
+                  }}
                 />
               ))}
             </View>
+            <Text style={styles.toggleSub}>
+              {dispatchPolicyLocked
+                ? "This is set by your Kitchyn account manager. Get in touch to change it."
+                : DISPATCH_POLICY_OPTIONS.find((o) => o.value === dispatchPolicy)?.hint}
+            </Text>
           </Field>
         </Section>
 
@@ -752,6 +781,9 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
           })}
         </Section>
 
+        {/* Pre-orders */}
+        <SchedulingSection value={schedulingSettings} onChange={setSchedulingSettings} />
+
         {/* Save profile */}
         <PrimaryButton
           label={saved ? "✓ Saved!" : "Save changes"}
@@ -762,6 +794,9 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
 
         {/* Bank account */}
         <BankSection restaurantId={restaurantId} />
+
+        {/* Merchant agreement */}
+        <AgreementSection />
 
         {/* Delivery pricing */}
         <Section
@@ -807,41 +842,28 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
         </Section>
 
         {/* Location */}
-        <Section
-          title="Restaurant location"
-          icon={<MapPin size={18} color={theme.colors.brand} strokeWidth={2.25} />}
-          subtitle="Set your coordinates accurately — used to calculate delivery fees. In Google Maps, long-press your location and copy the numbers."
-        >
-          {hasLocation && (
-            <View style={styles.locSetRow}>
-              <View style={styles.locDot} />
-              <Text style={{ fontSize: 12, color: theme.colors.black[500] }}>
-                Location set: {lat}, {lng}
-              </Text>
-            </View>
-          )}
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Field label="Latitude">
-                <Input value={lat} onChangeText={setLat} keyboardType="numeric" placeholder="e.g. 9.0579" />
-              </Field>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Field label="Longitude">
-                <Input value={lng} onChangeText={setLng} keyboardType="numeric" placeholder="e.g. 7.4951" />
-              </Field>
-            </View>
-          </View>
-          <Field label="Max delivery radius (km)" hint="Orders beyond this distance are rejected. Leave blank for the platform default.">
-            <Input value={locRadius} onChangeText={setLocRadius} keyboardType="numeric" placeholder="e.g. 15" />
-          </Field>
-          {locError ? <ErrorText>{locError}</ErrorText> : null}
-          <PrimaryButton
-            label={locSaved ? "Saved!" : "Save location"}
-            onPress={handleSaveLocation}
-            busy={locSaving}
-          />
-        </Section>
+        <LocationSection
+          initialAddress={r.address ?? null}
+          initialLat={r.latitude ?? null}
+          initialLng={r.longitude ?? null}
+          initialVerified={locationVerified}
+          initialMaxRadius={r.max_delivery_radius_km ?? null}
+          onSaved={() => {
+            // The DB trigger clears the pickup point when the address moves.
+            setLocationVerified(true);
+            setPickupLabel(null);
+            setPickupIsStorefront(true);
+            setLocationVersion((v) => v + 1);
+          }}
+        />
+
+        {/* Rider pickup point */}
+        <PickupPointSection
+          key={locationVersion}
+          verified={locationVerified}
+          initialLabel={pickupLabel}
+          initialIsStorefront={pickupIsStorefront}
+        />
 
         {/* Who riders call when they arrive to collect */}
         <RiderContactSection whatsappNumber={whatsappNumber} />
@@ -950,16 +972,6 @@ const styles = {
   dayLabel: { width: 78, fontSize: 13, fontWeight: "600" as const, color: theme.colors.black[900] },
   previewBox: { backgroundColor: theme.colors.black[50], borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
   previewText: { fontSize: 12, color: theme.colors.black[500] },
-  locSetRow: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 8,
-    backgroundColor: theme.colors.black[50],
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  locDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.viridian[500] },
   radioRow: {
     flexDirection: "row" as const,
     alignItems: "center" as const,

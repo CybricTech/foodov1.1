@@ -287,13 +287,79 @@ export function saveDeliveryPricing(payload: {
   return apiSend("PATCH", "/api/merchant/delivery-pricing", payload);
 }
 
-/** PATCH /api/merchant/location */
+/**
+ * PATCH /api/merchant/location — address, coordinates and place_id travel
+ * together and only ever come from a picked Google place. Omit the address
+ * fields to save just the radius without disturbing a confirmed address.
+ */
 export function saveLocation(payload: {
-  latitude: number;
-  longitude: number;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  place_id?: string;
   max_delivery_radius_km: number | null;
 }): Promise<{ success: true }> {
   return apiSend("PATCH", "/api/merchant/location", payload);
+}
+
+/** GET /api/places/autocomplete — server-proxied Google Places suggestions. */
+export function searchPlaces(
+  input: string
+): Promise<{ suggestions: { description: string; placeId: string }[] }> {
+  return apiGet(`/api/places/autocomplete?input=${encodeURIComponent(input)}`);
+}
+
+/** GET /api/places/resolve — a picked place's coordinates + formatted address. */
+export function resolvePlace(
+  placeId: string
+): Promise<{ lat: number; lng: number; formattedAddress: string | null }> {
+  return apiGet(`/api/places/resolve?placeId=${encodeURIComponent(placeId)}`);
+}
+
+/** A spot a rider could be sent to around the store. */
+export interface PickupCandidate {
+  label: string;
+  lat: number;
+  lng: number;
+  distanceM: number;
+  direction: string;
+}
+
+/** GET /api/merchant/pickup-point — the pickup labels reachable around the store. */
+export function fetchPickupOptions(): Promise<{
+  current: { lat: number; lng: number; label: string | null; isStorefront: boolean };
+  candidates: PickupCandidate[];
+}> {
+  return apiGet("/api/merchant/pickup-point");
+}
+
+/** PATCH /api/merchant/pickup-point — both null reverts to the storefront pin. */
+export function savePickupPoint(
+  latitude: number | null,
+  longitude: number | null
+): Promise<{ success: true; label?: string | null }> {
+  return apiSend("PATCH", "/api/merchant/pickup-point", { latitude, longitude });
+}
+
+/* ───────────────────────── Merchant agreement ───────────────────── */
+
+export interface MerchantAgreement {
+  id: string;
+  status: string;
+  final_pdf_path: string | null;
+}
+
+/** GET /api/merchant/agreement — latest agreement + a live signing link when it's the merchant's turn. */
+export function fetchAgreement(): Promise<{
+  agreement: MerchantAgreement | null;
+  sign_url: string | null;
+}> {
+  return apiGet("/api/merchant/agreement");
+}
+
+/** GET /api/merchant/agreement/file?format=json — a short-lived URL to the signed PDF. */
+export function fetchAgreementFileUrl(): Promise<{ url: string }> {
+  return apiGet("/api/merchant/agreement/file?format=json");
 }
 
 /** GET /api/merchant/rider-contact — the number riders call at pickup, and whether it's live yet. */

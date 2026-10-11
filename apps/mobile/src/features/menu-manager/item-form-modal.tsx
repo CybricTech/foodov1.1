@@ -42,6 +42,14 @@ import { pickMenuImage, uploadMenuImage, type PickedImage } from "./image-upload
 interface DraftChoice {
   name: string;
   priceModifierNgn: string;
+  /** Set when the choice mirrors a reusable add-on item (name + availability). */
+  linkedItemId: string | null;
+}
+
+/** A hidden add-on item that option choices can link to. */
+export interface AddonRef {
+  id: string;
+  name: string;
 }
 
 interface DraftOption {
@@ -66,8 +74,15 @@ interface ItemFormModalProps {
   /** Whether the restaurant has pre-orders enabled — Made to Order reuses
    *  that whole pipeline, so it's gated behind it here too. */
   schedulingEnabled: boolean;
+  /** The restaurant's hidden add-on items, offered when filling in choices. */
+  addons: AddonRef[];
+  /** The reserved "Add-ons" category, if one exists yet. */
+  addonCategory: MenuCategory | null;
   onClose: () => void;
   onSave: (item: MenuItemWithOptions) => void;
+  /** An add-on created inline from a choice field (not via the form's save). */
+  onAddonCreated: (item: MenuItemWithOptions) => void;
+  onCategoryCreated: (category: MenuCategory) => void;
 }
 
 export function ItemFormModal({
@@ -77,9 +92,69 @@ export function ItemFormModal({
   item,
   defaultCategoryId,
   schedulingEnabled,
+  addons,
+  addonCategory,
   onClose,
   onSave,
+  onAddonCreated,
+  onCategoryCreated,
 }: ItemFormModalProps) {
+  // Hidden add-on: not sold on its own, only offered as a choice in other items.
+  const [addonOnly, setAddonOnly] = useState(item?.is_addon_only ?? false);
+  // Local mirror so inline-created add-ons are offered immediately.
+  const [localAddons, setLocalAddons] = useState(addons);
+  const [addonCatId, setAddonCatId] = useState<string | null>(addonCategory?.id ?? null);
+
+  /** Find-or-create the reserved "Add-ons" category for this restaurant. */
+  async function ensureAddonCategory(): Promise<string> {
+    if (addonCatId) return addonCatId;
+    const { data: cat, error: catErr } = await supabase
+      .from("menu_categories")
+      .insert({
+        restaurant_id: restaurantId,
+        name: "Add-ons",
+        display_order: 999,
+        is_addon_group: true,
+      })
+      .select("*")
+      .single();
+    if (catErr) throw catErr;
+    setAddonCatId(cat.id);
+    onCategoryCreated(cat as MenuCategory);
+    return cat.id;
+  }
+
+  /** Create a hidden add-on item inline and return it for linking. */
+  async function createAddon(rawName: string): Promise<AddonRef | null> {
+    const addonName = rawName.trim();
+    if (!addonName) return null;
+    try {
+      const catId = await ensureAddonCategory();
+      const { data: created, error: itemErr } = await supabase
+        .from("menu_items")
+        .insert({
+          restaurant_id: restaurantId,
+          name: addonName,
+          price: 0,
+          price_kobo: 0,
+          category_id: catId,
+          is_addon_only: true,
+          is_available: true,
+          display_order: 0,
+        })
+        .select("*, options:menu_item_options(*, choices:menu_item_option_choices(*))")
+        .single();
+      if (itemErr) throw itemErr;
+      const addon = { id: created.id, name: created.name };
+      setLocalAddons((prev) => [...prev, addon]);
+      onAddonCreated(created as unknown as MenuItemWithOptions);
+      return addon;
+    } catch (e: unknown) {
+      setError((e as Error).message ?? "Could not create add-on");
+      return null;
+    }
+  }
+
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
   const [categoryId, setCategoryId] = useState(
@@ -155,6 +230,8 @@ export function ItemFormModal({
           priceModifierNgn: c.price_modifier_kobo
             ? (c.price_modifier_kobo / 100).toString()
             : "",
+          // Keep the link, or saving would silently detach the add-on.
+          linkedItemId: c.linked_item_id ?? null,
         })),
       }))
   );
@@ -163,7 +240,7 @@ export function ItemFormModal({
   const addOption = () =>
     setDraftOptions((prev) => [
       ...prev,
-      { name: "", isRequired: false, maxSelections: null, choices: [{ name: "", priceModifierNgn: "" }] },
+      { name: "", isRequired: false, maxSelections: null, choices: [{ name: "", priceModifierNgn: "", linkedItemId: null }] },
     ]);
   const removeOption = (oi: number) =>
     setDraftOptions((prev) => prev.filter((_, i) => i !== oi));
@@ -172,7 +249,7 @@ export function ItemFormModal({
   const addChoice = (oi: number) =>
     setDraftOptions((prev) =>
       prev.map((o, i) =>
-        i === oi ? { ...o, choices: [...o.choices, { name: "", priceModifierNgn: "" }] } : o
+        i === oi ? { ...o, choices: [...o.choices, { name: "", priceModifierNgn: "", linkedItemId: null }] } : o
       )
     );
   const removeChoice = (oi: number, ci: number) =>
@@ -214,7 +291,10 @@ export function ItemFormModal({
       setError("Name is required");
       return;
     }
-    if (hasSizes) {
+    // Add-ons carry no price/sizes of their own — their cost is set per choice.
+    if (addonOnly) {
+      // nothing to validate
+    } else if (hasSizes) {
       const validSizes = draftSizes.filter((s) => s.name.trim() && s.priceNgn);
       if (validSizes.length < 2) {
         setError("Add at least 2 sizes");
@@ -224,7 +304,7 @@ export function ItemFormModal({
       setError("Valid price required");
       return;
     }
-    if (isMadeToOrder) {
+    if (!addonOnly && isMadeToOrder) {
       const hours = parseInt(madeToOrderLeadHours, 10);
       if (!madeToOrderLeadHours.trim() || !Number.isFinite(hours) || hours <= 0) {
         setError("Enter how many hours' notice this item needs");
@@ -250,19 +330,24 @@ export function ItemFormModal({
         imageUrl = await uploadMenuImage(supabase, restaurantId, pickedImage);
       }
 
-      const priceKobo = hasSizes ? 0 : Math.round(parseFloat(priceNgn) * 100);
+      const priceKobo = addonOnly ? 0 : hasSizes ? 0 : Math.round(parseFloat(priceNgn) * 100);
+      // Add-on items live in the reserved "Add-ons" category and never appear on
+      // the storefront, so featured/NEW are forced off.
+      const resolvedCategoryId = addonOnly ? await ensureAddonCategory() : categoryId || null;
       const payload = {
         restaurant_id: restaurantId,
         name: name.trim(),
         description: description.trim() || null,
         price_kobo: priceKobo,
-        category_id: categoryId || null,
+        category_id: resolvedCategoryId,
         image_url: imageUrl,
-        is_featured: isFeatured,
-        show_new_badge: showNewBadge,
+        is_featured: addonOnly ? false : isFeatured,
+        show_new_badge: addonOnly ? false : showNewBadge,
+        is_addon_only: addonOnly,
         prep_time_minutes: prepMinutes.trim() ? parseInt(prepMinutes, 10) || null : null,
-        is_made_to_order: isMadeToOrder,
-        made_to_order_lead_hours: isMadeToOrder ? parseInt(madeToOrderLeadHours, 10) : null,
+        is_made_to_order: addonOnly ? false : isMadeToOrder,
+        made_to_order_lead_hours:
+          !addonOnly && isMadeToOrder ? parseInt(madeToOrderLeadHours, 10) : null,
         track_inventory: trackInventory,
         stock_quantity: trackInventory
           ? Math.max(0, parseInt(stockQuantity, 10) || 0)
@@ -293,7 +378,7 @@ export function ItemFormModal({
       }
 
       // 2. Size group → required, single-select option with one choice per size.
-      if (hasSizes) {
+      if (!addonOnly && hasSizes) {
         const validSizes = draftSizes.filter((s) => s.name.trim() && s.priceNgn);
         const { data: sizeOptRow, error: sizeOptError } = await supabase
           .from("menu_item_options")
@@ -323,7 +408,7 @@ export function ItemFormModal({
       }
 
       // 3. Every other option group + its choices.
-      for (const opt of draftOptions) {
+      for (const opt of addonOnly ? [] : draftOptions) {
         if (!opt.name.trim()) continue;
         const { data: optRow, error: optError } = await supabase
           .from("menu_item_options")
@@ -339,7 +424,7 @@ export function ItemFormModal({
           .single();
         if (optError) throw optError;
 
-        const validChoices = opt.choices.filter((c) => c.name.trim());
+        const validChoices = opt.choices.filter((c) => c.name.trim() || c.linkedItemId);
         if (validChoices.length > 0) {
           const { error: choiceError } = await supabase
             .from("menu_item_option_choices")
@@ -350,6 +435,9 @@ export function ItemFormModal({
                 name: c.name.trim(),
                 price_modifier_kobo: Math.round(parseFloat(c.priceModifierNgn || "0") * 100),
                 is_available: true,
+                // Linked choices mirror their add-on item; the DB trigger
+                // overrides name + is_available from that item at write time.
+                linked_item_id: c.linkedItemId ?? null,
               }))
             );
           if (choiceError) throw choiceError;
@@ -418,6 +506,16 @@ export function ItemFormModal({
               />
             </Field>
 
+            {/* Hidden add-on */}
+            <ToggleRow
+              value={addonOnly}
+              onValueChange={setAddonOnly}
+              title="Hidden add-on"
+              subtitle="Not sold on its own — only offered as a choice in other items"
+            />
+
+            {!addonOnly && (
+            <>
             {/* Sizes toggle */}
             <ToggleRow
               value={hasSizes}
@@ -585,6 +683,8 @@ export function ItemFormModal({
                 </View>
               )}
             </View>
+            </>
+            )}
 
             {/* Photo */}
             <Field label="Photo (max 5MB)">
@@ -612,6 +712,8 @@ export function ItemFormModal({
               ) : null}
             </Field>
 
+            {!addonOnly && (
+            <>
             {/* Featured */}
             <ToggleRow
               value={isFeatured}
@@ -690,13 +792,22 @@ export function ItemFormModal({
                   {/* Choices */}
                   <View style={{ gap: 8 }}>
                     {opt.choices.map((choice, ci) => (
-                      <View key={ci} style={styles.rowGap}>
-                        <TextInput
-                          value={choice.name}
-                          onChangeText={(t) => updateChoice(oi, ci, { name: t })}
-                          placeholder="Choice (e.g. Chicken)"
-                          placeholderTextColor={theme.colors.black[400]}
-                          style={[styles.input, { flex: 1, paddingVertical: 8, backgroundColor: theme.colors.white }]}
+                      <View key={ci} style={[styles.rowGap, { alignItems: "flex-start" }]}>
+                        <ChoiceField
+                          value={choice}
+                          addons={localAddons.filter((a) => a.id !== item?.id)}
+                          onPick={(addon) =>
+                            updateChoice(oi, ci, { linkedItemId: addon.id, name: addon.name })
+                          }
+                          onCreate={async (n) => {
+                            const created = await createAddon(n);
+                            if (created) {
+                              updateChoice(oi, ci, { linkedItemId: created.id, name: created.name });
+                            }
+                            return created;
+                          }}
+                          onTypeFreeText={(n) => updateChoice(oi, ci, { name: n, linkedItemId: null })}
+                          onClear={() => updateChoice(oi, ci, { linkedItemId: null, name: "" })}
                         />
                         <View style={styles.priceWrap}>
                           <Text style={styles.naira}>+₦</Text>
@@ -721,6 +832,8 @@ export function ItemFormModal({
                 </View>
               ))}
             </View>
+            </>
+            )}
 
             {error ? (
               <View style={styles.errorBox}>
@@ -752,6 +865,88 @@ export function ItemFormModal({
 }
 
 // ── Small building blocks ─────────────────────────────────────────────────────
+
+/**
+ * A choice that can link to a reusable add-on item (web `ChoiceCombobox`).
+ * Type to search existing add-ons, pick one (the choice then mirrors its name +
+ * availability), or create a new add-on inline. Typing without picking keeps it
+ * as plain free text.
+ */
+function ChoiceField({
+  value,
+  addons,
+  onPick,
+  onCreate,
+  onTypeFreeText,
+  onClear,
+}: {
+  value: DraftChoice;
+  addons: AddonRef[];
+  onPick: (addon: AddonRef) => void;
+  onCreate: (name: string) => Promise<AddonRef | null>;
+  onTypeFreeText: (name: string) => void;
+  onClear: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (value.linkedItemId) {
+    return (
+      <View style={styles.linkedChip}>
+        <Text style={styles.linkedGlyph}>🔗</Text>
+        <Text numberOfLines={1} style={styles.linkedName}>{value.name}</Text>
+        <Pressable onPress={onClear} hitSlop={8} accessibilityLabel="Unlink add-on">
+          <Text style={styles.linkedX}>✕</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const q = value.name.trim().toLowerCase();
+  const matches = addons.filter((a) => a.name.toLowerCase().includes(q)).slice(0, 6);
+  const exact = addons.some((a) => a.name.toLowerCase() === q);
+  const canCreate = q.length > 0 && !exact;
+  const open = focused && (matches.length > 0 || canCreate);
+
+  return (
+    <View style={{ flex: 1, minWidth: 0 }}>
+      <TextInput
+        value={value.name}
+        onChangeText={onTypeFreeText}
+        onFocus={() => setFocused(true)}
+        // Delay so a tap on a suggestion lands before the list unmounts.
+        onBlur={() => setTimeout(() => setFocused(false), 200)}
+        placeholder="Choice or add-on (e.g. Chicken)"
+        placeholderTextColor={theme.colors.black[400]}
+        style={[styles.input, { paddingVertical: 8, backgroundColor: theme.colors.white }]}
+      />
+      {open && (
+        <View style={styles.suggestBox}>
+          {matches.map((a) => (
+            <Pressable key={a.id} onPress={() => onPick(a)} style={styles.suggestRow}>
+              <Text numberOfLines={1} style={styles.suggestText}>🔗 {a.name}</Text>
+            </Pressable>
+          ))}
+          {canCreate && (
+            <Pressable
+              disabled={busy}
+              onPress={async () => {
+                setBusy(true);
+                await onCreate(value.name);
+                setBusy(false);
+              }}
+              style={[styles.suggestRow, busy && { opacity: 0.6 }]}
+            >
+              <Text numberOfLines={1} style={[styles.suggestText, { color: theme.colors.brand, fontWeight: "600" }]}>
+                {busy ? "Creating…" : `＋ Create “${value.name.trim()}” as add-on`}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -952,6 +1147,37 @@ const styles = {
   },
   removeX: { fontSize: 14, color: theme.colors.black[400] },
   addLink: { fontSize: 13, fontWeight: "600" as const, color: theme.colors.brand },
+  linkedChip: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.primary[200],
+    backgroundColor: theme.colors.primary[50],
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  linkedGlyph: { fontSize: 12 },
+  linkedName: { flex: 1, fontSize: 14, fontWeight: "600" as const, color: theme.colors.brandDark },
+  linkedX: { fontSize: 13, color: theme.colors.brand, fontWeight: "700" as const },
+  suggestBox: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.black[200],
+    borderRadius: 10,
+    backgroundColor: theme.colors.white,
+    overflow: "hidden" as const,
+  },
+  suggestRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.black[100],
+  },
+  suggestText: { fontSize: 13, color: theme.colors.black[900] },
   photoBox: {
     borderWidth: 2,
     borderColor: theme.colors.black[200],

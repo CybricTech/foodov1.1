@@ -39,6 +39,7 @@ import {
 
 import { getSupabase } from "../../lib/supabase";
 import { useConnection } from "../../lib/connection";
+import { useAuth } from "../../lib/auth";
 import {
   updateOrderStatus,
   dispatchOrder,
@@ -104,6 +105,10 @@ export function OrdersScreen({
 }: OrdersScreenProps) {
   const supabase = getSupabase();
   const { reportRealtimeStatus, onReconnect } = useConnection();
+  // Owners can cancel a not-yet-started order (web order queue); frontline
+  // staff can't (web frontline board).
+  const { profile } = useAuth();
+  const isOwner = profile?.role === "merchant_owner";
 
   // Scope rotation to the frontline Kitchen Display only. The owner dashboard
   // reuses this same component but must stay portrait, so we gate on the active
@@ -490,6 +495,35 @@ export function OrdersScreen({
     [orders]
   );
 
+  const handleCancel = useCallback(
+    async (orderId: string, reason: string) => {
+      if (!supabase) return;
+      setActionLoading(orderId);
+      setActionError(null);
+      const prevStatus = orders.find((o) => o.id === orderId)?.status;
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" as OrderRow["status"] } : o))
+      );
+      // Same write as the web owner queue (RLS-scoped to the merchant's orders).
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: "cancelled", cancellation_reason: reason })
+        .eq("id", orderId);
+      if (error) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderId ? { ...o, status: (prevStatus ?? o.status) as OrderRow["status"] } : o
+          )
+        );
+        setActionError("Failed to cancel order. Please try again.");
+      } else {
+        capture("order_cancelled");
+      }
+      setActionLoading(null);
+    },
+    [orders, supabase]
+  );
+
   /* ---- Dispatch ---- */
   const openDispatch = useCallback(
     (order: OrderRow) => {
@@ -769,6 +803,7 @@ export function OrdersScreen({
                       onActivateNow={handleActivateNow}
                       onReschedule={handleReschedule}
                       onDeclineScheduled={handleDeclineScheduled}
+                      onCancel={isOwner ? handleCancel : undefined}
                       schedulingSettings={schedulingSettings}
                       openingHours={openingHours}
                     />
@@ -893,6 +928,7 @@ export function OrdersScreen({
                 onActivateNow={handleActivateNow}
                 onReschedule={handleReschedule}
                 onDeclineScheduled={handleDeclineScheduled}
+                onCancel={isOwner ? handleCancel : undefined}
                 schedulingSettings={schedulingSettings}
                 openingHours={openingHours}
               />

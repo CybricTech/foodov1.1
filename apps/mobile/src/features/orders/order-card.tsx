@@ -44,6 +44,8 @@ interface OrderCardProps {
   onActivateNow: (id: string) => void;
   onReschedule: (id: string, newSlotIso: string) => void;
   onDeclineScheduled: (id: string, reason: string) => void;
+  /** Owner only (web order queue parity): cancel a not-yet-started order. */
+  onCancel?: (id: string, reason: string) => void;
   schedulingSettings: SchedulingSettings;
   openingHours: OpeningHours | null;
 }
@@ -58,6 +60,7 @@ export function OrderCard({
   onActivateNow,
   onReschedule,
   onDeclineScheduled,
+  onCancel,
   schedulingSettings,
   openingHours,
 }: OrderCardProps) {
@@ -67,7 +70,10 @@ export function OrderCard({
   const [showAccept, setShowAccept] = useState(false);
   const [showReschedule, setShowReschedule] = useState(false);
   const [showDecline, setShowDecline] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
   const isScheduled = column === "scheduled";
+  // Same window as the web owner queue: only before cooking starts.
+  const canCancel = !!onCancel && !isScheduled && ["pending", "confirmed"].includes(order.status);
 
   return (
     <View
@@ -203,6 +209,17 @@ export function OrderCard({
             onDispatchReady={onDispatchReady}
             onAccept={() => setShowAccept(true)}
           />
+          {canCancel && (
+            <View style={{ flex: 0.45 }}>
+              <SecondaryButton
+                label="Cancel"
+                color={theme.colors.cinnabar[500]}
+                borderColor={theme.colors.cinnabar[100]}
+                disabled={loading}
+                onPress={() => setShowCancel(true)}
+              />
+            </View>
+          )}
         </View>
       )}
 
@@ -229,6 +246,24 @@ export function OrderCard({
           setShowReschedule(false);
         }}
       />
+
+      {canCancel && (
+        <DeclineModal
+          visible={showCancel}
+          order={order}
+          loading={loading}
+          title={`Cancel order #${order.order_number}?`}
+          subtitle="The order is removed from your queue. Use this only before you start preparing it."
+          placeholder="Reason for cancellation…"
+          confirmLabel="Confirm cancel"
+          busyLabel="Cancelling…"
+          onClose={() => setShowCancel(false)}
+          onConfirm={(reason) => {
+            onCancel?.(order.id, reason);
+            setShowCancel(false);
+          }}
+        />
+      )}
 
       <DeclineModal
         visible={showDecline}
@@ -574,12 +609,22 @@ function DeclineModal({
   visible,
   order,
   loading,
+  title,
+  subtitle = "The customer will be notified by SMS and a refund processed manually.",
+  placeholder = "Reason (shown to the customer)…",
+  confirmLabel = "Confirm decline",
+  busyLabel = "Declining…",
   onClose,
   onConfirm,
 }: {
   visible: boolean;
   order: OrderRow;
   loading: boolean;
+  title?: string;
+  subtitle?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  busyLabel?: string;
   onClose: () => void;
   onConfirm: (reason: string) => void;
 }) {
@@ -609,17 +654,17 @@ function DeclineModal({
         >
           <View>
             <Text style={{ fontSize: 16, fontWeight: "700", color: theme.colors.black[900] }}>
-              Decline order #{order.order_number}?
+              {title ?? `Decline order #${order.order_number}?`}
             </Text>
             <Text style={{ fontSize: 13, color: theme.colors.black[400], marginTop: 2 }}>
-              The customer will be notified by SMS and a refund processed manually.
+              {subtitle}
             </Text>
           </View>
 
           <TextInput
             value={reason}
             onChangeText={setReason}
-            placeholder="Reason (shown to the customer)…"
+            placeholder={placeholder}
             style={{
               borderWidth: 1,
               borderColor: theme.colors.black[200],
@@ -660,7 +705,7 @@ function DeclineModal({
               }}
             >
               <Text style={{ fontSize: 14, fontWeight: "700", color: theme.colors.white }}>
-                {loading ? "Declining…" : "Confirm decline"}
+                {loading ? busyLabel : confirmLabel}
               </Text>
             </Pressable>
           </View>

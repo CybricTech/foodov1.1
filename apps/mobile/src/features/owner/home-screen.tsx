@@ -9,7 +9,8 @@
  *   - Time filter (Today / Yesterday / 30m / 12h / 7d / 30d) drives the KPI
  *     window: Revenue, Orders, Avg Order. Active orders + recent orders lists.
  *
- * READ-ONLY: this screen never mutates. Money via formatKobo (@foodo/utils).
+ *   - Store status pill opens the open/close sheet (web `StoreStatusControl`),
+ *     the one write on this screen. Money via formatKobo (@foodo/utils).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -36,6 +37,8 @@ import { getSupabase } from "../../lib/supabase";
 import { useConnection } from "../../lib/connection";
 import { theme } from "../../theme";
 import { WhatsNew } from "./whats-new";
+import { StoreStatusSheet } from "./store-status-sheet";
+import { AgreementReminder } from "./agreement-reminder";
 
 /* ---- Types ---- */
 type TimeFilter =
@@ -64,6 +67,8 @@ interface Restaurant {
   slug: string;
   accepts_orders: boolean;
   opening_hours: OpeningHours | null;
+  closure_message: string | null;
+  closure_message_history: string[] | null;
 }
 
 /* ---- Helpers (ported 1:1 from web) ---- */
@@ -242,6 +247,7 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<TimeFilter>("today");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [statusSheetOpen, setStatusSheetOpen] = useState(false);
   const [, setTick] = useState(0);
 
   const ORDERS_SELECT =
@@ -256,7 +262,7 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
     const [{ data: rest }, { data: ord }] = await Promise.all([
       supabase
         .from("restaurants")
-        .select("id, name, slug, accepts_orders, opening_hours")
+        .select("id, name, slug, accepts_orders, opening_hours, closure_message, closure_message_history")
         .eq("id", restaurantId)
         .single(),
       supabase
@@ -390,6 +396,7 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.black[50] }}>
+      <AgreementReminder />
       {/* Header */}
       <View
         style={{
@@ -442,9 +449,12 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
             </Text>
           </Pressable>
 
-          {/* Store status (display only) */}
+          {/* Store status — tap to open / close the store */}
           {restaurant && (
-            <View
+            <Pressable
+              onPress={() => setStatusSheetOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Manage store status"
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -482,9 +492,9 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
                       : theme.colors.cinnabar[500],
                 }}
               >
-                {effectiveOpen ? "Open" : "Closed"}
+                {effectiveOpen ? "Open" : "Closed"} ▾
               </Text>
-            </View>
+            </Pressable>
           )}
         </View>
 
@@ -762,6 +772,25 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
           </View>
         )}
       />
+
+      {restaurant && (
+        <StoreStatusSheet
+          visible={statusSheetOpen}
+          onClose={() => setStatusSheetOpen(false)}
+          restaurantId={restaurantId}
+          acceptsOrders={acceptsOrders}
+          withinHours={withinHours}
+          openingHours={restaurant.opening_hours}
+          initialClosureMessage={restaurant.closure_message ?? null}
+          initialHistory={restaurant.closure_message_history ?? []}
+          onAcceptsOrdersChange={(next, closureMessage, history) => {
+            setAcceptsOrders(next);
+            setRestaurant((r) =>
+              r ? { ...r, accepts_orders: next, closure_message: closureMessage, closure_message_history: history } : r
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
