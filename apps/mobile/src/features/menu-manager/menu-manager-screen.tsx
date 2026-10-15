@@ -44,6 +44,7 @@ import { router } from "expo-router";
 
 import { getSupabase } from "../../lib/supabase";
 import { theme } from "../../theme";
+import { sizedImageUrl } from "../../lib/images";
 import { ScreenHeader } from "../../components/screen-header";
 import { ItemFormModal } from "./item-form-modal";
 import { AddCategoryModal } from "./add-category-modal";
@@ -615,7 +616,8 @@ function Thumb({ url, available }: { url: string | null; available: boolean }) {
   if (url) {
     return (
       <Image
-        source={{ uri: url }}
+        // Thumbnail-sized transform, not the stored original (up to 1600px).
+        source={{ uri: sizedImageUrl(url, 48, 48) }}
         style={{ width: 48, height: 48, borderRadius: 12, opacity: available ? 1 : 0.5 }}
         resizeMode="cover"
       />

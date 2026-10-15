@@ -60,45 +60,49 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Gate the app shell on font load so brand typography is in place before the
-  // first paint — no flash of system-font text that later restyles. If fonts
-  // fail to load we proceed anyway (system font) rather than hang forever.
-  if (!fontsLoaded && !fontError) {
-    return (
-      <SafeAreaProvider>
-        <StatusBar style="light" backgroundColor={SPLASH_BACKGROUND} />
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: SPLASH_BACKGROUND,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ color: "#fff", fontSize: 28, fontWeight: "800", marginBottom: 16 }}>
-            Kitchyn
-          </Text>
-          <ActivityIndicator color="#fff" />
-        </View>
-      </SafeAreaProvider>
-    );
-  }
+  // AuthProvider sits OUTSIDE the font gate on purpose: it starts reading the
+  // stored session and cached profile at the same moment the fonts start
+  // loading, instead of waiting for them. Only the visible shell is gated on
+  // fonts, so there's still no flash of system-font text. If fonts fail to
+  // load we proceed anyway (system font) rather than hang forever.
+  const fontsReady = fontsLoaded || !!fontError;
 
   return (
     <SafeAreaProvider>
-      {/* App screens are predominantly white, so the OS status bar (battery,
-          clock, signal) needs DARK text to be visible. The purple splash above
-          keeps light text. */}
-      <StatusBar style="dark" backgroundColor={theme.colors.white} />
       <AuthProvider>
-        <ConnectionProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: theme.colors.background },
-            }}
-          />
-        </ConnectionProvider>
+        {fontsReady ? (
+          <>
+            {/* App screens are predominantly white, so the OS status bar
+                (battery, clock, signal) needs DARK text to be visible. The
+                purple splash below keeps light text. */}
+            <StatusBar style="dark" backgroundColor={theme.colors.white} />
+            <ConnectionProvider>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: theme.colors.background },
+                }}
+              />
+            </ConnectionProvider>
+          </>
+        ) : (
+          <>
+            <StatusBar style="light" backgroundColor={SPLASH_BACKGROUND} />
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: SPLASH_BACKGROUND,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ color: "#fff", fontSize: 28, fontWeight: "800", marginBottom: 16 }}>
+                Kitchyn
+              </Text>
+              <ActivityIndicator color="#fff" />
+            </View>
+          </>
+        )}
       </AuthProvider>
     </SafeAreaProvider>
   );

@@ -19,6 +19,7 @@
  */
 import { useState } from "react";
 import {
+  Dimensions,
   ActivityIndicator,
   Image,
   Modal,
@@ -37,6 +38,7 @@ import type {
 } from "@foodo/database";
 
 import { theme } from "../../theme";
+import { sizedImageUrl } from "../../lib/images";
 import { pickMenuImage, uploadMenuImage, type PickedImage } from "./image-upload";
 
 interface DraftChoice {
@@ -691,7 +693,9 @@ export function ItemFormModal({
               <Pressable onPress={handlePickImage} style={styles.photoBox}>
                 {imagePreview ? (
                   <Image
-                    source={{ uri: imagePreview }}
+                    // A freshly picked photo is a local file and passes through
+                    // unchanged; a saved one is fetched at preview size.
+                    source={{ uri: sizedImageUrl(imagePreview, Dimensions.get("window").width, 144) }}
                     style={{ width: "100%", height: 144, borderRadius: 12 }}
                     resizeMode="cover"
                   />

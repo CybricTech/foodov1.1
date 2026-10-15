@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@expo-google-fonts/geist": "^0.4.2",
-    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@expo-google-fonts/poppins": "^0.4.1",
     "@foodo/database": "*",
     "@foodo/tokens": "*",

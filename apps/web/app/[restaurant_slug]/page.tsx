@@ -12,7 +12,7 @@ import {
   withFallback,
 } from "@/lib/supabase/storefront-cache";
 import { LandingFeatured } from "@/components/storefront/landing-featured";
-import { transformImage } from "@/lib/images";
+import { responsiveSrcSet, transformImage } from "@/lib/images";
 import { getActiveMenuSale } from "@/lib/discounts";
 import { ReviewsSection } from "@/components/storefront/reviews-section";
 import { LocationSection } from "@/components/storefront/location-section";
@@ -144,20 +144,21 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
       >
         {/* Background */}
         {restaurant.banner_url ? (
-          <Image
-            // The banner is already client-compressed to a 2000px max edge on
-            // upload (compressImage), so it's served as-is rather than
-            // through transformImage's fixed-box "cover" crop — that crop is
-            // anchored to the *source photo's* center, which would fight the
-            // merchant's chosen focal point (093) before object-position ever
-            // gets a say.
-            src={restaurant.banner_url}
+          // Plain <img> rather than next/image: with `unoptimized` next/image
+          // can't emit a srcSet, and this is the first thing every visitor
+          // downloads. It used to be the stored original (2.77 MB on a live
+          // store, preloaded at high priority). responsiveSrcSet serves an
+          // uncropped CDN resize per viewport width instead, so the merchant's
+          // focal point (object-position, 093) still applies. Rendered in the
+          // server HTML, so the browser's preload scanner finds it at once.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            {...responsiveSrcSet(restaurant.banner_url)}
             alt={restaurant.name}
-            fill
-            className="object-cover storefront-hero-img"
             sizes="100vw"
-            priority
-            unoptimized
+            fetchPriority="high"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-cover storefront-hero-img"
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-primary/90 via-primary/70 to-black/80" />

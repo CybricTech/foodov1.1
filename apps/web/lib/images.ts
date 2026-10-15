@@ -57,6 +57,34 @@ export function transformImage(
   return `${transformed}${sep}width=${w}&height=${h}&quality=${quality}&resize=${resize}`;
 }
 
+/**
+ * Responsive srcSet for a full-bleed photo that must NOT be cropped by the CDN,
+ * i.e. the storefront hero. The page crops it with CSS object-cover +
+ * object-position (the merchant's focal point, migration 093). A transformImage
+ * "cover" crop would re-centre the photo first and fight that.
+ *
+ * `resize=contain` inside a tall box keeps the source's exact aspect ratio and
+ * never crops (verified: a 2172x724 banner comes back 1920x640, 1200x400, ...),
+ * so the focal point still lands where the merchant put it. The browser picks
+ * the width that fits the viewport. Measured on a live banner: the 2.77 MB
+ * original became 113 KB at the 1200w a typical phone picks.
+ */
+export function responsiveSrcSet(
+  url: string | null | undefined,
+  { widths = [640, 828, 1200, 1920], quality = 75 }: { widths?: number[]; quality?: number } = {}
+): { src: string; srcSet: string | undefined } {
+  if (!url || !url.includes(PUBLIC_SEGMENT)) return { src: url ?? "", srcSet: undefined };
+  const base = url.replace(PUBLIC_SEGMENT, RENDER_SEGMENT);
+  const sep = base.includes("?") ? "&" : "?";
+  // 2500 is Supabase's max transform dimension; with contain it only caps
+  // very tall photos and never pads or crops.
+  const at = (w: number) => `${base}${sep}width=${w}&height=2500&resize=contain&quality=${quality}`;
+  return {
+    src: at(widths[Math.min(2, widths.length - 1)]),
+    srcSet: widths.map((w) => `${at(w)} ${w}w`).join(", "),
+  };
+}
+
 export interface CompressOpts {
   /** Longest edge of the output, in px. Image is scaled down to fit, never up. */
   maxEdge?: number;

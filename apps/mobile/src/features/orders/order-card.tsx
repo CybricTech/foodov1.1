@@ -8,7 +8,7 @@
  * Status/dispatch actions mirror the web column logic EXACTLY, including the
  * platform-rider "Kitchyn rider handling" lock state.
  */
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import {
@@ -25,9 +25,9 @@ import {
 
 import { theme } from "../../theme";
 import { callCustomer, openInMaps } from "../../lib/intents";
+import { TimeAgo } from "./time-ago";
 import {
   defaultPrepMinutes,
-  formatTimeAgo,
   getItemCount,
   type Column,
   type OptionSnapshot,
@@ -50,7 +50,14 @@ interface OrderCardProps {
   openingHours: OpeningHours | null;
 }
 
-export function OrderCard({
+/**
+ * Memoized: the orders screen re-renders on every realtime event and status
+ * change, and without this every mounted card re-rendered with it. Props are
+ * kept referentially stable by the screen (handlers read a ref, not `orders`),
+ * so a card re-renders only when its own order or flags change. Its relative
+ * timestamp updates itself via <TimeAgo>.
+ */
+export const OrderCard = memo(function OrderCard({
   order,
   column,
   isNew,
@@ -121,7 +128,7 @@ export function OrderCard({
               {order.customer_name}
               <Text style={{ color: theme.colors.black[400] }}>
                 {"  ·  "}
-                {formatTimeAgo(order.created_at)}
+                <TimeAgo iso={order.created_at} />
               </Text>
             </Text>
           </View>
@@ -277,7 +284,7 @@ export function OrderCard({
       />
     </View>
   );
-}
+});
 
 /* ------------------------------------------------------------------ */
 /*  Accept dialog — set the estimated-ready time before preparing.      */
@@ -442,7 +449,11 @@ function RescheduleModal({
   const [activeDayKey, setActiveDayKey] = useState<string | null>(null);
   const [selectedIso, setSelectedIso] = useState<string | null>(null);
 
-  const days = (() => {
+  // Built only while the modal is open. Every OrderCard renders this component
+  // (hidden), so computing the slot calendar unconditionally meant every card
+  // regenerated it on every render: each scroll, realtime event and clock tick.
+  const days = useMemo(() => {
+    if (!visible) return [];
     const now = new Date();
     const slots = generateScheduleSlots({ openingHours, schedulingSettings, now });
     const groups: { key: string; label: string; slots: Date[] }[] = [];
@@ -456,7 +467,7 @@ function RescheduleModal({
       groups[seen.get(key)!].slots.push(slot);
     }
     return groups;
-  })();
+  }, [visible, openingHours, schedulingSettings]);
 
   function handleShow() {
     setActiveDayKey(null);
