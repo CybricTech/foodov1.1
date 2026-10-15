@@ -14,9 +14,9 @@
  *      screens.
  *
  * Body font: **Geist** — `@expo-google-fonts/geist` exists and bundles the
- * actual .ttf files, so we match the web app exactly (Geist), rather than
- * falling back to Plus Jakarta Sans. Plus Jakarta Sans is still loaded because
- * it is part of the web display stack and kept available for headings.
+ * actual .ttf files, so we match the web app exactly (Geist). Plus Jakarta Sans
+ * (the web's secondary display font) is deliberately NOT loaded: nothing in the
+ * app selects it, and every font file loaded here sits on the cold-start path.
  *
  * Display font: **Poppins** — used for the big bold titles (the web display
  * family). Headings in the app are expressed via heavy `fontWeight` (700/800);
@@ -40,13 +40,6 @@ import {
   Poppins_700Bold,
   Poppins_800ExtraBold,
 } from "@expo-google-fonts/poppins";
-import {
-  PlusJakartaSans_400Regular,
-  PlusJakartaSans_500Medium,
-  PlusJakartaSans_600SemiBold,
-  PlusJakartaSans_700Bold,
-  PlusJakartaSans_800ExtraBold,
-} from "@expo-google-fonts/plus-jakarta-sans";
 
 /**
  * Resolved native family names, grouped by role. These are the strings RN's
@@ -69,14 +62,6 @@ export const fonts = {
     bold: "Poppins_700Bold",
     extrabold: "Poppins_800ExtraBold",
   },
-  /** Plus Jakarta Sans — secondary display family from the web stack. */
-  jakarta: {
-    regular: "PlusJakartaSans_400Regular",
-    medium: "PlusJakartaSans_500Medium",
-    semibold: "PlusJakartaSans_600SemiBold",
-    bold: "PlusJakartaSans_700Bold",
-    extrabold: "PlusJakartaSans_800ExtraBold",
-  },
 } as const;
 
 /**
@@ -94,11 +79,8 @@ const fontAssets = {
   Poppins_600SemiBold,
   Poppins_700Bold,
   Poppins_800ExtraBold,
-  PlusJakartaSans_400Regular,
-  PlusJakartaSans_500Medium,
-  PlusJakartaSans_600SemiBold,
-  PlusJakartaSans_700Bold,
-  PlusJakartaSans_800ExtraBold,
+  // Plus Jakarta Sans used to load here too (5 files, ~480 KB) on every cold
+  // start, but no role ever selected it. Removed to shorten the font gate.
 };
 
 /**

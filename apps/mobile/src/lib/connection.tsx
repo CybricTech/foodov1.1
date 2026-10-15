@@ -11,8 +11,9 @@
  *          online (both healthy).
  *
  * `onReconnect` registers a callback fired on the rising edge back to healthy,
- * so the orders screen can refetch the latest 200 orders to fill the gap that
- * Realtime does NOT replay. Identical semantics to web.
+ * so the orders screen can refetch (active orders + the newest page of
+ * completed ones) to fill the gap that Realtime does NOT replay. Identical
+ * semantics to web.
  */
 import {
   createContext,

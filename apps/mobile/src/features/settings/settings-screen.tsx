@@ -28,6 +28,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Dimensions,
   ActivityIndicator,
   Alert,
   Image,
@@ -65,6 +66,7 @@ import { getSupabase } from "../../lib/supabase";
 import { ScreenHeader } from "../../components/screen-header";
 import { saveDeliveryPricing, ApiError } from "../../lib/api";
 import { theme } from "../../theme";
+import { sizedImageUrl } from "../../lib/images";
 import { pickMenuImage, uploadMenuImage } from "../menu-manager/image-upload";
 import {
   Section,
@@ -518,7 +520,7 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
           <Field label="Store logo" hint="Recommended square, e.g. 500x500">
             {logoUrl ? (
               <View style={{ gap: 8 }}>
-                <Image source={{ uri: logoUrl }} style={styles.logoPreview} />
+                <Image source={{ uri: sizedImageUrl(logoUrl, 96, 96) }} style={styles.logoPreview} />
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   <SecondaryButton
                     label={logoUploading ? "Uploading…" : "Replace logo"}
@@ -541,7 +543,11 @@ export function SettingsScreen({ restaurantId }: { restaurantId: string }) {
           <Field label="Hero photo">
             {bannerUrl ? (
               <View style={{ gap: 8 }}>
-                <Image source={{ uri: bannerUrl }} style={styles.bannerPreview} resizeMode="cover" />
+                <Image
+                  source={{ uri: sizedImageUrl(bannerUrl, Dimensions.get("window").width, Dimensions.get("window").width / 3) }}
+                  style={styles.bannerPreview}
+                  resizeMode="cover"
+                />
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   <View style={{ flex: 1 }}>
                     <SecondaryButton
