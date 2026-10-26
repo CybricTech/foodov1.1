@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -20,6 +20,8 @@ import { JsonLd } from "@/components/seo/json-ld";
 import { breadcrumbJsonLd, menuJsonLd } from "@/lib/seo/json-ld";
 import { buildMenuDescription, buildMenuTitle } from "@/lib/seo/metadata";
 import { storefrontOrigin } from "@/lib/site";
+import { getHeroEdgeColor } from "@/lib/storefront/hero-edge-color";
+import { StatusBarTint } from "@/components/storefront/status-bar-tint";
 
 export const revalidate = 60;
 
@@ -38,6 +40,30 @@ function heroScrimStops(hexColor: string | null): [string, string] | null {
 
 interface MenuPageProps {
   params: { restaurant_slug: string };
+}
+
+/**
+ * Top-edge colour of the banner as a phone shows it: the CDN's centred
+ * 1440×384 cover crop, then object-cover into a ~390×192 box, under the
+ * scrim's top stop (alpha 0x1a).
+ */
+function bannerEdgeColor(restaurant: { banner_url: string | null; primary_color: string | null }) {
+  return getHeroEdgeColor(
+    restaurant.banner_url,
+    [
+      { aspect: 1440 / 384, x: 50, y: 50 },
+      { aspect: 390 / 192, x: 50, y: 50 },
+    ],
+    { color: restaurant.primary_color, alpha: 0x1a / 255 }
+  );
+}
+
+export async function generateViewport({
+  params,
+}: MenuPageProps): Promise<Viewport> {
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
+  const themeColor = restaurant ? await bannerEdgeColor(restaurant) : null;
+  return themeColor ? { themeColor } : {};
 }
 
 export async function generateMetadata({
@@ -70,7 +96,7 @@ export default async function MenuPage({ params }: MenuPageProps) {
   // Categories + items are critical (a menu page without a menu should hit
   // error.tsx and offer a retry, not render empty). Sale + availability are
   // cosmetic — degrade gracefully on transient Supabase failures.
-  const [categories, items, sale, availabilityRows] = await Promise.all([
+  const [categories, items, sale, availabilityRows, edgeColor] = await Promise.all([
     getCachedMenuCategories(restaurant.id),
     getCachedMenuItems(restaurant.id),
     withFallback(getActiveMenuSale(restaurant.id), null, "menu:sale"),
@@ -82,6 +108,7 @@ export default async function MenuPage({ params }: MenuPageProps) {
       [],
       "menu:availability"
     ),
+    bannerEdgeColor(restaurant),
   ]);
 
   const totalByCategory = new Map<string, number>();
@@ -118,6 +145,7 @@ export default async function MenuPage({ params }: MenuPageProps) {
 
   return (
     <div className="pb-24 bg-white min-h-screen">
+      {edgeColor && <StatusBarTint color={edgeColor} />}
       {/* Menu structured data — the category/item/price tree, plus the site
           hierarchy so results render "Spicesenz › Menu". Only the categories
           actually rendered below are described. */}
