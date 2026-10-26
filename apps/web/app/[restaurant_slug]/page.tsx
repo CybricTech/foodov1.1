@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -25,6 +25,8 @@ import {
   buildStorefrontTitle,
 } from "@/lib/seo/metadata";
 import { storefrontOrigin } from "@/lib/site";
+import { getHeroEdgeColor } from "@/lib/storefront/hero-edge-color";
+import { StatusBarTint } from "@/components/storefront/status-bar-tint";
 
 export const revalidate = 60;
 
@@ -49,6 +51,38 @@ function heroScrimStops(hexColor: string | null): [string, string, string] | nul
 
 interface StorefrontPageProps {
   params: { restaurant_slug: string };
+}
+
+/**
+ * Top-edge colour of the hero as a phone shows it: the photo cover-cropped into
+ * a ~390×560 box at the merchant's mobile focal point, under the scrim's top
+ * stop (alpha 0x66).
+ */
+function heroEdgeColor(restaurant: {
+  banner_url: string | null;
+  banner_focal_x_mobile: number | null;
+  banner_focal_y_mobile: number | null;
+  primary_color: string | null;
+}) {
+  return getHeroEdgeColor(
+    restaurant.banner_url,
+    [
+      {
+        aspect: 390 / 560,
+        x: clampPct(restaurant.banner_focal_x_mobile),
+        y: clampPct(restaurant.banner_focal_y_mobile),
+      },
+    ],
+    { color: restaurant.primary_color, alpha: 0x66 / 255 }
+  );
+}
+
+export async function generateViewport({
+  params,
+}: StorefrontPageProps): Promise<Viewport> {
+  const restaurant = await getCachedRestaurant(params.restaurant_slug);
+  const themeColor = restaurant ? await heroEdgeColor(restaurant) : null;
+  return themeColor ? { themeColor } : {};
 }
 
 export async function generateMetadata({
@@ -77,7 +111,7 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
   // reviews/featured/sale must not crash the storefront (it did on 2026-06-11
   // via a Cloudflare 525 — Sentry JAVASCRIPT-NEXTJS-Z). Only the restaurant
   // lookup above is fatal, and it's caught by error.tsx.
-  const [items, reviews, ratingSummary, sale] = await Promise.all([
+  const [items, reviews, ratingSummary, sale, edgeColor] = await Promise.all([
     withFallback(getCachedMenuItems(restaurant.id), [], "storefront:menu-items"),
     withFallback(getCachedReviews(restaurant.id), [], "storefront:reviews"),
     withFallback(
@@ -86,6 +120,7 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
       "storefront:rating"
     ),
     withFallback(getActiveMenuSale(restaurant.id), null, "storefront:sale"),
+    heroEdgeColor(restaurant),
   ]);
   const featured = items
     .filter((i) => i.is_featured)
@@ -131,6 +166,7 @@ export default async function StorefrontPage({ params }: StorefrontPageProps) {
         })}
       />
       <ActiveOrderBanner />
+      {edgeColor && <StatusBarTint color={edgeColor} />}
     <div className="min-h-screen bg-white">
       {/* ── Hero ── */}
       <section

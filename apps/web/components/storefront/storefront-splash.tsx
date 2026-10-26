@@ -34,13 +34,17 @@ export function StorefrontSplash({ logoUrl, brandColor, restaurantName }: Storef
 
   return (
     <div
-      className="fixed inset-0 z-[300] bg-white flex flex-col items-center justify-center gap-4"
+      className="fixed inset-0 z-[300] flex flex-col items-center justify-center gap-4"
       style={{
         opacity: fading ? 0 : 1,
         transition: "opacity 0.3s ease",
         pointerEvents: fading ? "none" : "auto",
       }}
     >
+      {/* The white fill lives on an absolute child, not the fixed container:
+          Safari 26 tints the iOS status bar from a fixed element's own
+          background-color at load, which would override StatusBarTint. */}
+      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-white" />
       {/* Ring + logo */}
       <div className="relative flex items-center justify-center">
         {/* Spinning SVG ring */}
