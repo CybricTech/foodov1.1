@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/server";
-import { getRequestUser } from "@/lib/supabase/get-request-user";
+import { requireMerchantOwner } from "@/lib/api/require-merchant-owner";
 import { getPickupOptions, setPickupPoint } from "@/lib/delivery/pickup-point";
 
 /**
  * A merchant choosing where riders should collect from.
  *
- * GET  — the pickup labels reachable around their store, so they can pick the
- *        street their entrance is actually on.
+ * GET  — where riders go today, the store address it's measured from, the
+ *        allowed offset, and the pickup labels reachable around the store.
+ *        `?candidates=0` skips that probe (a few seconds of Bolt lookups) for
+ *        callers that only need the map.
  * PATCH— saves one (or clears it, reverting to the storefront coordinate).
+ *
+ * See ./preview for asking what a pin would be called before saving it.
  *
  * Kept separate from /api/merchant/location because the two answer different
  * questions: that route sets where the business *is* (and prices deliveries
@@ -16,36 +19,20 @@ import { getPickupOptions, setPickupPoint } from "@/lib/delivery/pickup-point";
  * clears the pickup point automatically — a database trigger handles that, so
  * it holds regardless of which path performed the write.
  */
-async function requireMerchant(request: NextRequest) {
-  const user = await getRequestUser(request);
-  if (!user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-
-  const serviceClient = createServiceClient();
-  const { data: profile } = await serviceClient
-    .from("user_profiles")
-    .select("restaurant_id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.restaurant_id || profile.role !== "merchant_owner") {
-    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
-  }
-
-  return { restaurantId: profile.restaurant_id as string };
-}
-
 export async function GET(request: NextRequest) {
-  const auth = await requireMerchant(request);
+  const auth = await requireMerchantOwner(request);
   if (auth.error) return auth.error;
 
-  const result = await getPickupOptions(auth.restaurantId);
+  const result = await getPickupOptions(auth.restaurantId, {
+    includeCandidates: request.nextUrl.searchParams.get("candidates") !== "0",
+  });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 
   return NextResponse.json(result.data);
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireMerchant(request);
+  const auth = await requireMerchantOwner(request);
   if (auth.error) return auth.error;
 
   let body: unknown;

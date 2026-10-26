@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/api/require-admin";
 import { getPickupOptions, setPickupPoint } from "@/lib/delivery/pickup-point";
 
 /**
@@ -9,29 +10,10 @@ import { getPickupOptions, setPickupPoint } from "@/lib/delivery/pickup-point";
  * distance cap and re-resolves the label from Bolt — but for any store. Exists
  * because the merchants most likely to need a pickup point are the least likely
  * to go looking for the setting: support sees the rider complaints first.
+ *
+ * GET takes `?restaurantId=` (and `&candidates=0` to skip the street probe);
+ * see ./preview for checking a pin before saving it.
  */
-async function requireAdmin() {
-  const supabase = await createServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-
-  const serviceClient = createServiceClient();
-  const { data: profile } = await serviceClient
-    .from("user_profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profile?.role !== "super_admin") {
-    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
-  }
-
-  return { userId: user.id };
-}
-
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin();
   if (auth.error) return auth.error;
@@ -41,7 +23,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "restaurantId is required" }, { status: 400 });
   }
 
-  const result = await getPickupOptions(restaurantId);
+  const result = await getPickupOptions(restaurantId, {
+    includeCandidates: request.nextUrl.searchParams.get("candidates") !== "0",
+  });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 
   return NextResponse.json(result.data);
