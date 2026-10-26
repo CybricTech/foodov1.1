@@ -16,6 +16,7 @@
  * dispatches anyone.
  */
 import { getPlaceDetails, type BoltEnvironment } from "@/lib/bolt";
+import { metresBetween, offsetMetres as offset } from "@/lib/delivery/pickup-geo";
 
 /**
  * How far from the storefront a pickup point may sit.
@@ -40,8 +41,6 @@ const DIRECTIONS: [string, number, number][] = [
   ["north-west", -1, 1],
 ];
 
-const M_PER_DEG_LAT = 111_320;
-
 /** How many probes run at once. Enough to stay well inside a request timeout. */
 const CONCURRENCY = 6;
 
@@ -56,24 +55,9 @@ export interface PickupCandidate {
   direction: string;
 }
 
-export function metresBetween(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number }
-): number {
-  const R = 6_371_000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return Math.round(2 * R * Math.asin(Math.sqrt(s)));
-}
-
-function offset(lat: number, lng: number, north: number, east: number) {
-  const mPerDegLng = M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
-  return { lat: lat + north / M_PER_DEG_LAT, lng: lng + east / mPerDegLng };
-}
+// Re-exported so existing server imports keep working; the maths itself lives
+// in pickup-geo.ts so the browser map can share it without pulling in Bolt.
+export { metresBetween };
 
 async function mapWithConcurrency<T, R>(
   items: T[],
