@@ -37,6 +37,7 @@ import { getSupabase } from "../../lib/supabase";
 import { useConnection } from "../../lib/connection";
 import { theme } from "../../theme";
 import { WhatsNew } from "./whats-new";
+import { KitchynWrapped } from "./wrapped/kitchyn-wrapped";
 import { StoreStatusSheet } from "./store-status-sheet";
 import { AgreementReminder } from "./agreement-reminder";
 
@@ -241,6 +242,8 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
   const { reportRealtimeStatus, onReconnect } = useConnection();
 
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
+  // Hold "What's New" until Kitchyn Wrapped has had its turn (they never stack).
+  const [wrappedBusy, setWrappedBusy] = useState(true);
   const [acceptsOrders, setAcceptsOrders] = useState(false);
   const [orders, setOrders] = useState<HomeOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -424,7 +427,10 @@ export function HomeScreen({ restaurantId, userId }: HomeScreenProps) {
               {restaurant?.name ?? "Dashboard"}
             </Text>
           </View>
-          <WhatsNew userId={userId} />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <KitchynWrapped userId={userId} restaurantId={restaurantId} onBusyChange={setWrappedBusy} />
+            <WhatsNew userId={userId} autoOpenBlocked={wrappedBusy} />
+          </View>
         </View>
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 }}>

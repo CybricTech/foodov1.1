@@ -30,7 +30,14 @@ const TAG_STYLES: Record<string, { label: string; bg: string; fg: string }> = {
   fixed: { label: "Fixed", bg: theme.colors.dixie[100], fg: theme.colors.dixie[500] },
 };
 
-export function WhatsNew({ userId }: { userId: string }) {
+export function WhatsNew({
+  userId,
+  autoOpenBlocked = false,
+}: {
+  userId: string;
+  /** Hold the one-time auto-open (e.g. while Kitchyn Wrapped is on screen). */
+  autoOpenBlocked?: boolean;
+}) {
   const supabase = getSupabase();
 
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -39,6 +46,7 @@ export function WhatsNew({ userId }: { userId: string }) {
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [page, setPage] = useState(0);
   const [hasUnread, setHasUnread] = useState(false);
+  const [pendingAuto, setPendingAuto] = useState(false);
 
   const unseen = useMemo(
     () =>
@@ -73,22 +81,29 @@ export function WhatsNew({ userId }: { userId: string }) {
       );
       if (freshUnseen.length > 0) {
         setHasUnread(true);
-        setMode("auto");
-        setPage(0);
-        setOpen(true);
-        // One-time: stamp "seen" as soon as it opens so it never re-appears on
-        // another tab or a reload. Content stays behind the "New" button.
-        void supabase
-          .from("user_profiles")
-          .update({ last_seen_changelog_at: new Date().toISOString() })
-          .eq("id", userId)
-          .then(() => setHasUnread(false));
+        setPendingAuto(true);
       }
     })();
     return () => {
       active = false;
     };
   }, [supabase, userId]);
+
+  // Auto-open once there's something unseen and nothing else holds the stage.
+  useEffect(() => {
+    if (!pendingAuto || autoOpenBlocked || !supabase) return;
+    setPendingAuto(false);
+    setMode("auto");
+    setPage(0);
+    setOpen(true);
+    // One-time: stamp "seen" as soon as it opens so it never re-appears on
+    // another tab or a reload. Content stays behind the "New" button.
+    void supabase
+      .from("user_profiles")
+      .update({ last_seen_changelog_at: new Date().toISOString() })
+      .eq("id", userId)
+      .then(() => setHasUnread(false));
+  }, [pendingAuto, autoOpenBlocked, supabase, userId]);
 
   const markSeen = useCallback(async () => {
     if (!hasUnread) return;
