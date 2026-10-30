@@ -581,7 +581,7 @@ function Rank({ s }: { s: Extract<WrappedSlide, { kind: "rank" }> }) {
           <Line d={1.6}>Kitchyn.</Line>
         </p>
         <p className="kw-body kw-rise" style={css({ "--d": "2.6s", marginTop: "6cqw", opacity: 0.8 })}>
-          Ranked #{s.rank} of {s.total} by orders. Elite company.
+          By orders served. Elite company — keep cooking.
         </p>
       </div>
       <Confetti count={90} delay={1} seed={23} />

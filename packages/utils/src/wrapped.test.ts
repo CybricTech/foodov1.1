@@ -33,8 +33,7 @@ const base: WrappedStats = {
   five_star_count: 168,
   top_review: { name: "Ada", comment: "Best jollof in Lagos!", rating: 5 },
   first_order: { at: "2026-03-12T13:14:00Z", order_number: "KT-0001" },
-  rank: 3,
-  ranked_restaurants: 42,
+  top_percent: 10,
   previous: null,
 };
 
@@ -66,10 +65,15 @@ describe("buildWrappedSlides", () => {
       best_day: { date: "2026-10-29", orders: 1, revenue_kobo: 500000 },
       rating_avg: null,
       rating_count: 0,
-      rank: 40,
+      top_percent: null,
       pickup_orders: 0,
     }).map((s) => s.kind);
     expect(kinds).toEqual(["intro", "origin", "orders", "revenue", "topDish", "summary"]);
+  });
+
+  it("shows only the rounded percentile, never a rank or merchant count", () => {
+    const rank = buildWrappedSlides(base).find((s) => s.kind === "rank");
+    expect(rank).toEqual({ kind: "rank", topPercent: 10 });
   });
 
   it("adds month-over-month deltas to monthly editions", () => {

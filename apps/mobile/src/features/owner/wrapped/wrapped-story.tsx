@@ -526,7 +526,7 @@ function Rank({ s, w }: SlideProps<"rank">) {
         <T style={h(w * 0.3, C.gold)} d={700} from="zoom">top {s.topPercent}%</T>
         <T style={h(34)} d={1400}>of kitchens on</T>
         <T style={h(34)} d={1600}>Kitchyn.</T>
-        <T style={[b(16, "#fff", 0.8), { marginTop: 20, textAlign: "center" }]} d={2500}>Ranked #{s.rank} of {s.total} by orders. Elite company.</T>
+        <T style={[b(16, "#fff", 0.8), { marginTop: 20, textAlign: "center" }]} d={2500}>By orders served. Elite company — keep cooking.</T>
       </View>
     </View>
   );
