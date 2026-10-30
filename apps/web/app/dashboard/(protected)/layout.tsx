@@ -9,6 +9,8 @@ import { ConnectionBanner } from "@/components/dashboard/connection-banner";
 import { RouterAutoRefresh } from "@/components/shared/router-auto-refresh";
 import { getPostHogClient } from "@/lib/posthog";
 import { WhatsNew } from "@/components/dashboard/whats-new";
+import { KitchynWrapped } from "@/components/dashboard/wrapped/kitchyn-wrapped";
+import { isWrappedUnseen, type WrappedEdition } from "@foodo/utils";
 import { AgreementReminderBanner } from "@/components/dashboard/agreement-reminder-banner";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -65,7 +67,7 @@ export default async function DashboardLayout({
   // the merchant happens to be on (not only the home screen). The home header
   // still renders the reopen button (autoOpen off there to avoid a double popup).
   const supabase = await createServerClient();
-  const [{ data: changelogEntries }, { data: profile }, { data: pendingAgreement }] = await Promise.all([
+  const [{ data: changelogEntries }, { data: profile }, { data: pendingAgreement }, { data: wrapped }] = await Promise.all([
     supabase
       .from("changelog_entries")
       .select("id, title, body, tag, image_url, version_label, published_at")
@@ -75,7 +77,7 @@ export default async function DashboardLayout({
       .limit(20),
     supabase
       .from("user_profiles")
-      .select("last_seen_changelog_at")
+      .select("last_seen_changelog_at, last_seen_wrapped_key")
       .eq("id", session.userId)
       .maybeSingle(),
     supabase
@@ -86,7 +88,20 @@ export default async function DashboardLayout({
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Kitchyn Wrapped — this merchant's latest published edition (owner-only
+    // via RLS; staff never reach this layout anyway).
+    supabase
+      .from("merchant_wrapped")
+      .select("period_key, scope, stats")
+      .eq("restaurant_id", session.restaurantId)
+      .not("published_at", "is", null)
+      .order("period_key", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
+
+  const wrappedEdition = (wrapped as WrappedEdition | null) ?? null;
+  const wrappedUnseen = isWrappedUnseen(wrappedEdition, profile?.last_seen_wrapped_key ?? null);
 
   return (
     <ConnectionProvider>
@@ -107,6 +122,14 @@ export default async function DashboardLayout({
         userId={session.userId}
         entries={changelogEntries ?? []}
         lastSeenAt={profile?.last_seen_changelog_at ?? null}
+        showButton={false}
+        // A fresh Wrapped takes the stage first; What's New waits for next load.
+        autoOpen={!wrappedUnseen}
+      />
+      <KitchynWrapped
+        userId={session.userId}
+        edition={wrappedEdition}
+        lastSeenKey={profile?.last_seen_wrapped_key ?? null}
         showButton={false}
       />
     </ConnectionProvider>

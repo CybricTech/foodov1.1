@@ -19,8 +19,9 @@ import { createBrowserClient } from "@/lib/supabase/client";
 import { formatKobo } from "@foodo/utils";
 import { cn } from "@foodo/ui";
 import { WhatsNew, type ChangelogEntry } from "@/components/dashboard/whats-new";
+import { KitchynWrapped } from "@/components/dashboard/wrapped/kitchyn-wrapped";
 import { StoreStatusControl } from "@/components/dashboard/store-status-control";
-import type { OpeningHours } from "@foodo/utils";
+import type { OpeningHours, WrappedEdition } from "@foodo/utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,6 +63,8 @@ interface DashboardHomeClientProps {
   userId: string;
   changelogEntries: ChangelogEntry[];
   changelogLastSeenAt: string | null;
+  wrappedEdition: WrappedEdition | null;
+  wrappedLastSeenKey: string | null;
   openingHours: OpeningHours | null;
 }
 
@@ -202,6 +205,8 @@ export function DashboardHomeClient({
   userId,
   changelogEntries,
   changelogLastSeenAt,
+  wrappedEdition,
+  wrappedLastSeenKey,
   openingHours,
 }: DashboardHomeClientProps) {
   const supabase = createBrowserClient();
@@ -303,14 +308,22 @@ export function DashboardHomeClient({
               {restaurant?.name ?? "Dashboard"}
             </h1>
           </div>
-          {/* Reopen button only — the auto-popup is mounted once at the
-              dashboard layout level so it shows on whatever page you land on. */}
-          <WhatsNew
-            userId={userId}
-            entries={changelogEntries}
-            lastSeenAt={changelogLastSeenAt}
-            autoOpen={false}
-          />
+          {/* Reopen buttons only — the auto-popups are mounted once at the
+              dashboard layout level so they show on whatever page you land on. */}
+          <div className="flex items-center gap-2">
+            <KitchynWrapped
+              userId={userId}
+              edition={wrappedEdition}
+              lastSeenKey={wrappedLastSeenKey}
+              autoOpen={false}
+            />
+            <WhatsNew
+              userId={userId}
+              entries={changelogEntries}
+              lastSeenAt={changelogLastSeenAt}
+              autoOpen={false}
+            />
+          </div>
         </div>
 
         {/* Controls row */}
