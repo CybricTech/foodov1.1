@@ -1121,6 +1121,50 @@ export type Database = {
           },
         ]
       }
+      merchant_wrapped: {
+        Row: {
+          created_at: string
+          id: string
+          period_end: string
+          period_key: string
+          period_start: string
+          published_at: string | null
+          restaurant_id: string
+          scope: string
+          stats: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          period_end: string
+          period_key: string
+          period_start: string
+          published_at?: string | null
+          restaurant_id: string
+          scope: string
+          stats: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          period_end?: string
+          period_key?: string
+          period_start?: string
+          published_at?: string | null
+          restaurant_id?: string
+          scope?: string
+          stats?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchant_wrapped_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       merchant_agreements: {
         Row: {
           countersigned_at: string | null
@@ -2213,6 +2257,7 @@ export type Database = {
           id: string
           is_active: boolean
           last_seen_changelog_at: string | null
+          last_seen_wrapped_key: string | null
           phone: string | null
           restaurant_id: string | null
           role: string
@@ -2227,6 +2272,7 @@ export type Database = {
           id: string
           is_active?: boolean
           last_seen_changelog_at?: string | null
+          last_seen_wrapped_key?: string | null
           phone?: string | null
           restaurant_id?: string | null
           role: string
@@ -2241,6 +2287,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           last_seen_changelog_at?: string | null
+          last_seen_wrapped_key?: string | null
           phone?: string | null
           restaurant_id?: string | null
           role?: string

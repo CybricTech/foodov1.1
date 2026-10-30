@@ -2,7 +2,7 @@ import { getDashboardUser } from "@/lib/supabase/cached-queries";
 import { createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { DashboardHomeClient } from "@/components/dashboard/dashboard-home-client";
-import type { OpeningHours } from "@foodo/utils";
+import type { OpeningHours, WrappedEdition } from "@foodo/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +19,9 @@ export default async function DashboardHomePage() {
     .eq("id", restaurantId)
     .single();
 
-  // "What's New" — published changelog entries + this user's last-seen marker.
-  const [{ data: changelogEntries }, { data: profile }] = await Promise.all([
+  // "What's New" + Kitchyn Wrapped — latest entries/edition + this user's
+  // last-seen markers (the header pills show an unread dot from these).
+  const [{ data: changelogEntries }, { data: profile }, { data: wrapped }] = await Promise.all([
     supabase
       .from("changelog_entries")
       .select("id, title, body, tag, image_url, version_label, published_at")
@@ -30,8 +31,16 @@ export default async function DashboardHomePage() {
       .limit(20),
     supabase
       .from("user_profiles")
-      .select("last_seen_changelog_at")
+      .select("last_seen_changelog_at, last_seen_wrapped_key")
       .eq("id", session.userId)
+      .maybeSingle(),
+    supabase
+      .from("merchant_wrapped")
+      .select("period_key, scope, stats")
+      .eq("restaurant_id", restaurantId)
+      .not("published_at", "is", null)
+      .order("period_key", { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ]);
 
@@ -55,6 +64,8 @@ export default async function DashboardHomePage() {
       userId={session.userId}
       changelogEntries={changelogEntries ?? []}
       changelogLastSeenAt={profile?.last_seen_changelog_at ?? null}
+      wrappedEdition={(wrapped as WrappedEdition | null) ?? null}
+      wrappedLastSeenKey={profile?.last_seen_wrapped_key ?? null}
       openingHours={(restaurant?.opening_hours as unknown as OpeningHours | null) ?? null}
     />
   );
