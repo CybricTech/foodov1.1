@@ -45,8 +45,8 @@ export type WrappedStats = {
   five_star_count: number;
   top_review: { name: string; comment: string; rating: number } | null;
   first_order: { at: string; order_number: string } | null;
-  rank: number;
-  ranked_restaurants: number;
+  /** Rounded percentile bucket (1/5/10/25/50) or null; never a rank or count. */
+  top_percent: number | null;
   previous: { orders: number; revenue_kobo: number } | null;
 };
 
@@ -68,7 +68,7 @@ export type WrappedSlide =
   | { kind: "peak"; weekdayCounts: number[]; busiestIndex: number; busiestDay: string; peakHourLabel: string | null }
   | { kind: "bestDay"; dateLabel: string; weekday: string; day: number; month: string; orders: number; revenueKobo: number }
   | { kind: "reviews"; avg: number; count: number; fiveStar: number; quote: { name: string; comment: string } | null }
-  | { kind: "rank"; topPercent: number; rank: number; total: number }
+  | { kind: "rank"; topPercent: number }
   | { kind: "fulfilment"; deliveryPct: number; pickupPct: number; delivery: number; pickup: number }
   | { kind: "summary"; restaurantName: string; periodLabel: string; stats: { label: string; value: string }[]; topDish: string | null; busiestDay: string | null };
 
@@ -295,11 +295,10 @@ export function buildWrappedSlides(stats: WrappedStats): WrappedSlide[] {
   }
 
   // ── Standing ──────────────────────────────────────────────────────────
-  if (stats.ranked_restaurants >= 3 && stats.rank >= 1) {
-    const topPercent = Math.max(1, Math.ceil((stats.rank / stats.ranked_restaurants) * 100));
-    if (topPercent <= 50) {
-      slides.push({ kind: "rank", topPercent, rank: stats.rank, total: stats.ranked_restaurants });
-    }
+  // Only the rounded percentile is ever shown — never a rank or how many
+  // kitchens are on Kitchyn.
+  if (stats.top_percent && stats.top_percent <= 50) {
+    slides.push({ kind: "rank", topPercent: stats.top_percent });
   }
 
   if (stats.delivery_orders > 0 && stats.pickup_orders > 0) {
