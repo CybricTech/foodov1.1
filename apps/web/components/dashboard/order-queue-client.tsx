@@ -16,6 +16,7 @@ import {
   type SchedulingSettings,
 } from "@foodo/utils";
 import { cn } from "@foodo/ui";
+import { RiderDetailsPanel } from "@/components/dashboard/rider-details-panel";
 import {
   Inbox,
   Bike,
@@ -1266,6 +1267,10 @@ function OrderCard({
                       : "Carry on cooking — we're getting a rider to you for when it's ready."}
                   </p>
                 </div>
+              </div>
+              {/* Once a rider accepts: who they are, how to reach them, how far out. */}
+              <div className="mt-2">
+                <RiderDetailsPanel orderId={order.id} dispatchState={order.dispatch_state} />
               </div>
             </div>
           )}
