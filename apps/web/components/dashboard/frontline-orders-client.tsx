@@ -17,6 +17,7 @@ import {
 } from "@foodo/utils";
 import { DASHBOARD_ORDER_SELECT } from "@/lib/orders/dashboard-order-select";
 import { cn } from "@foodo/ui";
+import { RiderDetailsPanel } from "@/components/dashboard/rider-details-panel";
 import {
   Inbox,
   Bike,
@@ -1238,6 +1239,14 @@ function FrontlineOrderCard({
             </div>
           </div>
         </div>
+
+        {/* Kitchyn rider details once a driver accepts — staff at the pass
+            are usually the ones who need to call a rider. */}
+        {riderEngaged && (
+          <div className="mt-3">
+            <RiderDetailsPanel orderId={order.id} dispatchState={order.dispatch_state} />
+          </div>
+        )}
 
         {/* Inline accept-with-ETA prompt — replaces the action row for a new
             order while the merchant sets how long until it's ready. */}
