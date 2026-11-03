@@ -272,14 +272,14 @@ export function LoyaltyProgressCard({
       <div className="px-5 py-4">
         <p className="text-sm font-semibold leading-snug text-black-900">
           {status.remaining === 1 ? (
-            <>
+            <span>
               Just <span style={{ color: brand }}>1 more order</span> until {status.rewardLabel}
-            </>
+            </span>
           ) : (
-            <>
+            <span>
               <span style={{ color: brand }}>{status.remaining} more orders</span> until{" "}
               {status.rewardLabel}
-            </>
+            </span>
           )}
         </p>
 

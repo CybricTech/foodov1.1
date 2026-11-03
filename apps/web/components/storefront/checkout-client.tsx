@@ -996,10 +996,10 @@ export default function CheckoutClient({ preparedLink }: { preparedLink?: Prepar
                 {phoneLoading ? (
                   <>
                     <Loader2 size={18} className="animate-spin" />
-                    Looking you up…
+                    <span>Looking you up…</span>
                   </>
                 ) : (
-                  "Continue"
+                  <span>Continue</span>
                 )}
               </button>
             </div>
@@ -1228,7 +1228,7 @@ export default function CheckoutClient({ preparedLink }: { preparedLink?: Prepar
                     ) : (
                       <Navigation size={12} />
                     )}
-                    {gpsLoading ? "Locating…" : "Use my location"}
+                    <span>{gpsLoading ? "Locating…" : "Use my location"}</span>
                   </button>
                 </div>
                 <div className="relative">
@@ -1456,7 +1456,7 @@ export default function CheckoutClient({ preparedLink }: { preparedLink?: Prepar
                       Calculating…
                     </span>
                   ) : deliveryFeeKobo !== null ? (
-                    formatKobo(deliveryFeeKobo)
+                    <span>{formatKobo(deliveryFeeKobo)}</span>
                   ) : (
                     <span className="text-black-300 text-xs">—</span>
                   )}
@@ -1665,31 +1665,31 @@ export default function CheckoutClient({ preparedLink }: { preparedLink?: Prepar
             {loading ? (
               <>
                 <Loader2 size={18} className="animate-spin" />
-                Processing…
+                <span>Processing…</span>
               </>
             ) : storeClosed ? (
-              "Store is closed"
+              <span>Store is closed</span>
             ) : madeToOrderBlocked ? (
-              "Remove item to continue"
+              <span>Remove item to continue</span>
             ) : fulfillmentType === "delivery" && deliveryFeeLoading ? (
               <>
                 <Loader2 size={18} className="animate-spin" />
-                Calculating delivery fee…
+                <span>Calculating delivery fee…</span>
               </>
             ) : fulfillmentType === "delivery" && deliveryFeeKobo === null ? (
               <>
                 <MapPin size={18} />
-                Enter address to continue
+                <span>Enter address to continue</span>
               </>
             ) : isScheduling && !scheduledFor ? (
               <>
                 <CalendarClock size={18} />
-                Pick a time to continue
+                <span>Pick a time to continue</span>
               </>
             ) : isScheduling ? (
-              `Schedule order · ${formatKobo(total)}`
+              <span>{`Schedule order · ${formatKobo(total)}`}</span>
             ) : (
-              `Pay now · ${formatKobo(total)}`
+              <span>{`Pay now · ${formatKobo(total)}`}</span>
             )}
           </button>
         </div>
