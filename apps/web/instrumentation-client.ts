@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { guardForeignDomMutations } from "@/lib/dom/guard-foreign-dom-mutations";
 
 const isProd = process.env.NEXT_PUBLIC_APP_ENV === "production";
 
@@ -47,6 +48,17 @@ Sentry.init({
     /navigation_performance_logger/i,
     /^app:\/\//i,
   ],
+});
+
+// Browser translation and some extensions move React-owned text nodes, which
+// made checkout crash with insertBefore/removeChild NotFoundErrors. Recover
+// instead of crashing, and leave a breadcrumb so we can still see it happening.
+guardForeignDomMutations((op) => {
+  Sentry.addBreadcrumb({
+    category: "dom.guard",
+    level: "warning",
+    message: `Recovered ${op} on a node moved outside React (likely page translation)`,
+  });
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
