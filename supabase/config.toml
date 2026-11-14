@@ -65,3 +65,11 @@ inspector_port = 8083
 
 [analytics]
 enabled = false
+
+# wacli-relay is called by the Raspberry Pi poller with WACLI_RELAY_KEY, a
+# random bearer secret that is NOT a Supabase JWT. With the default
+# verify_jwt = true the Functions gateway rejects every poller request with
+# 401 "Invalid JWT" before the function's own key check ever runs, so the Pi
+# never claims anything. The function authenticates the caller itself.
+[functions.wacli-relay]
+verify_jwt = false

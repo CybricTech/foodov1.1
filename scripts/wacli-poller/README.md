@@ -34,6 +34,14 @@ supabase secrets set WACLI_RELAY_KEY=<generated value>
 supabase secrets set WACLI_OUTBOX_ENABLED=true   # flips the send-sms ladder on
 ```
 
+Deploy the relay **without JWT verification** (`supabase/config.toml` sets
+this, the flag makes it explicit). `WACLI_RELAY_KEY` is not a Supabase JWT, so
+with the default gateway check every poller call gets `401 Invalid JWT`:
+
+```
+supabase functions deploy wacli-relay --no-verify-jwt
+```
+
 And export it on the Pi (see systemd unit below) alongside `WACLI_RELAY_URL`,
 which is `https://<project-ref>.functions.supabase.co/wacli-relay`.
 
@@ -94,6 +102,19 @@ journalctl -u wacli-poller -f     # watch it work
 | `WACLI_BIN` | no | `wacli` | Path to the binary if not on `PATH`. |
 | `WACLI_POLL_INTERVAL_MS` | no | `10000` | How often to check for new alerts. |
 | `WACLI_CLAIM_LIMIT` | no | `5` | Max rows claimed per poll. |
+
+## Troubleshooting
+
+Check `journalctl -u wacli-poller -f` first.
+
+| Poller log says | Cause | Fix |
+|---|---|---|
+| `relay claim failed: HTTP 401 ... Invalid JWT` | Relay deployed with JWT verification on | `supabase functions deploy wacli-relay --no-verify-jwt` |
+| `relay claim failed: HTTP 401 {"error":"Unauthorized"}` | `WACLI_RELAY_KEY` on the Pi differs from the edge secret, or the secret is unset | Re-set both to the same value, redeploy the relay, `systemctl restart wacli-poller` |
+| `relay claim failed: HTTP 404` | Wrong `WACLI_RELAY_URL` or relay not deployed | Use `https://<project-ref>.supabase.co/functions/v1/wacli-relay` |
+| `failed <id>: ... not logged in` / `not paired` | wacli was authed as a different user than the service's `User=` (store is per-user, `~/.local/state/wacli`) | Run `wacli auth` as `pi`, or point both units at the same `WACLI_STORE_DIR` |
+| `spawn wacli ENOENT` | systemd's PATH lacks wacli | Set `Environment=WACLI_BIN=/full/path/to/wacli` |
+| Polls fine, never any rows | send-sms never queues: Infobip succeeded, `WACLI_OUTBOX_ENABLED=false`, or the restaurant has no `whatsapp_number` | Check `sms_logs` provider for recent orders |
 
 ## Turning it off
 
