@@ -67,18 +67,33 @@ async function reportResult(id, status, extra = {}) {
   await relay("report", { id, status, ...extra });
 }
 
+// Merchants save WhatsApp numbers in whatever shape they type them, usually
+// Nigerian local format ("0803 123 4567"). wacli reads a bare number as
+// international, so "08031234567" is not a valid WhatsApp user and the send
+// fails. Normalise to international digits first (same rules as send-sms's
+// normalizePhoneE164). A JID (contains "@") is passed through untouched.
+function toWhatsAppNumber(raw) {
+  const value = String(raw ?? "").trim();
+  if (value.includes("@")) return value;
+  const digits = value.replace(/\D/g, "");
+  if (digits.startsWith("234")) return "+" + digits;
+  if (digits.length === 11 && digits.startsWith("0")) return "+234" + digits.slice(1);
+  if (digits.length === 10) return "+234" + digits;
+  return "+" + digits;
+}
+
 // execFile with an args array — never a shell string — so message content
 // (customer name, address, special instructions) can't be interpreted as
 // shell syntax no matter what a customer types into an order.
 async function sendViaWacli(toNumber, message) {
   const { stdout } = await execFileAsync(WACLI_BIN, [
+    "--json",
     "send",
     "text",
     "--to",
-    toNumber,
+    toWhatsAppNumber(toNumber),
     "--message",
     message,
-    "--json",
   ]);
   try {
     return JSON.parse(stdout);
@@ -88,10 +103,10 @@ async function sendViaWacli(toNumber, message) {
 }
 
 async function processRow(row) {
-  console.log(`[wacli-poller] sending ${row.id} -> ${row.to_number}`);
+  console.log(`[wacli-poller] sending ${row.id} -> ${toWhatsAppNumber(row.to_number)}`);
   try {
     const result = await sendViaWacli(row.to_number, row.message);
-    await reportResult(row.id, "sent", { providerRef: result.id ?? result.messageId ?? undefined });
+    await reportResult(row.id, "sent", { providerRef: result.id ?? result.message_id ?? result.messageId ?? undefined });
     console.log(`[wacli-poller] sent ${row.id}`);
   } catch (err) {
     console.error(`[wacli-poller] failed ${row.id}:`, err.message ?? err);
